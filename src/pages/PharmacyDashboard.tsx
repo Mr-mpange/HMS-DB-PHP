@@ -137,7 +137,7 @@ export default function PharmacyDashboard() {
       setPrescriptions(combinedPrescriptions);
       setMedications(medicationsData || []);
 
-      const pending = (prescriptionsData || []).filter(p => p.status === 'Pending').length;
+      const pending = (prescriptionsData || []).filter(p => p.status === 'Active' || p.status === 'Pending').length;
       const lowStock = (medicationsData || []).filter(m => m.quantity_in_stock <= m.reorder_level).length;
 
       setStats({
@@ -939,8 +939,8 @@ export default function PharmacyDashboard() {
                   <CardTitle>Recent Prescriptions</CardTitle>
                   <CardDescription>
                     {prescriptionFilter === 'pending' 
-                      ? (prescriptions.filter(p => p.status === 'Pending').length > 0 
-                          ? `Showing ${Math.min(prescriptions.filter(p => p.status === 'Pending').length, 10)} of ${prescriptions.filter(p => p.status === 'Pending').length} pending`
+                      ? (prescriptions.filter(p => p.status === 'Active' || p.status === 'Pending').length > 0 
+                          ? `Showing ${Math.min(prescriptions.filter(p => p.status === 'Active' || p.status === 'Pending').length, 10)} of ${prescriptions.filter(p => p.status === 'Active' || p.status === 'Pending').length} pending`
                           : 'No pending prescriptions')
                       : (prescriptions.length > 0 
                           ? `Showing ${Math.min(prescriptions.length, 10)} of ${prescriptions.length} prescriptions`
@@ -968,7 +968,7 @@ export default function PharmacyDashboard() {
               </CardHeader>
               <CardContent>
                 {(prescriptionFilter === 'pending' 
-                    ? prescriptions.filter(p => p.status === 'Pending') 
+                    ? prescriptions.filter(p => p.status === 'Active' || p.status === 'Pending') 
                     : prescriptions
                   ).length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -985,7 +985,7 @@ export default function PharmacyDashboard() {
                     {(() => {
                       // Group prescriptions by patient
                       const filteredPrescriptions = prescriptionFilter === 'pending' 
-                        ? prescriptions.filter(p => p.status === 'Pending') 
+                        ? prescriptions.filter(p => p.status === 'Active' || p.status === 'Pending') 
                         : prescriptions;
                       
                       const groupedByPatient = filteredPrescriptions.reduce((acc: any, prescription) => {
@@ -1026,7 +1026,7 @@ export default function PharmacyDashboard() {
                                     <Badge variant="secondary">
                                       {patientPrescriptions.length} prescription{patientPrescriptions.length !== 1 ? 's' : ''}
                                     </Badge>
-                                    {patientPrescriptions.some((p: any) => p.status === 'Pending') && (
+                                    {patientPrescriptions.some((p: any) => p.status === 'Active' || p.status === 'Pending') && (
                                       <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
                                         Pending
                                       </Badge>
@@ -1039,21 +1039,21 @@ export default function PharmacyDashboard() {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {patientPrescriptions.some((p: any) => p.status === 'Pending') && (
+                                  {patientPrescriptions.some((p: any) => p.status === 'Active' || p.status === 'Pending') && (
                                     <Button 
                                       variant="default" 
                                       size="sm"
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         // Dispense all pending prescriptions
-                                        const pendingPrescriptions = patientPrescriptions.filter((p: any) => p.status === 'Pending');
+                                        const pendingPrescriptions = patientPrescriptions.filter((p: any) => p.status === 'Active' || p.status === 'Pending');
                                         if (pendingPrescriptions.length > 0) {
                                           handleOpenDispenseDialog(pendingPrescriptions[0]);
                                         }
                                       }}
                                     >
                                       <CheckCircle className="h-4 w-4 mr-2" />
-                                      Dispense All ({patientPrescriptions.filter((p: any) => p.status === 'Pending').length})
+                                      Dispense All ({patientPrescriptions.filter((p: any) => p.status === 'Active' || p.status === 'Pending').length})
                                     </Button>
                                   )}
                                   <Button variant="ghost" size="sm">
@@ -1129,7 +1129,7 @@ export default function PharmacyDashboard() {
                                           </Badge>
                                         </TableCell>
                                         <TableCell className="text-right">
-                                          {prescription.status === 'Pending' ? (
+                                          {(prescription.status === 'Active' || prescription.status === 'Pending') ? (
                                             <Button
                                               variant="outline"
                                               size="sm"

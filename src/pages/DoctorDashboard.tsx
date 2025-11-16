@@ -2301,8 +2301,8 @@ export default function DoctorDashboard() {
               </TabsList>
               
               <TabsContent value="today" className="space-y-4">
-                {patients.filter(patient => 
-                  isToday(new Date(patient.last_visit || patient.created_at))
+                {pendingVisits.filter(visit => 
+                  isToday(new Date(visit.created_at))
                 ).length > 0 ? (
                   <Table>
                     <TableHeader>
@@ -2310,27 +2310,41 @@ export default function DoctorDashboard() {
                         <TableHead>Name</TableHead>
                         <TableHead>Visit Time</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Stage</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {patients
-                        .filter(patient => 
-                          isToday(new Date(patient.last_visit || patient.created_at))
+                      {pendingVisits
+                        .filter(visit => 
+                          isToday(new Date(visit.created_at))
                         )
-                        .map((patient) => (
-                          <TableRow key={patient.id}>
+                        .map((visit) => (
+                          <TableRow key={visit.id}>
                             <TableCell className="font-medium">
                               <div className="flex items-center gap-2">
-                                <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                                {patient.full_name}
+                                <div className={`h-2 w-2 rounded-full ${
+                                  visit.doctor_status === 'Completed' ? 'bg-green-500' :
+                                  visit.doctor_status === 'In Progress' ? 'bg-blue-500' :
+                                  'bg-yellow-500'
+                                }`}></div>
+                                {visit.patient?.full_name || 'Unknown'}
                               </div>
                             </TableCell>
                             <TableCell>
-                              {format(new Date(patient.last_visit || patient.created_at), 'h:mm a')}
+                              {format(new Date(visit.created_at), 'h:mm a')}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                                {patient.status}
+                              <Badge variant={
+                                visit.doctor_status === 'Completed' ? 'default' :
+                                visit.doctor_status === 'In Progress' ? 'secondary' :
+                                'outline'
+                              }>
+                                {visit.doctor_status || 'Pending'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {visit.current_stage}
                               </Badge>
                             </TableCell>
                           </TableRow>
@@ -2345,11 +2359,11 @@ export default function DoctorDashboard() {
               </TabsContent>
               
               <TabsContent value="yesterday" className="space-y-4">
-                {patients.filter(patient => {
+                {pendingVisits.filter(visit => {
                   const yesterday = new Date();
                   yesterday.setDate(yesterday.getDate() - 1);
                   return (
-                    new Date(patient.last_visit || patient.created_at).toDateString() === yesterday.toDateString()
+                    new Date(visit.created_at).toDateString() === yesterday.toDateString()
                   );
                 }).length > 0 ? (
                   <Table>
@@ -2358,28 +2372,38 @@ export default function DoctorDashboard() {
                         <TableHead>Name</TableHead>
                         <TableHead>Visit Time</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Stage</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {patients
-                        .filter(patient => {
+                      {pendingVisits
+                        .filter(visit => {
                           const yesterday = new Date();
                           yesterday.setDate(yesterday.getDate() - 1);
                           return (
-                            new Date(patient.last_visit || patient.created_at).toDateString() === yesterday.toDateString()
+                            new Date(visit.created_at).toDateString() === yesterday.toDateString()
                           );
                         })
-                        .map((patient) => (
-                          <TableRow key={patient.id}>
+                        .map((visit) => (
+                          <TableRow key={visit.id}>
                             <TableCell className="font-medium">
-                              {patient.full_name}
+                              {visit.patient?.full_name || 'Unknown'}
                             </TableCell>
                             <TableCell>
-                              {format(new Date(patient.last_visit || patient.created_at), 'h:mm a')}
+                              {format(new Date(visit.created_at), 'h:mm a')}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                                {patient.status}
+                              <Badge variant={
+                                visit.doctor_status === 'Completed' ? 'default' :
+                                visit.doctor_status === 'In Progress' ? 'secondary' :
+                                'outline'
+                              }>
+                                {visit.doctor_status || 'Pending'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {visit.current_stage}
                               </Badge>
                             </TableCell>
                           </TableRow>
@@ -2394,10 +2418,10 @@ export default function DoctorDashboard() {
               </TabsContent>
               
               <TabsContent value="week" className="space-y-4">
-                {patients.filter(patient => {
+                {pendingVisits.filter(visit => {
                   const weekAgo = new Date();
                   weekAgo.setDate(weekAgo.getDate() - 7);
-                  return new Date(patient.last_visit || patient.created_at) > weekAgo;
+                  return new Date(visit.created_at) > weekAgo;
                 }).length > 0 ? (
                   <Table>
                     <TableHeader>
@@ -2405,30 +2429,40 @@ export default function DoctorDashboard() {
                         <TableHead>Name</TableHead>
                         <TableHead>Visit Date</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead>Stage</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {patients
-                        .filter(patient => {
+                      {pendingVisits
+                        .filter(visit => {
                           const weekAgo = new Date();
                           weekAgo.setDate(weekAgo.getDate() - 7);
-                          return new Date(patient.last_visit || patient.created_at) > weekAgo;
+                          return new Date(visit.created_at) > weekAgo;
                         })
                         .sort((a, b) => 
-                          new Date(b.last_visit || b.created_at).getTime() - 
-                          new Date(a.last_visit || a.created_at).getTime()
+                          new Date(b.created_at).getTime() - 
+                          new Date(a.created_at).getTime()
                         )
-                        .map((patient) => (
-                          <TableRow key={patient.id}>
+                        .map((visit) => (
+                          <TableRow key={visit.id}>
                             <TableCell className="font-medium">
-                              {patient.full_name}
+                              {visit.patient?.full_name || 'Unknown'}
                             </TableCell>
                             <TableCell>
-                              {format(new Date(patient.last_visit || patient.created_at), 'MMM d, h:mm a')}
+                              {format(new Date(visit.created_at), 'MMM d, h:mm a')}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                                {patient.status}
+                              <Badge variant={
+                                visit.doctor_status === 'Completed' ? 'default' :
+                                visit.doctor_status === 'In Progress' ? 'secondary' :
+                                'outline'
+                              }>
+                                {visit.doctor_status || 'Pending'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {visit.current_stage}
                               </Badge>
                             </TableCell>
                           </TableRow>
