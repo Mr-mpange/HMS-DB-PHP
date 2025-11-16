@@ -77,12 +77,15 @@ exports.getAppointment = async (req, res) => {
 // Create appointment
 exports.createAppointment = async (req, res) => {
   try {
+    console.log('Creating appointment with body:', req.body);
+    
     const { 
       patient_id, doctor_id, appointment_date, appointment_time,
       appointment_type, reason, notes
     } = req.body;
     
     if (!patient_id || !doctor_id || !appointment_date) {
+      console.log('Missing required fields:', { patient_id, doctor_id, appointment_date });
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
@@ -94,13 +97,17 @@ exports.createAppointment = async (req, res) => {
       appointmentDateTime = `${appointment_date} ${appointment_time}`;
     }
     
+    console.log('Inserting appointment with datetime:', appointmentDateTime);
+    
     await db.execute(
       `INSERT INTO appointments (
         id, patient_id, doctor_id, appointment_date, type, reason, notes, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Scheduled')`,
       [appointmentId, patient_id, doctor_id, appointmentDateTime,
-       appointment_type || 'Consultation', reason, notes]
+       appointment_type || 'Consultation', reason || null, notes || null]
     );
+    
+    console.log('Appointment created successfully:', appointmentId);
     
     // Log activity
     await db.execute(

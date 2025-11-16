@@ -8,7 +8,8 @@ exports.getAllVisits = async (req, res) => {
     
     let query = `
       SELECT v.*, 
-             p.full_name as patient_name, p.phone as patient_phone
+             p.id as patient_id_data, p.full_name, p.phone, p.email, 
+             p.date_of_birth, p.gender, p.blood_group, p.address
       FROM patient_visits v
       LEFT JOIN patients p ON v.patient_id = p.id
       WHERE 1=1
@@ -35,7 +36,22 @@ exports.getAllVisits = async (req, res) => {
     
     const [visits] = await db.execute(query, params);
     
-    res.json({ visits });
+    // Transform visits to include patient object
+    const visitsWithPatient = visits.map(visit => ({
+      ...visit,
+      patient: {
+        id: visit.patient_id,
+        full_name: visit.full_name,
+        phone: visit.phone,
+        email: visit.email,
+        date_of_birth: visit.date_of_birth,
+        gender: visit.gender,
+        blood_group: visit.blood_group,
+        address: visit.address
+      }
+    }));
+    
+    res.json({ visits: visitsWithPatient });
   } catch (error) {
     console.error('Get visits error:', error);
     console.error('Error details:', error.message);

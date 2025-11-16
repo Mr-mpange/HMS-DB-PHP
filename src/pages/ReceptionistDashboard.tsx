@@ -120,7 +120,7 @@ export default function ReceptionistDashboard() {
 
     // Set up polling instead of real-time subscriptions (every 30 seconds)
     const intervalId = setInterval(() => {
-      fetchData();
+      fetchData(false); // Background refresh without loading indicator
     }, 30000);
 
     // Cleanup interval on unmount
@@ -129,10 +129,12 @@ export default function ReceptionistDashboard() {
     };
   }, [user]);
 
-  const fetchData = async () => {
+  const fetchData = async (showLoadingIndicator = true) => {
     if (!user) return;
 
-    setLoading(true);
+    if (showLoadingIndicator) {
+      setLoading(true);
+    }
     try {
       const today = new Date().toISOString().split('T')[0];
 
@@ -353,7 +355,7 @@ export default function ReceptionistDashboard() {
       }
 
       toast.success('Sample data created');
-      fetchData();
+      fetchData(false);
     } catch (error) {
       console.error('Error creating sample data:', error);
     }
@@ -695,7 +697,7 @@ export default function ReceptionistDashboard() {
       setReturningPatientResults([]);
       
       // Refresh data
-      fetchData();
+      fetchData(false);
     } catch (error: any) {
       console.error('Error creating visit for returning patient:', error);
       const errorMessage = error?.message || 'Unknown error';
@@ -829,7 +831,7 @@ export default function ReceptionistDashboard() {
       });
       
       // Refresh the dashboard data to show the new patient
-      fetchData();
+      fetchData(false);
 
       logActivity('patient.register', { patient_id: patientId, full_name: registerForm.full_name });
     } catch (error: any) {
@@ -847,22 +849,30 @@ export default function ReceptionistDashboard() {
       return;
     }
 
-    // console.log('Booking appointment with form data:', appointmentForm);
     try {
       const appointmentData = {
         patient_id: appointmentForm.patient_id,
         doctor_id: appointmentForm.doctor_id,
         appointment_date: appointmentForm.appointment_date,
         appointment_time: appointmentForm.appointment_time,
-        ...(appointmentForm.reason && { reason: appointmentForm.reason }),
-        department_id: appointmentForm.department_id || null,
-        status: 'Scheduled',
+        appointment_type: appointmentForm.appointment_type || 'Consultation',
+        reason: appointmentForm.reason || null,
+        notes: null
       };
       
-      const appointmentRes = await api.post('/appointments', appointmentData);
-      if (appointmentRes.status !== 200 || appointmentRes.data.error) throw new Error(appointmentRes.data.error || 'Failed to create appointment');
+      console.log('Creating appointment with data:', appointmentData);
       
-      const newAppointment = appointmentRes.data.appointment;
+      const appointmentRes = await api.post('/appointments', appointmentData);
+      
+      if (appointmentRes.data.error) {
+        throw new Error(appointmentRes.data.error);
+      }
+      
+      // Get the appointment ID from response
+      const appointmentId = appointmentRes.data.appointmentId;
+      if (!appointmentId) {
+        throw new Error('Appointment created but ID not returned');
+      }
       
       // console.log('New appointment created:', newAppointment);
       // console.log('Appointment date type:', typeof newAppointment.appointment_date, 'value:', newAppointment.appointment_date);
@@ -871,24 +881,35 @@ export default function ReceptionistDashboard() {
       try {
         const visitData = {
           patient_id: appointmentForm.patient_id,
-          appointment_id: newAppointment.id,
+          appointment_id: appointmentId,
+          visit_date: appointmentForm.appointment_date,
           reception_status: 'Pending',
           current_stage: 'reception',
           overall_status: 'Active'
         };
         
-        const visitRes = await api.post('/visits', visitData);
-        if (visitRes.status !== 200 || visitRes.data.error) throw new Error(visitRes.data.error || 'Failed to create patient visit');
-
-        // console.log('Patient visit created for appointment:', newAppointment.id);
+        await api.post('/visits', visitData);
       } catch (visitError: any) {
         console.error('Error creating patient visit:', visitError);
         // Don't fail the appointment creation if visit creation fails
-        toast.warning('Appointment created but visit tracking failed');
       }
 
-      toast.success(`Follow-up appointment booked successfully! ${appointmentForm.patient_id ? 'Patient will be notified of their scheduled visit.' : ''}`);
+      toast.success('Appointment booked successfully!');
       setShowBookAppointmentDialog(false);
+      
+      // Reset form
+      setAppointmentForm({
+        patient_id: '',
+        doctor_id: '',
+        appointment_date: '',
+        appointment_time: '',
+        appointment_type: 'Consultation',
+        reason: '',
+        department_id: ''
+      });
+      
+      // Refresh data in background
+      fetchData(false);
       
       // Small delay to ensure UI updates properly
       // setTimeout(() => {

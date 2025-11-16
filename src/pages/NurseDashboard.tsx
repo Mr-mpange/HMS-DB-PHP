@@ -187,7 +187,7 @@ export default function NurseDashboard() {
       
       // Update local state
       setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
-      fetchData(); // Refresh data
+      fetchData(false); // Refresh data in background
     } catch (error: any) {
       console.error('Vitals submission error:', error);
       toast.error(error.response?.data?.error || 'Failed to record vital signs');
@@ -243,11 +243,11 @@ export default function NurseDashboard() {
   useEffect(() => {
     if (!user) return;
     
-    fetchData();
+    fetchData(true); // Initial load with loading indicator
 
     // Set up periodic refresh instead of realtime subscriptions
     const refreshInterval = setInterval(() => {
-      fetchData();
+      fetchData(false); // Background refresh without loading indicator
     }, 30000); // Refresh every 30 seconds
 
     return () => {
@@ -255,11 +255,13 @@ export default function NurseDashboard() {
     };
   }, [user]);
 
-  const fetchData = async () => {
+  const fetchData = async (showLoadingIndicator = true) => {
     if (!user) return;
 
     try {
-      setLoading(true);
+      if (showLoadingIndicator) {
+        setLoading(true);
+      }
 
       // Fetch visits waiting for nurse
       const visitsResponse = await api.get('/visits?current_stage=nurse&nurse_status=Pending&overall_status=Active');
