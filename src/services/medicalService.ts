@@ -17,10 +17,9 @@ export interface MedicalService {
 // Create a new medical service
 export const createMedicalService = async (service: Omit<MedicalService, 'id' | 'created_at' | 'updated_at'>, userId: string) => {
   try {
-    // Medical services not yet implemented in backend
-    console.log('Create medical service:', service);
+    const response = await api.post('/services', service);
     await logActivity('medical_service.create', { service_name: service.service_name });
-    return { data: null, error: new Error('Medical services management not yet implemented') };
+    return { data: response.data.service, error: null };
   } catch (error) {
     console.error('Error creating medical service:', error);
     return { data: null, error };
@@ -28,21 +27,29 @@ export const createMedicalService = async (service: Omit<MedicalService, 'id' | 
 };
 
 // Get all medical services
-export const getMedicalServices = async () => {
+export const getMedicalServices = async (filters?: { is_active?: boolean; service_type?: string }) => {
   try {
-    // Medical services not yet implemented in backend
-    return { data: [], error: null };
+    const params = new URLSearchParams();
+    if (filters?.is_active !== undefined) {
+      params.append('is_active', filters.is_active.toString());
+    }
+    if (filters?.service_type) {
+      params.append('service_type', filters.service_type);
+    }
+    
+    const response = await api.get(`/services?${params.toString()}`);
+    return { data: response.data.services || [], error: null };
   } catch (error) {
     console.error('Error fetching medical services:', error);
-    return { data: null, error };
+    return { data: [], error };
   }
 };
 
 // Get a single medical service by ID
 export const getMedicalServiceById = async (id: string) => {
   try {
-    // Medical services not yet implemented in backend
-    return { data: null, error: new Error('Medical services management not yet implemented') };
+    const response = await api.get(`/services/${id}`);
+    return { data: response.data.service, error: null };
   } catch (error) {
     console.error('Error fetching medical service:', error);
     return { data: null, error };
@@ -52,10 +59,9 @@ export const getMedicalServiceById = async (id: string) => {
 // Update a medical service
 export const updateMedicalService = async (id: string, updates: Partial<MedicalService>, userId: string) => {
   try {
-    // Medical services not yet implemented in backend
-    console.log('Update medical service:', id, updates);
+    const response = await api.put(`/services/${id}`, updates);
     await logActivity('medical_service.update', { service_id: id });
-    return { data: null, error: new Error('Medical services management not yet implemented') };
+    return { data: response.data.service, error: null };
   } catch (error) {
     console.error('Error updating medical service:', error);
     return { data: null, error };
@@ -65,10 +71,9 @@ export const updateMedicalService = async (id: string, updates: Partial<MedicalS
 // Delete a medical service
 export const deleteMedicalService = async (id: string, userId: string) => {
   try {
-    // Medical services not yet implemented in backend
-    console.log('Delete medical service:', id);
+    await api.delete(`/services/${id}`);
     await logActivity('medical_service.delete', { service_id: id });
-    return { error: new Error('Medical services management not yet implemented') };
+    return { error: null };
   } catch (error) {
     console.error('Error deleting medical service:', error);
     return { error };
@@ -78,12 +83,22 @@ export const deleteMedicalService = async (id: string, userId: string) => {
 // Toggle service active status
 export const toggleServiceStatus = async (id: string, currentStatus: boolean, userId: string) => {
   try {
-    // Medical services not yet implemented in backend
-    console.log('Toggle service status:', id, currentStatus);
+    const response = await api.put(`/services/${id}`, { is_active: !currentStatus });
     await logActivity('medical_service.toggle', { service_id: id, new_status: !currentStatus });
-    return { data: null, error: new Error('Medical services management not yet implemented') };
+    return { data: response.data.service, error: null };
   } catch (error) {
     console.error('Error toggling service status:', error);
+    return { data: null, error };
+  }
+};
+
+// Bulk import services
+export const bulkImportServices = async (services: Omit<MedicalService, 'id' | 'created_at' | 'updated_at'>[]) => {
+  try {
+    const response = await api.post('/services/bulk', { services });
+    return { data: response.data, error: null };
+  } catch (error) {
+    console.error('Error bulk importing services:', error);
     return { data: null, error };
   }
 };

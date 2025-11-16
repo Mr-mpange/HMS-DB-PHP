@@ -6,6 +6,9 @@ const { authenticate, requireRole } = require('../middleware/auth');
 // All routes require authentication
 router.use(authenticate);
 
+// Bulk import services (must be before /:id routes)
+router.post('/bulk', servicesController.bulkImportServices);
+
 // Get all services
 router.get('/', servicesController.getAllServices);
 
@@ -20,8 +23,5 @@ router.put('/:id', servicesController.updateService);
 
 // Delete service
 router.delete('/:id', servicesController.deleteService);
-
-// Bulk import services
-router.post('/bulk', servicesController.bulkImportServices);
 
 module.exports = router;

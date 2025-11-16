@@ -19,6 +19,7 @@ import {
   updateMedicalService, 
   deleteMedicalService,
   toggleServiceStatus,
+  bulkImportServices,
   type MedicalService 
 } from '@/services/medicalService';
 
@@ -138,16 +139,18 @@ export default function MedicalServicesDashboard() {
 
     setLoading(true);
     try {
-      // Medical services management not yet implemented in backend
-      // Using empty data for now
-      setServices([]);
+      const { data: servicesData, error: servicesError } = await getMedicalServices();
+      
+      if (servicesError) {
+        console.error('Error fetching services:', servicesError);
+        toast.error('Failed to load medical services');
+      } else {
+        setServices(servicesData || []);
+      }
+      
+      // Patient services and patients would be fetched from their respective endpoints
       setPatientServices([]);
       setPatients([]);
-      
-      // Show info message only once
-      if (services.length === 0 && patientServices.length === 0) {
-        toast.info('Medical services management will be available soon');
-      }
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load medical services data');
@@ -163,17 +166,27 @@ export default function MedicalServicesDashboard() {
     }
 
     try {
-      // Medical services management not yet implemented in backend
-      toast.info('Medical services management will be available soon');
-      setShowAddDialog(false);
-      setNewService({
-        service_code: '',
-        service_name: '',
-        service_type: '',
-        description: '',
-        base_price: 0,
-        currency: 'TSh'
-      });
+      const { data, error } = await createMedicalService({
+        ...newService,
+        is_active: true
+      }, user!.id);
+      
+      if (error) {
+        console.error('Error adding service:', error);
+        toast.error('Failed to add medical service');
+      } else {
+        toast.success('Medical service added successfully');
+        setShowAddDialog(false);
+        setNewService({
+          service_code: '',
+          service_name: '',
+          service_type: '',
+          description: '',
+          base_price: 0,
+          currency: 'TSh'
+        });
+        fetchData(); // Refresh the list
+      }
     } catch (error) {
       console.error('Error adding service:', error);
       toast.error('Failed to add medical service');
@@ -261,7 +274,9 @@ export default function MedicalServicesDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold text-green-600">
-                TSh{(services.reduce((sum, s) => sum + s.base_price, 0) / Math.max(services.length, 1)).toFixed(0)}
+                TSh{services.length > 0 
+                  ? (services.reduce((sum, s) => sum + (Number(s.base_price) || 0), 0) / services.length).toFixed(0)
+                  : '0'}
               </div>
               <p className="text-sm text-muted-foreground">Average price per service</p>
             </CardContent>
@@ -557,11 +572,21 @@ export default function MedicalServicesDashboard() {
                       return;
                     }
                     
-                    // CSV import not yet implemented in backend
-                    toast.info('CSV import will be available soon');
-                    setImportDialogOpen(false);
-                    setImportFile(null);
-                    setImportPreview([]);
+                    const { data, error } = await bulkImportServices(rows);
+                    
+                    if (error) {
+                      setImportError('Failed to import services');
+                      toast.error('Failed to import services');
+                    } else {
+                      toast.success(`Successfully imported ${data?.results?.success || 0} services`);
+                      if (data?.results?.failed > 0) {
+                        toast.warning(`${data.results.failed} services failed to import`);
+                      }
+                      setImportDialogOpen(false);
+                      setImportFile(null);
+                      setImportPreview([]);
+                      fetchData(); // Refresh the list
+                    }
                   } catch (err: any) {
                     console.error('CSV import error:', err);
                     setImportError(err?.message || 'Failed to import CSV');
