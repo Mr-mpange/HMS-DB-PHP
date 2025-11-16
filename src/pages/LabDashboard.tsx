@@ -151,7 +151,7 @@ export default function LabDashboard() {
       }
 
       // Insert all results and update test statuses
-      await api.post('/lab-results/batch', {
+      await api.post('/labs/results/batch', {
         results: resultsToInsert,
         testIds: testsToUpdate
       });
@@ -174,16 +174,31 @@ export default function LabDashboard() {
   };
 
   const updatePatientWorkflow = async (patientId: string) => {
-    const { data } = await api.get(`/patient-visits?patient_id=${patientId}&status=Active&limit=1`);
-    const visits = data.visits || [];
+    try {
+      // Get active visits for this patient that are in lab stage
+      const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
+      const visits = data.visits || [];
 
-    if (visits && visits.length > 0) {
-      await api.put(`/patient-visits/${visits[0].id}`, {
-        lab_status: 'Completed',
-        lab_completed_at: new Date().toISOString(),
-        current_stage: 'doctor',
-        doctor_status: 'Pending'
-      });
+      console.log('Updating patient workflow:', { patientId, visitsFound: visits.length });
+
+      if (visits && visits.length > 0) {
+        const visitId = visits[0].id;
+        console.log('Updating visit:', visitId);
+        
+        await api.put(`/visits/${visitId}`, {
+          lab_status: 'Completed',
+          lab_completed_at: new Date().toISOString(),
+          current_stage: 'doctor',
+          doctor_status: 'Pending'
+        });
+        
+        console.log('Visit updated successfully');
+      } else {
+        console.warn('No active lab visit found for patient:', patientId);
+      }
+    } catch (error) {
+      console.error('Error updating patient workflow:', error);
+      // Don't throw error - results were already saved successfully
     }
   };
 
@@ -218,8 +233,8 @@ export default function LabDashboard() {
         return;
       }
 
-      // First, let's find the correct patient visit for this patient
-      const { data: visitData } = await api.get(`/patient-visits?patient_id=${patientId}&status=Active&limit=5`);
+      // First, let's find the correct patient visit for this patient (in lab stage)
+      const { data: visitData } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=5`);
       const visits = visitData.visits || [];
 
       console.log('Found patient visits for workflow update:', {
@@ -240,7 +255,7 @@ export default function LabDashboard() {
         console.log('Updating visit:', visitToUpdate.id, 'from stage:', visitToUpdate.current_stage);
 
         try {
-          await api.put(`/patient-visits/${visitToUpdate.id}`, {
+          await api.put(`/visits/${visitToUpdate.id}`, {
             lab_status: 'Completed',
             lab_completed_at: new Date().toISOString(),
             current_stage: 'doctor',
@@ -258,7 +273,7 @@ export default function LabDashboard() {
 
         // Create a patient visit if none exists
         try {
-          await api.post('/patient-visits', {
+          await api.post('/visits', {
             patient_id: patientId,
             visit_date: new Date().toISOString().split('T')[0],
             current_stage: 'doctor',

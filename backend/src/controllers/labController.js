@@ -230,19 +230,26 @@ exports.addLabResults = async (req, res) => {
     
     const resultId = uuidv4();
     
+    // Prepare result data as JSON
+    const resultData = JSON.stringify({
+      value: result_value,
+      reference_range: reference_range || null,
+      unit: unit || null,
+      abnormal_flag: abnormal_flag || false
+    });
+    
     await db.execute(
       `INSERT INTO lab_results (
-        id, lab_test_id, result_value, reference_range, unit,
-        abnormal_flag, notes, technician_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [resultId, req.params.id, result_value, reference_range, unit,
-       abnormal_flag || false, notes, req.user.id]
+        id, lab_test_id, result_data, result_text, notes,
+        performed_by, performed_date
+      ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [resultId, req.params.id, resultData, result_value, notes || null, req.user.id]
     );
     
     // Update lab test status to completed
     await db.execute(
       `UPDATE lab_tests 
-       SET status = 'Completed', completed_date = NOW()
+       SET status = 'Completed', updated_at = NOW()
        WHERE id = ?`,
       [req.params.id]
     );
@@ -293,5 +300,86 @@ exports.getLabResults = async (req, res) => {
   } catch (error) {
     console.error('Get lab results error:', error);
     res.status(500).json({ error: 'Failed to fetch lab results' });
+  }
+};
+
+// Add batch lab results
+exports.addBatchLabResults = async (req, res) => {
+  const connection = await db.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+    
+    const { results, testIds } = req.body;
+    
+    if (!results || !Array.isArray(results) || results.length === 0) {
+      return res.status(400).json({ error: 'Results array is required' });
+    }
+    
+    console.log('Adding batch lab results:', { count: results.length, testIds });
+    
+    // Insert all results
+    for (const result of results) {
+      const { lab_test_id, result_value, reference_range, unit, abnormal_flag, notes } = result;
+      
+      if (!lab_test_id || !result_value) {
+        throw new Error('Lab test ID and result value are required for each result');
+      }
+      
+      const resultId = uuidv4();
+      
+      // Prepare result data as JSON
+      const resultData = JSON.stringify({
+        value: result_value,
+        reference_range: reference_range || null,
+        unit: unit || null,
+        abnormal_flag: abnormal_flag || false
+      });
+      
+      await connection.execute(
+        `INSERT INTO lab_results (
+          id, lab_test_id, result_data, result_text, notes, 
+          performed_by, performed_date
+        ) VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [resultId, lab_test_id, resultData, result_value, notes || null, req.user.id]
+      );
+      
+      // Update lab test status to completed
+      await connection.execute(
+        `UPDATE lab_tests 
+         SET status = 'Completed', updated_at = NOW()
+         WHERE id = ?`,
+        [lab_test_id]
+      );
+    }
+    
+    // Log activity
+    await connection.execute(
+      `INSERT INTO activity_logs (id, user_id, action, details) 
+       VALUES (?, ?, ?, ?)`,
+      [uuidv4(), req.user.id, 'lab.batch_results.entered', 
+       JSON.stringify({ test_count: results.length, test_ids: testIds })]
+    );
+    
+    await connection.commit();
+    
+    // Emit real-time update
+    if (global.emitUpdate) {
+      global.emitUpdate('lab_tests', 'lab_results:batch_added', { 
+        test_ids: testIds,
+        count: results.length
+      });
+    }
+    
+    res.status(201).json({ 
+      message: `${results.length} lab results added successfully`,
+      count: results.length
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Add batch lab results error:', error);
+    res.status(500).json({ error: 'Failed to add batch lab results', details: error.message });
+  } finally {
+    connection.release();
   }
 };
