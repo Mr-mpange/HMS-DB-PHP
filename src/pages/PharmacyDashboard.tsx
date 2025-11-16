@@ -1078,29 +1078,38 @@ export default function PharmacyDashboard() {
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
-                                    {patientPrescriptions.map((prescription: any) => (
-                                      <TableRow 
-                                        key={prescription.id}
-                                        className={loadingStates[prescription.id] ? 'opacity-50' : ''}
-                                      >
-                                        <TableCell>
-                                          <div className="font-medium">
-                                            {prescription.medications?.name || prescription.medication_name}
-                                          </div>
-                                          {prescription.medications?.strength && (
-                                            <div className="text-xs text-muted-foreground">
-                                              {prescription.medications.strength} • {prescription.medications.dosage_form}
+                                    {patientPrescriptions.flatMap((prescription: any) => {
+                                      // Parse medications if it's a string
+                                      const meds = Array.isArray(prescription.medications) 
+                                        ? prescription.medications 
+                                        : (typeof prescription.medications === 'string' 
+                                            ? JSON.parse(prescription.medications) 
+                                            : [prescription]);
+                                      
+                                      // Create a row for each medication in the prescription
+                                      return meds.map((med: any, index: number) => (
+                                        <TableRow 
+                                          key={`${prescription.id}-${index}`}
+                                          className={loadingStates[prescription.id] ? 'opacity-50' : ''}
+                                        >
+                                          <TableCell>
+                                            <div className="font-medium">
+                                              {med.medication_name || med.name}
                                             </div>
-                                          )}
-                                        </TableCell>
-                                        <TableCell>
-                                          <div className="text-sm">{prescription.dosage}</div>
-                                          <div className="text-xs text-muted-foreground">{prescription.frequency}</div>
-                                        </TableCell>
-                                        <TableCell>
-                                          <div className="font-medium">{prescription.quantity}</div>
-                                          <div className="text-xs text-muted-foreground">{prescription.duration}</div>
-                                        </TableCell>
+                                            {med.instructions && (
+                                              <div className="text-xs text-muted-foreground">
+                                                {med.instructions}
+                                              </div>
+                                            )}
+                                          </TableCell>
+                                          <TableCell>
+                                            <div className="text-sm">{med.dosage}</div>
+                                            <div className="text-xs text-muted-foreground">{med.frequency}</div>
+                                          </TableCell>
+                                          <TableCell>
+                                            <div className="font-medium">{med.quantity}</div>
+                                            <div className="text-xs text-muted-foreground">{med.duration}</div>
+                                          </TableCell>
                                         <TableCell>
                                           {prescription.doctor_profile ? (
                                             <div className="text-sm">{prescription.doctor_profile.full_name}</div>
@@ -1109,10 +1118,24 @@ export default function PharmacyDashboard() {
                                           )}
                                         </TableCell>
                                         <TableCell>
-                                          <div className="text-sm">{format(new Date(prescription.prescribed_date), 'MMM d')}</div>
-                                          <div className="text-xs text-muted-foreground">
-                                            {format(new Date(prescription.prescribed_date), 'h:mm a')}
-                                          </div>
+                                          {(() => {
+                                            const dateValue = prescription.prescribed_date || prescription.prescription_date || prescription.created_at;
+                                            if (!dateValue) return <span className="text-muted-foreground text-sm">-</span>;
+                                            try {
+                                              const date = new Date(dateValue);
+                                              if (isNaN(date.getTime())) return <span className="text-muted-foreground text-sm">-</span>;
+                                              return (
+                                                <>
+                                                  <div className="text-sm">{format(date, 'MMM d')}</div>
+                                                  <div className="text-xs text-muted-foreground">
+                                                    {format(date, 'h:mm a')}
+                                                  </div>
+                                                </>
+                                              );
+                                            } catch (e) {
+                                              return <span className="text-muted-foreground text-sm">-</span>;
+                                            }
+                                          })()}
                                         </TableCell>
                                         <TableCell>
                                           <Badge
@@ -1128,32 +1151,33 @@ export default function PharmacyDashboard() {
                                             {prescription.status.toLowerCase()}
                                           </Badge>
                                         </TableCell>
-                                        <TableCell className="text-right">
-                                          {(prescription.status === 'Active' || prescription.status === 'Pending') ? (
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleOpenDispenseDialog(prescription);
-                                              }}
-                                              disabled={loadingStates[prescription.id]}
-                                            >
-                                              {loadingStates[prescription.id] ? (
-                                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                              ) : (
-                                                <CheckCircle className="h-4 w-4 mr-2" />
-                                              )}
-                                              Dispense
-                                            </Button>
-                                          ) : (
-                                            <span className="text-muted-foreground text-sm">
-                                              Dispensed
-                                            </span>
-                                          )}
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
+                                          <TableCell className="text-right">
+                                            {index === 0 && (prescription.status === 'Active' || prescription.status === 'Pending') ? (
+                                              <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleOpenDispenseDialog(prescription);
+                                                }}
+                                                disabled={loadingStates[prescription.id]}
+                                              >
+                                                {loadingStates[prescription.id] ? (
+                                                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                ) : (
+                                                  <CheckCircle className="h-4 w-4 mr-2" />
+                                                )}
+                                                Dispense All
+                                              </Button>
+                                            ) : index === 0 ? (
+                                              <span className="text-muted-foreground text-sm">
+                                                Dispensed
+                                              </span>
+                                            ) : null}
+                                          </TableCell>
+                                        </TableRow>
+                                      ));
+                                    })}
                                   </TableBody>
                                 </Table>
                               </div>
