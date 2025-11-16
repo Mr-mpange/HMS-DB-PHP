@@ -19,14 +19,17 @@ export default function AdminReports() {
     appointments: [],
     visits: [],
     prescriptions: [],
-    labTests: []
+    labTests: [],
+    invoices: []
   });
   const [stats, setStats] = useState({
     totalPatients: 0,
     totalAppointments: 0,
     totalVisits: 0,
     totalPrescriptions: 0,
-    totalLabTests: 0
+    totalLabTests: 0,
+    totalInvoices: 0,
+    totalRevenue: 0
   });
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState({
@@ -37,7 +40,8 @@ export default function AdminReports() {
     includeAppointments: true,
     includeVisits: true,
     includePrescriptions: true,
-    includeLabTests: true
+    includeLabTests: true,
+    includeInvoices: true
   });
 
   useEffect(() => {
@@ -108,12 +112,13 @@ export default function AdminReports() {
       const endStr = end.toISOString();
 
       // Fetch all data from MySQL API with individual error handling
-      const [patientsRes, appointmentsRes, visitsRes, prescriptionsRes, labTestsRes] = await Promise.allSettled([
+      const [patientsRes, appointmentsRes, visitsRes, prescriptionsRes, labTestsRes, invoicesRes] = await Promise.allSettled([
         api.get(`/patients?from=${startStr}&to=${endStr}`),
         api.get(`/appointments?from=${startStr}&to=${endStr}`),
         api.get(`/visits?from=${startStr}&to=${endStr}`),
         api.get(`/prescriptions?from=${startStr}&to=${endStr}`),
-        api.get(`/lab-tests?from=${startStr}&to=${endStr}`)
+        api.get(`/lab-tests?from=${startStr}&to=${endStr}`),
+        api.get(`/invoices?limit=1000`)
       ]);
 
       const patientsData = patientsRes.status === 'fulfilled' ? (patientsRes.value.data.patients || []) : [];
@@ -121,13 +126,29 @@ export default function AdminReports() {
       const visitsData = visitsRes.status === 'fulfilled' ? (visitsRes.value.data.visits || []) : [];
       const prescriptionsData = prescriptionsRes.status === 'fulfilled' ? (prescriptionsRes.value.data.prescriptions || []) : [];
       const labTestsData = labTestsRes.status === 'fulfilled' ? (labTestsRes.value.data.tests || []) : [];
+      const allInvoices = invoicesRes.status === 'fulfilled' ? (invoicesRes.value.data.invoices || []) : [];
+
+      console.log('Lab Tests Data:', labTestsData);
+      console.log('All Invoices:', allInvoices);
+
+      // Filter invoices by date range
+      const invoicesData = dateFilter === 'all' ? allInvoices : allInvoices.filter((invoice: any) => {
+        const invoiceDate = new Date(invoice.invoice_date || invoice.created_at);
+        return invoiceDate >= start && invoiceDate <= end;
+      });
+
+      console.log('Filtered Invoices:', invoicesData);
+
+      // Calculate total revenue
+      const totalRevenue = invoicesData.reduce((sum: number, inv: any) => sum + (Number(inv.total_amount) || 0), 0);
 
       setReportData({
         patients: patientsData,
         appointments: appointmentsData,
         visits: visitsData,
         prescriptions: prescriptionsData,
-        labTests: labTestsData
+        labTests: labTestsData,
+        invoices: invoicesData
       });
 
       setStats({
@@ -135,7 +156,9 @@ export default function AdminReports() {
         totalAppointments: appointmentsData.length,
         totalVisits: visitsData.length,
         totalPrescriptions: prescriptionsData.length,
-        totalLabTests: labTestsData.length
+        totalLabTests: labTestsData.length,
+        totalInvoices: invoicesData.length,
+        totalRevenue: totalRevenue
       });
 
       // Log any failed requests
@@ -144,6 +167,7 @@ export default function AdminReports() {
       if (visitsRes.status === 'rejected') console.warn('Failed to fetch visits:', visitsRes.reason);
       if (prescriptionsRes.status === 'rejected') console.warn('Failed to fetch prescriptions:', prescriptionsRes.reason);
       if (labTestsRes.status === 'rejected') console.warn('Failed to fetch lab tests:', labTestsRes.reason);
+      if (invoicesRes.status === 'rejected') console.warn('Failed to fetch invoices:', invoicesRes.reason);
 
     } catch (error) {
       console.error('Error fetching report data:', error);
@@ -266,7 +290,7 @@ export default function AdminReports() {
       />
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-5 print:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-7 print:grid-cols-7">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Patients</CardTitle>
@@ -305,6 +329,22 @@ export default function AdminReports() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalLabTests}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Invoices</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalInvoices}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Revenue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">TSh {stats.totalRevenue.toLocaleString()}</div>
           </CardContent>
         </Card>
       </div>
@@ -477,19 +517,91 @@ export default function AdminReports() {
         </Card>
       )}
 
-      {/* Print Styles - Component specific */}
+      {/* Billing/Invoices Table */}
+      {settings.includeInvoices && reportData.invoices.length > 0 && (
+        <Card className="print:break-inside-avoid">
+          <CardHeader>
+            <CardTitle>Billing & Invoices ({stats.totalInvoices})</CardTitle>
+            <CardDescription>Financial transactions for {getFilterLabel().toLowerCase()}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice #</TableHead>
+                  <TableHead>Patient</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Payment Status</TableHead>
+                  <TableHead>Payment Method</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reportData.invoices.map((invoice: any) => (
+                  <TableRow key={invoice.id}>
+                    <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
+                    <TableCell>{invoice.patient?.full_name || 'N/A'}</TableCell>
+                    <TableCell>{format(new Date(invoice.created_at), 'MMM dd, yyyy')}</TableCell>
+                    <TableCell className="font-semibold">TSh {Number(invoice.total_amount).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Badge variant={
+                        invoice.payment_status === 'Paid' ? 'default' :
+                        invoice.payment_status === 'Pending' ? 'secondary' :
+                        'destructive'
+                      }>
+                        {invoice.payment_status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{invoice.payment_method || 'N/A'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="mt-4 pt-4 border-t">
+              <div className="flex justify-end">
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">Total Revenue</p>
+                  <p className="text-2xl font-bold">TSh {stats.totalRevenue.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Print Styles - Only print report content */}
       <style>{`
         @media print {
+          @page {
+            margin: 1cm;
+          }
+          
+          /* Hide everything by default */
           body * {
             visibility: hidden;
           }
           
+          /* Only show the report container and its children */
           .space-y-8, .space-y-8 * {
             visibility: visible;
           }
           
+          /* Make sure print header is visible */
           .print-header, .print-header * {
             visibility: visible !important;
+          }
+          
+          /* Position the report at top of page */
+          .space-y-8 {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+          
+          /* Hide sidebar, navbar, and other dashboard elements */
+          nav, aside, header, footer {
+            display: none !important;
           }
         }
       `}</style>

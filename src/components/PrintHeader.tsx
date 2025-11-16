@@ -1,4 +1,5 @@
 import { format } from 'date-fns';
+import Logo from '@/components/Logo';
 
 interface PrintHeaderProps {
   title?: string;
@@ -16,13 +17,11 @@ export function PrintHeader({
   additionalInfo
 }: PrintHeaderProps) {
   return (
-    <div className="hidden print:block print-header">
+    <div className="hidden print:block print-header" style={{ visibility: 'visible' }}>
       <div className="text-center mb-6 pb-4 border-b-2 border-gray-300">
-        {/* Logo - Using first letter as fallback */}
+        {/* Logo */}
         <div className="flex items-center justify-center mb-3">
-          <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-3xl font-bold shadow-lg">
-            {hospitalName.charAt(0).toUpperCase()}
-          </div>
+          <Logo size="lg" showText={false} />
         </div>
         
         {/* Hospital Name */}
@@ -59,8 +58,22 @@ export function PrintHeader({
       {/* Print-specific styles */}
       <style>{`
         @media print {
-          .print-header, .print-header * {
+          .print-header {
+            display: block !important;
             visibility: visible !important;
+          }
+          .print-header * {
+            visibility: visible !important;
+            display: block !important;
+          }
+          .print-header span,
+          .print-header p,
+          .print-header h1,
+          .print-header h2 {
+            display: inline !important;
+          }
+          .print-header .flex {
+            display: flex !important;
           }
         }
       `}</style>
