@@ -1293,17 +1293,26 @@ export default function AdminDashboard() {
       const { data: appointmentsResponse } = await api.get('/appointments');
       const appointmentsData = appointmentsResponse.appointments || [];
 
+      // Fetch medical services from MySQL API
+      let servicesData = [];
+      try {
+        const { data: servicesResponse } = await api.get('/services');
+        servicesData = servicesResponse.services || [];
+      } catch (error) {
+        console.warn('Could not fetch medical services:', error);
+      }
+
       // Calculate stats from the data we have
       const patientCount = patientsData.length;
       const appointmentCount = appointmentsData.filter((a: any) => 
         a.status !== 'Cancelled' && a.status !== 'Completed'
       ).length;
-      const servicesCount = 0; // Will be populated when services are fetched
+      const servicesCount = servicesData.length;
 
       setPatients(patientsData);
       setUsers(usersWithRoles);
       setAppointments(appointmentsData);
-      setMedicalServices([]); // Will be populated when medical services endpoint is ready
+      setMedicalServices(servicesData);
       setStats({
         totalPatients: patientCount,
         activeAppointments: appointmentCount,
@@ -1392,8 +1401,8 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Medical services management not yet implemented in backend
-      toast.info('Medical services management will be available soon');
+      await api.post('/services', serviceForm);
+      toast.success('Medical service added successfully');
       setServiceDialogOpen(false);
       setServiceForm({
         service_code: '',
@@ -1404,9 +1413,10 @@ export default function AdminDashboard() {
         currency: 'TSh',
         is_active: true
       });
-    } catch (error) {
+      fetchData(); // Refresh data
+    } catch (error: any) {
       console.error('Error adding service:', error);
-      toast.error('Failed to add medical service');
+      toast.error(error.response?.data?.error || 'Failed to add medical service');
     }
   };
 
@@ -1428,8 +1438,8 @@ export default function AdminDashboard() {
     if (!editingService) return;
 
     try {
-      // Medical services management not yet implemented in backend
-      toast.info('Medical services management will be available soon');
+      await api.put(`/services/${editingService.id}`, serviceForm);
+      toast.success('Medical service updated successfully');
       setServiceDialogOpen(false);
       setEditingService(null);
       setServiceForm({
@@ -1441,9 +1451,10 @@ export default function AdminDashboard() {
         currency: 'TSh',
         is_active: true
       });
-    } catch (error) {
+      fetchData(); // Refresh data
+    } catch (error: any) {
       console.error('Error updating service:', error);
-      toast.error('Failed to update medical service');
+      toast.error(error.response?.data?.error || 'Failed to update medical service');
     }
   };
 
@@ -1453,11 +1464,12 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Medical services management not yet implemented in backend
-      toast.info('Medical services management will be available soon');
-    } catch (error) {
+      await api.delete(`/services/${serviceId}`);
+      toast.success('Medical service deleted successfully');
+      fetchData(); // Refresh data
+    } catch (error: any) {
       console.error('Error deleting service:', error);
-      toast.error('Failed to delete medical service');
+      toast.error(error.response?.data?.error || 'Failed to delete medical service');
     }
   };
 
@@ -1709,14 +1721,21 @@ export default function AdminDashboard() {
         return;
       }
       
-      // CSV import not yet implemented in backend
-      toast.info('CSV import will be available soon');
+      // Import services via API
+      const response = await api.post('/services/bulk', { services: rows });
+      
+      toast.success(`Successfully imported ${response.data.results.success} services`);
+      if (response.data.results.failed > 0) {
+        toast.warning(`${response.data.results.failed} services failed to import`);
+      }
+      
       setImportDialogOpen(false);
       setImportFile(null);
       setImportPreview([]);
+      fetchData(); // Refresh data
     } catch (err: any) {
       console.error('CSV import error:', err);
-      setImportError(err?.message || 'Failed to import CSV');
+      setImportError(err.response?.data?.error || err?.message || 'Failed to import CSV');
     } finally {
       setImporting(false);
     }
