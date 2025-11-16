@@ -16,10 +16,10 @@ async function runMigration() {
     console.log('Connected to database');
 
     // Read and execute migration
-    const migrationFile = path.join(__dirname, 'migrations', 'add_department_doctors.sql');
+    const migrationFile = path.join(__dirname, 'migrations', 'add_visit_stage_columns.sql');
     const sql = fs.readFileSync(migrationFile, 'utf8');
     
-    console.log('Running migration: add_department_doctors.sql');
+    console.log('Running migration: add_visit_stage_columns.sql');
     await connection.query(sql);
     console.log('✅ Migration completed successfully');
 
