@@ -1,37 +1,62 @@
 const mysql = require('mysql2/promise');
+require('dotenv').config();
 
 async function checkTables() {
   const connection = await mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'hospital_db'
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 3306,
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME || 'hospital_db'
   });
 
   try {
-    console.log('Checking tables in database...\n');
+    console.log('✅ Connected to database\n');
     
-    const [tables] = await connection.execute(`SHOW TABLES`);
+    // Show all tables
+    const [tables] = await connection.execute('SHOW TABLES');
     
-    console.log('Tables in hospital_db:');
-    tables.forEach(table => {
+    console.log('=== TABLES IN DATABASE ===');
+    tables.forEach((table, idx) => {
       const tableName = Object.values(table)[0];
-      console.log(`- ${tableName}`);
+      console.log(`${idx + 1}. ${tableName}`);
     });
     
-    // Check for visits-related tables
-    const visitTables = tables.filter(table => {
-      const tableName = Object.values(table)[0].toLowerCase();
-      return tableName.includes('visit');
-    });
+    console.log('\n=== CHECKING BILLING RELATED TABLES ===\n');
     
-    console.log(`\n\nVisit-related tables found: ${visitTables.length}`);
-    visitTables.forEach(table => {
-      console.log(`- ${Object.values(table)[0]}`);
-    });
+    // Check invoices table structure
+    try {
+      const [invoicesCols] = await connection.execute('DESCRIBE invoices');
+      console.log('✅ invoices table exists');
+      console.log('Columns:', invoicesCols.map(c => c.Field).join(', '));
+    } catch (e) {
+      console.log('❌ invoices table does not exist');
+    }
+    
+    console.log('');
+    
+    // Check invoice_items table
+    try {
+      const [itemsCols] = await connection.execute('DESCRIBE invoice_items');
+      console.log('✅ invoice_items table exists');
+      console.log('Columns:', itemsCols.map(c => c.Field).join(', '));
+    } catch (e) {
+      console.log('❌ invoice_items table does not exist');
+    }
+    
+    console.log('');
+    
+    // Check payments table
+    try {
+      const [paymentsCols] = await connection.execute('DESCRIBE payments');
+      console.log('✅ payments table exists');
+      console.log('Columns:', paymentsCols.map(c => c.Field).join(', '));
+    } catch (e) {
+      console.log('❌ payments table does not exist');
+    }
     
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error:', error.message);
   } finally {
     await connection.end();
   }

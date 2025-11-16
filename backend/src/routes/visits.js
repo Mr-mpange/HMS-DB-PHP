@@ -8,7 +8,7 @@ router.use(authenticate);
 router.get('/', visitController.getAllVisits);
 router.get('/:id', visitController.getVisit);
 router.post('/', requireRole(['admin', 'receptionist', 'nurse', 'doctor']), visitController.createVisit);
-router.put('/:id', requireRole(['admin', 'receptionist', 'nurse', 'doctor']), visitController.updateVisit);
+router.put('/:id', requireRole(['admin', 'receptionist', 'nurse', 'doctor', 'lab', 'lab_tech', 'pharmacist']), visitController.updateVisit);
 router.delete('/:id', requireRole(['admin']), visitController.deleteVisit);
 
 module.exports = router;

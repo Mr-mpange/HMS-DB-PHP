@@ -1,6 +1,52 @@
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 
+// Get single prescription
+exports.getPrescription = async (req, res) => {
+  try {
+    const [prescriptions] = await db.execute(
+      `SELECT pr.*, 
+              p.full_name as patient_name, p.phone as patient_phone,
+              u.full_name as doctor_name
+       FROM prescriptions pr
+       LEFT JOIN patients p ON pr.patient_id = p.id
+       LEFT JOIN users u ON pr.doctor_id = u.id
+       WHERE pr.id = ?`,
+      [req.params.id]
+    );
+    
+    if (prescriptions.length === 0) {
+      return res.status(404).json({ error: 'Prescription not found' });
+    }
+    
+    const prescription = prescriptions[0];
+    
+    // Parse medications JSON
+    try {
+      prescription.medications = prescription.medications ? JSON.parse(prescription.medications) : [];
+    } catch (e) {
+      console.error('Error parsing medications JSON:', e);
+      prescription.medications = [];
+    }
+    
+    prescription.patient = {
+      id: prescription.patient_id,
+      full_name: prescription.patient_name,
+      phone: prescription.patient_phone
+    };
+    
+    prescription.doctor = {
+      id: prescription.doctor_id,
+      full_name: prescription.doctor_name
+    };
+    
+    res.json({ prescription });
+  } catch (error) {
+    console.error('Get prescription error:', error);
+    res.status(500).json({ error: 'Failed to fetch prescription' });
+  }
+};
+
 exports.getAllPrescriptions = async (req, res) => {
   try {
     const { patient_id, doctor_id, status, limit = 100, offset = 0 } = req.query;
@@ -190,18 +236,42 @@ exports.createPrescription = async (req, res) => {
 
 exports.updatePrescription = async (req, res) => {
   try {
-    const { status, dispensed_date } = req.body;
+    const { status, notes } = req.body;
+    
+    // Build dynamic update query based on provided fields
+    const updates = [];
+    const values = [];
+    
+    if (status !== undefined) {
+      updates.push('status = ?');
+      values.push(status);
+    }
+    
+    if (notes !== undefined) {
+      updates.push('instructions = ?');
+      values.push(notes);
+    }
+    
+    // Check if we have any fields to update
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+    
+    // Always update the updated_at timestamp
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    
+    values.push(req.params.id);
     
     await db.execute(
-      'UPDATE prescriptions SET status = ?, dispensed_date = ? WHERE id = ?',
-      [status, dispensed_date, req.params.id]
+      `UPDATE prescriptions SET ${updates.join(', ')} WHERE id = ?`,
+      values
     );
     
     await db.execute(
       `INSERT INTO activity_logs (id, user_id, action, details) 
        VALUES (?, ?, ?, ?)`,
       [uuidv4(), req.user.id, 'prescription.updated', 
-       JSON.stringify({ prescription_id: req.params.id, status })]
+       JSON.stringify({ prescription_id: req.params.id, status, updated_by: req.user.id })]
     );
     
     if (global.emitUpdate) {
@@ -211,6 +281,11 @@ exports.updatePrescription = async (req, res) => {
     res.json({ message: 'Prescription updated' });
   } catch (error) {
     console.error('Update prescription error:', error);
-    res.status(500).json({ error: 'Failed to update prescription' });
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to update prescription',
+      details: error.message 
+    });
   }
 };

@@ -30,7 +30,17 @@ exports.getAllInvoices = async (req, res) => {
     
     const [invoices] = await db.execute(query, params);
     
-    res.json({ invoices });
+    // Format invoices to include patient object
+    const formattedInvoices = invoices.map(invoice => ({
+      ...invoice,
+      patient: {
+        id: invoice.patient_id,
+        full_name: invoice.patient_name,
+        phone: invoice.patient_phone
+      }
+    }));
+    
+    res.json({ invoices: formattedInvoices });
   } catch (error) {
     console.error('Get invoices error:', error);
     res.status(500).json({ error: 'Failed to fetch invoices' });
@@ -87,50 +97,64 @@ exports.createInvoice = async (req, res) => {
     await connection.beginTransaction();
     
     const { 
-      patient_id, visit_id, items, tax_amount, discount_amount, notes
+      patient_id, visit_id, items, tax_amount, discount_amount, notes,
+      invoice_number, total_amount, paid_amount, balance, status, invoice_date, due_date
     } = req.body;
     
-    if (!patient_id || !items || items.length === 0) {
+    if (!patient_id) {
       await connection.rollback();
-      return res.status(400).json({ error: 'Patient ID and items are required' });
+      return res.status(400).json({ error: 'Patient ID is required' });
     }
     
-    // Calculate total
-    const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-    const total = subtotal + (tax_amount || 0) - (discount_amount || 0);
+    // Calculate total - use provided total_amount or calculate from items
+    let total;
+    if (total_amount !== undefined) {
+      total = total_amount;
+    } else if (items && items.length > 0) {
+      const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
+      total = subtotal + (tax_amount || 0) - (discount_amount || 0);
+    } else {
+      await connection.rollback();
+      return res.status(400).json({ error: 'Either total_amount or items are required' });
+    }
     
-    // Generate invoice number
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-    const invoiceNumber = `INV-${timestamp}-${random}`;
+    const finalBalance = balance !== undefined ? balance : (total - (paid_amount || 0));
+    
+    // Generate or use provided invoice number
+    let finalInvoiceNumber;
+    if (invoice_number) {
+      finalInvoiceNumber = invoice_number;
+    } else {
+      const timestamp = Date.now();
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      finalInvoiceNumber = `INV-${timestamp}-${random}`;
+    }
     
     const invoiceId = uuidv4();
-    const invoiceDate = new Date().toISOString().split('T')[0];
+    const finalInvoiceDate = invoice_date || new Date().toISOString().split('T')[0];
+    const finalDueDate = due_date || null;
+    const finalStatus = status || 'Pending';
+    const finalPaidAmount = paid_amount || 0;
+    const itemsJson = items ? JSON.stringify(items) : null;
+    
+    console.log('Creating invoice:', {
+      invoiceId,
+      finalInvoiceNumber,
+      patient_id,
+      total,
+      finalBalance,
+      itemsCount: items?.length || 0
+    });
     
     // Create invoice
     await connection.execute(
       `INSERT INTO invoices (
-        id, invoice_number, patient_id, visit_id, total_amount,
-        tax_amount, discount_amount, status, invoice_date, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Pending', ?, ?, ?)`,
-      [invoiceId, invoiceNumber, patient_id, visit_id, total, 
-       tax_amount || 0, discount_amount || 0, invoiceDate, notes, req.user.id]
+        id, invoice_number, patient_id, visit_id, invoice_date, due_date,
+        total_amount, paid_amount, balance, status, items, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [invoiceId, finalInvoiceNumber, patient_id, visit_id, finalInvoiceDate, finalDueDate,
+       total, finalPaidAmount, finalBalance, finalStatus, itemsJson, notes]
     );
-    
-    // Create invoice items
-    for (const item of items) {
-      const itemId = uuidv4();
-      const totalPrice = item.quantity * item.unit_price;
-      
-      await connection.execute(
-        `INSERT INTO invoice_items (
-          id, invoice_id, item_type, item_id, description,
-          quantity, unit_price, total_price
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [itemId, invoiceId, item.item_type, item.item_id, item.description,
-         item.quantity, item.unit_price, totalPrice]
-      );
-    }
     
     // Log activity
     await connection.execute(
@@ -152,8 +176,13 @@ exports.createInvoice = async (req, res) => {
     
     res.status(201).json({ 
       message: 'Invoice created successfully',
-      invoiceId,
-      invoiceNumber
+      invoice: {
+        id: invoiceId,
+        invoice_number: finalInvoiceNumber,
+        patient_id,
+        total_amount: total,
+        status: finalStatus
+      }
     });
   } catch (error) {
     await connection.rollback();
@@ -331,5 +360,37 @@ exports.getPayments = async (req, res) => {
   } catch (error) {
     console.error('Get payments error:', error);
     res.status(500).json({ error: 'Failed to fetch payments' });
+  }
+};
+
+
+// Create invoice item
+exports.createInvoiceItem = async (req, res) => {
+  try {
+    const { 
+      invoice_id, item_type, description, quantity, unit_price, total_price
+    } = req.body;
+    
+    if (!invoice_id || !description || !quantity || !unit_price) {
+      return res.status(400).json({ error: 'Invoice ID, description, quantity, and unit_price are required' });
+    }
+    
+    const itemId = uuidv4();
+    const finalTotalPrice = total_price || (quantity * unit_price);
+    
+    await db.execute(
+      `INSERT INTO invoice_items (
+        id, invoice_id, item_type, description, quantity, unit_price, total_price
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [itemId, invoice_id, item_type || 'Medication', description, quantity, unit_price, finalTotalPrice]
+    );
+    
+    res.status(201).json({ 
+      message: 'Invoice item created successfully',
+      itemId
+    });
+  } catch (error) {
+    console.error('Create invoice item error:', error);
+    res.status(500).json({ error: 'Failed to create invoice item' });
   }
 };

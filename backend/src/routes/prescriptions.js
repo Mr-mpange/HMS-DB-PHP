@@ -6,6 +6,7 @@ const prescriptionController = require('../controllers/prescriptionController');
 router.use(authenticate);
 
 router.get('/', prescriptionController.getAllPrescriptions);
+router.get('/:id', prescriptionController.getPrescription);
 router.post('/', requireRole(['doctor']), prescriptionController.createPrescription);
 router.put('/:id', requireRole(['pharmacist', 'doctor']), prescriptionController.updatePrescription);
 

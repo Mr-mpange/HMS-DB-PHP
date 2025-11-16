@@ -24,4 +24,32 @@ router.get('/', authenticate, requireRole(['admin']), async (req, res) => {
   }
 });
 
+// Create activity log (any authenticated user)
+router.post('/', authenticate, async (req, res) => {
+  try {
+    const { action, details, ip_address } = req.body;
+    
+    if (!action) {
+      return res.status(400).json({ error: 'Action is required' });
+    }
+    
+    const { v4: uuidv4 } = require('uuid');
+    const logId = uuidv4();
+    
+    await db.execute(
+      `INSERT INTO activity_logs (id, user_id, action, details, ip_address) 
+       VALUES (?, ?, ?, ?, ?)`,
+      [logId, req.user.id, action, details || null, ip_address || req.ip]
+    );
+    
+    res.status(201).json({ 
+      message: 'Activity logged',
+      logId 
+    });
+  } catch (error) {
+    console.error('Create activity log error:', error);
+    res.status(500).json({ error: 'Failed to log activity' });
+  }
+});
+
 module.exports = router;

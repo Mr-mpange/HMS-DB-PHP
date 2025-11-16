@@ -103,21 +103,40 @@ exports.createMedication = async (req, res) => {
 // Update medication
 exports.updateMedication = async (req, res) => {
   try {
-    const { 
-      name, generic_name, category, dosage_form, strength,
-      unit_price, stock_quantity, reorder_level, manufacturer,
-      expiry_date, description
-    } = req.body;
+    const updates = [];
+    const values = [];
+    
+    const allowedFields = {
+      'name': 'name',
+      'generic_name': 'generic_name',
+      'category': 'category',
+      'dosage_form': 'dosage_form',
+      'strength': 'strength',
+      'unit_price': 'unit_price',
+      'stock_quantity': 'stock_quantity',
+      'quantity_in_stock': 'stock_quantity', // Map frontend field to DB field
+      'reorder_level': 'reorder_level',
+      'manufacturer': 'manufacturer',
+      'expiry_date': 'expiry_date',
+      'description': 'description'
+    };
+    
+    for (const [bodyField, dbField] of Object.entries(allowedFields)) {
+      if (req.body[bodyField] !== undefined) {
+        updates.push(`${dbField} = ?`);
+        values.push(req.body[bodyField]);
+      }
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    
+    values.push(req.params.id);
     
     await db.execute(
-      `UPDATE medications 
-       SET name = ?, generic_name = ?, category = ?, dosage_form = ?,
-           strength = ?, unit_price = ?, stock_quantity = ?, reorder_level = ?,
-           manufacturer = ?, expiry_date = ?, description = ?
-       WHERE id = ?`,
-      [name, generic_name, category, dosage_form, strength, unit_price,
-       stock_quantity, reorder_level, manufacturer, expiry_date, description,
-       req.params.id]
+      `UPDATE medications SET ${updates.join(', ')} WHERE id = ?`,
+      values
     );
     
     // Log activity
@@ -125,7 +144,7 @@ exports.updateMedication = async (req, res) => {
       `INSERT INTO activity_logs (id, user_id, action, details) 
        VALUES (?, ?, ?, ?)`,
       [uuidv4(), req.user.id, 'medication.updated', 
-       JSON.stringify({ medication_id: req.params.id })]
+       JSON.stringify({ medication_id: req.params.id, fields: Object.keys(req.body) })]
     );
     
     // Emit real-time update
@@ -136,7 +155,11 @@ exports.updateMedication = async (req, res) => {
     res.json({ message: 'Medication updated successfully' });
   } catch (error) {
     console.error('Update medication error:', error);
-    res.status(500).json({ error: 'Failed to update medication' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to update medication',
+      details: error.message 
+    });
   }
 };
 
