@@ -136,6 +136,7 @@ exports.createInvoice = async (req, res) => {
     const finalStatus = status || 'Pending';
     const finalPaidAmount = paid_amount || 0;
     const itemsJson = items ? JSON.stringify(items) : null;
+    const finalNotes = notes || null;
     
     console.log('Creating invoice:', {
       invoiceId,
@@ -153,7 +154,7 @@ exports.createInvoice = async (req, res) => {
         total_amount, paid_amount, balance, status, items, notes
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [invoiceId, finalInvoiceNumber, patient_id, visit_id, finalInvoiceDate, finalDueDate,
-       total, finalPaidAmount, finalBalance, finalStatus, itemsJson, notes]
+       total, finalPaidAmount, finalBalance, finalStatus, itemsJson, finalNotes]
     );
     
     // Log activity
@@ -196,16 +197,27 @@ exports.createInvoice = async (req, res) => {
 // Update invoice
 exports.updateInvoice = async (req, res) => {
   try {
-    const { status, notes } = req.body;
+    const updates = [];
+    const values = [];
     
-    const updateData = { status, notes };
-    if (status === 'Paid') {
-      updateData.paid_at = new Date().toISOString();
+    const allowedFields = ['status', 'notes', 'paid_amount', 'balance'];
+    
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        values.push(req.body[field]);
+      }
     }
     
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    
+    values.push(req.params.id);
+    
     await db.execute(
-      'UPDATE invoices SET status = ?, notes = ?, paid_at = ? WHERE id = ?',
-      [status, notes, updateData.paid_at || null, req.params.id]
+      `UPDATE invoices SET ${updates.join(', ')} WHERE id = ?`,
+      values
     );
     
     // Log activity
@@ -213,18 +225,22 @@ exports.updateInvoice = async (req, res) => {
       `INSERT INTO activity_logs (id, user_id, action, details) 
        VALUES (?, ?, ?, ?)`,
       [uuidv4(), req.user.id, 'invoice.updated', 
-       JSON.stringify({ invoice_id: req.params.id, status })]
+       JSON.stringify({ invoice_id: req.params.id, updates: req.body })]
     );
     
     // Emit real-time update
     if (global.emitUpdate) {
-      global.emitUpdate('invoices', 'invoice:updated', { id: req.params.id, status });
+      global.emitUpdate('invoices', 'invoice:updated', { id: req.params.id });
     }
     
     res.json({ message: 'Invoice updated successfully' });
   } catch (error) {
     console.error('Update invoice error:', error);
-    res.status(500).json({ error: 'Failed to update invoice' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ 
+      error: 'Failed to update invoice',
+      details: error.message 
+    });
   }
 };
 
@@ -258,18 +274,22 @@ exports.recordPayment = async (req, res) => {
     const invoice = invoices[0];
     const paymentId = uuidv4();
     
+    // Ensure optional fields are null instead of undefined
+    const finalTransactionId = transaction_id || null;
+    const finalNotes = notes || null;
+    
     // Record payment
     await connection.execute(
       `INSERT INTO payments (
-        id, invoice_id, amount, payment_method, transaction_id,
-        status, notes, received_by
-      ) VALUES (?, ?, ?, ?, ?, 'Completed', ?, ?)`,
-      [paymentId, invoice_id, amount, payment_method, transaction_id, notes, req.user.id]
+        id, invoice_id, amount, payment_method, reference_number,
+        notes, received_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [paymentId, invoice_id, amount, payment_method, finalTransactionId, finalNotes, req.user.id]
     );
     
     // Get total payments for this invoice
     const [paymentSums] = await connection.execute(
-      'SELECT SUM(amount) as total_paid FROM payments WHERE invoice_id = ? AND status = "Completed"',
+      'SELECT SUM(amount) as total_paid FROM payments WHERE invoice_id = ?',
       [invoice_id]
     );
     
@@ -283,9 +303,10 @@ exports.recordPayment = async (req, res) => {
       newStatus = 'Partially Paid';
     }
     
+    // Update invoice status and paid_amount
     await connection.execute(
-      'UPDATE invoices SET status = ?, paid_at = ? WHERE id = ?',
-      [newStatus, newStatus === 'Paid' ? new Date().toISOString() : null, invoice_id]
+      'UPDATE invoices SET status = ?, paid_amount = ?, balance = ? WHERE id = ?',
+      [newStatus, totalPaid, invoice.total_amount - totalPaid, invoice_id]
     );
     
     // Log activity

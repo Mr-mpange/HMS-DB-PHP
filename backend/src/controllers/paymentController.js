@@ -71,14 +71,17 @@ exports.createPayment = async (req, res) => {
     await db.execute(
       `INSERT INTO payments (
         id, invoice_id, amount, payment_method,
-        payment_date, transaction_id, reference_number, notes,
-        status, received_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        payment_date, reference_number, notes, received_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        paymentId, invoice_id || null, amount, payment_method,
+        paymentId, 
+        invoice_id || null, 
+        amount, 
+        payment_method,
         payment_date || new Date().toISOString(),
-        transaction_id || null, reference_number || null, notes || null,
-        'completed', req.user.id
+        transaction_id || reference_number || null, 
+        notes || null, 
+        req.user.id
       ]
     );
     

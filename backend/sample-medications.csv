@@ -1,0 +1,51 @@
+name,generic_name,strength,dosage_form,manufacturer,quantity_in_stock,reorder_level,unit_price,expiry_date
+Paracetamol 500mg,Paracetamol,500mg,Tablet,ABC Pharma,1000,100,500,2026-12-31
+Amoxicillin 500mg,Amoxicillin,500mg,Capsule,XYZ Pharma,800,80,800,2026-06-30
+Ibuprofen 400mg,Ibuprofen,400mg,Tablet,MediCare,1200,120,600,2026-09-30
+Metformin 500mg,Metformin,500mg,Tablet,DiabCare,900,90,700,2026-11-30
+Omeprazole 20mg,Omeprazole,20mg,Capsule,GastroPharma,600,60,1000,2026-08-31
+Amlodipine 5mg,Amlodipine,5mg,Tablet,CardioMed,1000,100,300,2026-10-31
+Atorvastatin 20mg,Atorvastatin,20mg,Tablet,LipidCare,700,70,600,2026-07-31
+Ciprofloxacin 500mg,Ciprofloxacin,500mg,Tablet,AntiBio,500,50,600,2026-05-31
+Azithromycin 250mg,Azithromycin,250mg,Tablet,MacroPharma,400,40,800,2026-04-30
+Doxycycline 100mg,Doxycycline,100mg,Capsule,TetraMed,600,60,400,2026-12-31
+Artemether-Lumefantrine,Artemether-Lumefantrine,20/120mg,Tablet,MalariaFree,800,80,1500,2026-11-30
+Artesunate Injection,Artesunate,60mg,Injection,SevereMalaria,200,20,3000,2026-09-30
+Quinine Injection,Quinine,300mg/ml,Injection,AntiMal,150,15,2500,2026-08-31
+Diazepam 5mg,Diazepam,5mg,Tablet,CalmPharma,400,40,300,2026-10-31
+Lorazepam 2mg,Lorazepam,2mg,Tablet,AnxietyMed,300,30,500,2026-07-31
+Salbutamol Inhaler,Salbutamol,100mcg,Inhaler,BreathEasy,250,25,1200,2026-06-30
+Prednisolone 5mg,Prednisolone,5mg,Tablet,SteroMed,800,80,400,2026-12-31
+Hydrocortisone Cream,Hydrocortisone,1%,Cream,DermaCare,300,30,800,2026-11-30
+Clotrimazole Cream,Clotrimazole,1%,Cream,FungiStop,400,40,500,2026-10-31
+Fluconazole 150mg,Fluconazole,150mg,Capsule,AntiYeast,600,60,800,2026-09-30
+Metronidazole 400mg,Metronidazole,400mg,Tablet,AnaBac,700,70,350,2026-08-31
+Albendazole 400mg,Albendazole,400mg,Tablet,WormFree,500,50,300,2026-12-31
+Mebendazole 100mg,Mebendazole,100mg,Tablet,ParaSite,600,60,250,2026-11-30
+Folic Acid 5mg,Folic Acid,5mg,Tablet,VitaHealth,1200,120,150,2026-10-31
+Ferrous Sulfate 200mg,Ferrous Sulfate,200mg,Tablet,IronPlus,1000,100,200,2026-09-30
+Vitamin B Complex,B Complex,Multi,Tablet,VitaBoost,800,80,400,2026-08-31
+Multivitamin,Multivitamin,Multi,Tablet,HealthPlus,900,90,500,2026-12-31
+Cetirizine 10mg,Cetirizine,10mg,Tablet,AllergyFree,1000,100,150,2026-11-30
+Chlorpheniramine 4mg,Chlorpheniramine,4mg,Tablet,AntiHist,1500,150,100,2026-10-31
+Diclofenac 50mg,Diclofenac,50mg,Tablet,PainRelief,1000,100,250,2026-09-30
+Tramadol 50mg,Tramadol,50mg,Capsule,StrongPain,300,30,600,2026-08-31
+Morphine 10mg,Morphine,10mg,Tablet,SeverePain,100,10,2000,2026-07-31
+Insulin Glargine,Insulin Glargine,100IU/ml,Injection,DiabControl,150,15,5000,2026-06-30
+Insulin Regular,Insulin Regular,100IU/ml,Injection,QuickDiab,200,20,4500,2026-12-31
+Glibenclamide 5mg,Glibenclamide,5mg,Tablet,SugarDown,1000,100,250,2026-11-30
+Enalapril 10mg,Enalapril,10mg,Tablet,BPControl,800,80,400,2026-10-31
+Hydrochlorothiazide 25mg,Hydrochlorothiazide,25mg,Tablet,DiureticMed,1000,100,200,2026-09-30
+Furosemide 40mg,Furosemide,40mg,Tablet,WaterPill,700,70,300,2026-08-31
+Aspirin 75mg,Aspirin,75mg,Tablet,HeartCare,2000,200,100,2026-12-31
+Clopidogrel 75mg,Clopidogrel,75mg,Tablet,AntiClot,500,50,1500,2026-11-30
+Warfarin 5mg,Warfarin,5mg,Tablet,BloodThin,400,40,800,2026-10-31
+Captopril 25mg,Captopril,25mg,Tablet,ACEInhib,600,60,350,2026-09-30
+Nifedipine 10mg,Nifedipine,10mg,Tablet,CalcBlock,500,50,450,2026-08-31
+Propranolol 40mg,Propranolol,40mg,Tablet,BetaBlock,700,70,400,2026-12-31
+Digoxin 0.25mg,Digoxin,0.25mg,Tablet,HeartReg,300,30,600,2026-11-30
+Ranitidine 150mg,Ranitidine,150mg,Tablet,AcidBlock,800,80,350,2026-10-31
+Loperamide 2mg,Loperamide,2mg,Capsule,DiarrStop,600,60,200,2026-09-30
+ORS Sachets,Oral Rehydration Salts,20.5g,Sachet,ReHydrate,2000,200,50,2026-12-31
+Zinc Sulfate 20mg,Zinc Sulfate,20mg,Tablet,ZincPlus,1000,100,100,2026-11-30
+Acyclovir 400mg,Acyclovir,400mg,Tablet,AntiViral,500,50,600,2026-10-31

@@ -270,8 +270,8 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Process each medication in the prescription
-      const medicationsToDispense = prescription.medications;
+      // Use edited medications from dispenseData if available, otherwise use prescription medications
+      const medicationsToDispense = dispenseData?.medications || prescription.medications;
       const medicationDetails = [];
       
       // Fetch all medication details
@@ -280,8 +280,9 @@ export default function PharmacyDashboard() {
           const medicationRes = await api.get(`/pharmacy/medications/${med.medication_id}`);
           medicationDetails.push({
             ...medicationRes.data.medication,
-            prescribed_quantity: med.quantity,
-            prescribed_dosage: med.dosage,
+            // Use dispensed quantities/dosages if available
+            prescribed_quantity: med.dispensed_quantity || med.quantity,
+            prescribed_dosage: med.dispensed_dosage || med.dosage,
             prescribed_frequency: med.frequency,
             prescribed_instructions: med.instructions
           });
@@ -292,12 +293,105 @@ export default function PharmacyDashboard() {
         }
       }
 
-      // Update prescription status with dispense details
+      // STEP 1: Create invoice FIRST (before any other changes)
+      const invoiceNumber = await generateInvoiceNumber();
+      
+      // Build items array for invoice
+      const invoiceItems = medicationDetails.map(medDetail => ({
+        description: `${medDetail.name} - ${medDetail.prescribed_dosage} (${medDetail.prescribed_frequency})`,
+        item_type: 'Medication',
+        medication_id: medDetail.id,
+        quantity: medDetail.prescribed_quantity,
+        unit_price: medDetail.unit_price || 0,
+        total_price: (medDetail.unit_price || 0) * medDetail.prescribed_quantity
+      }));
+      
+      // Calculate total amount
+      const totalInvoiceAmount = invoiceItems.reduce((sum, item) => sum + item.total_price, 0);
+      
+      // Get visit_id for the invoice
+      let visitId = null;
+      try {
+        const visitsRes = await api.get(`/visits?patient_id=${patientId}&overall_status=Active&limit=1`);
+        if (visitsRes.data.visits && visitsRes.data.visits.length > 0) {
+          visitId = visitsRes.data.visits[0].id;
+        }
+      } catch (error) {
+        console.warn('Could not fetch visit_id for invoice');
+      }
+
+      let newInvoice;
+      try {
+        console.log('Creating invoice with data:', {
+          invoice_number: invoiceNumber,
+          patient_id: patientId,
+          visit_id: visitId,
+          total_amount: totalInvoiceAmount,
+          items_count: invoiceItems.length,
+          items: invoiceItems
+        });
+
+        const invoiceRes = await api.post('/billing/invoices', {
+          invoice_number: invoiceNumber,
+          patient_id: patientId,
+          visit_id: visitId,
+          total_amount: totalInvoiceAmount,
+          paid_amount: 0,
+          balance: totalInvoiceAmount,
+          status: 'Pending',
+          invoice_date: new Date().toISOString().split('T')[0],
+          items: invoiceItems,
+          notes: `Pharmacy dispensing - ${medicationDetails.length} medication(s)${dispenseData?.notes ? '. ' + dispenseData.notes : ''}`
+        });
+        newInvoice = invoiceRes.data.invoice;
+        console.log('✅ Invoice created:', newInvoice);
+      } catch (error: any) {
+        console.error('❌ Error creating invoice:', error);
+        console.error('Error response data:', error.response?.data);
+        console.error('Error response status:', error.response?.status);
+        const errorMsg = error.response?.data?.details || error.response?.data?.error || error.message;
+        toast.error(`Failed to create invoice: ${errorMsg}`);
+        await logActivity('pharmacy.dispense.error', { 
+          error: 'Failed to create invoice',
+          details: errorMsg,
+          response: error.response?.data
+        });
+        return; // STOP HERE if invoice fails
+      }
+
+      // STEP 2: Update medication stock
+      for (const medDetail of medicationDetails) {
+        const dispensedQuantity = medDetail.prescribed_quantity;
+        const newStock = medDetail.quantity_in_stock - dispensedQuantity;
+        
+        if (newStock < 0) {
+          toast.error(`Insufficient stock for ${medDetail.name}`);
+          await logActivity('pharmacy.dispense.error', { 
+            error: 'Insufficient stock',
+            medication_id: medDetail.id,
+            medication_name: medDetail.name,
+            required: dispensedQuantity,
+            available: medDetail.quantity_in_stock
+          });
+          return;
+        }
+        
+        try {
+          await api.put(`/pharmacy/medications/${medDetail.id}`, {
+            quantity_in_stock: newStock
+          });
+        } catch (error: any) {
+          console.error('Error updating stock:', error);
+          toast.error(`Failed to update stock for ${medDetail.name}: ${error.message}`);
+          return;
+        }
+      }
+
+      // STEP 3: Update prescription status
       const updateData: any = {
         status: 'Completed'
       };
 
-      // Add notes if provided in dispenseData
       if (dispenseData?.notes) {
         updateData.notes = dispenseData.notes;
       }
@@ -315,9 +409,7 @@ export default function PharmacyDashboard() {
         return;
       }
 
-
-
-      // Check if this is the last pending prescription for this patient
+      // STEP 4: Check if this is the last pending prescription for this patient
       let prescriptionsRes;
       try {
         prescriptionsRes = await api.get(`/prescriptions?patient_id=${patientId}`);
@@ -378,80 +470,7 @@ export default function PharmacyDashboard() {
         console.log(`Not moving to billing yet - ${pendingCount} prescriptions still pending`);
       }
 
-      // Update medication stock for each medication
-      for (const medDetail of medicationDetails) {
-        const dispensedQuantity = medDetail.prescribed_quantity;
-        const newStock = medDetail.quantity_in_stock - dispensedQuantity;
-        
-        if (newStock < 0) {
-          toast.error(`Insufficient stock for ${medDetail.name}`);
-          await logActivity('pharmacy.dispense.error', { 
-            error: 'Insufficient stock',
-            medication_id: medDetail.id,
-            medication_name: medDetail.name,
-            required: dispensedQuantity,
-            available: medDetail.quantity_in_stock
-          });
-          return;
-        }
-        
-        try {
-          await api.put(`/pharmacy/medications/${medDetail.id}`, {
-            quantity_in_stock: newStock,
-            updated_at: new Date().toISOString()
-          });
-        } catch (error: any) {
-          console.error('Error updating stock:', error);
-          toast.error(`Failed to update stock for ${medDetail.name}: ${error.message}`);
-          return;
-        }
-      }
-
-
-
-      // Create invoice for billing with all medications
-      const invoiceNumber = await generateInvoiceNumber();
-      
-      // Build items array for invoice
-      const invoiceItems = medicationDetails.map(medDetail => ({
-        description: `${medDetail.name} - ${medDetail.prescribed_dosage} (${medDetail.prescribed_frequency})`,
-        item_type: 'Medication',
-        medication_id: medDetail.id,
-        quantity: medDetail.prescribed_quantity,
-        unit_price: medDetail.unit_price || 0,
-        total_price: (medDetail.unit_price || 0) * medDetail.prescribed_quantity
-      }));
-      
-      // Calculate total amount
-      const totalInvoiceAmount = invoiceItems.reduce((sum, item) => sum + item.total_price, 0);
-      
-      let newInvoice;
-      try {
-        const invoiceRes = await api.post('/billing/invoices', {
-          invoice_number: invoiceNumber,
-          patient_id: patientId,
-          total_amount: totalInvoiceAmount,
-          paid_amount: 0,
-          balance: totalInvoiceAmount,
-          status: 'Pending',
-          invoice_date: new Date().toISOString().split('T')[0],
-          items: invoiceItems,
-          notes: `Pharmacy dispensing - ${medicationDetails.length} medication(s)`
-        });
-        newInvoice = invoiceRes.data.invoice;
-        console.log('✅ Invoice created:', newInvoice);
-      } catch (error: any) {
-        console.error('Error creating invoice:', error);
-        console.error('Error response:', error.response?.data);
-        toast.error(`Failed to create invoice: ${error.response?.data?.error || error.message}`);
-        await logActivity('pharmacy.dispense.error', { 
-          error: 'Failed to create invoice',
-          details: error.message
-        });
-        return;
-      }
-
-      // Log successful dispense
+      // STEP 5: Log successful dispense
       await logActivity('pharmacy.dispense.success', {
         user_id: user.id,
         prescription_id: prescriptionId,
@@ -1502,7 +1521,7 @@ export default function PharmacyDashboard() {
             open={dispenseDialogOpen}
             onOpenChange={setDispenseDialogOpen}
             prescription={selectedPrescriptionForDispense}
-            medication={medications.find(m => m.id === selectedPrescriptionForDispense.medication_id)}
+            medications={medications}
             onDispense={handleDispenseWithDetails}
             loading={loadingStates[selectedPrescriptionForDispense.id]}
           />
