@@ -1070,9 +1070,12 @@ export default function AdminDashboard() {
       // Fetch settings from backend
       try {
         const settingsRes = await api.get('/settings');
-        const settings = settingsRes.data.settings || [];
         
-        // Convert array of settings to object with defaults
+        // Backend returns both formats: settings (object) and settingsArray (array)
+        const settingsData = settingsRes.data.settings || {};
+        const settingsArray = settingsRes.data.settingsArray || [];
+        
+        // Use settingsArray if available, otherwise use settings object
         const settingsObj: any = {
           consultation_fee: '50000',
           currency: 'TSh',
@@ -1084,11 +1087,18 @@ export default function AdminDashboard() {
           enable_appointment_fees: 'true'
         };
         
-        settings.forEach((setting: any) => {
-          settingsObj[setting.key] = setting.value;
-        });
+        // If we have an array, convert it
+        if (settingsArray.length > 0) {
+          settingsArray.forEach((setting: any) => {
+            settingsObj[setting.key] = setting.value;
+          });
+        } else if (Object.keys(settingsData).length > 0) {
+          // If we have an object, use it directly
+          Object.assign(settingsObj, settingsData);
+        }
         
         setSystemSettings(settingsObj);
+        console.log('✓ Settings loaded:', settingsObj);
       } catch (error) {
         console.warn('Settings not found, using defaults');
         // Use defaults if settings don't exist yet

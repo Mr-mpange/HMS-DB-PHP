@@ -5,7 +5,7 @@ const db = require('../config/database');
 exports.getAllSettings = async (req, res) => {
   try {
     const [settings] = await db.execute(
-      'SELECT * FROM system_settings ORDER BY key ASC'
+      'SELECT * FROM system_settings ORDER BY `key` ASC'
     );
     
     // Convert to key-value object

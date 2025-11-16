@@ -4,6 +4,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
 const { Server } = require('socket.io');
+const cron = require('node-cron');
+const db = require('./config/database');
 require('dotenv').config();
 
 const app = express();
@@ -174,3 +176,42 @@ process.on('SIGTERM', () => {
 });
 
 module.exports = { app, io };
+
+
+// Scheduled Tasks
+// Update patient status every hour (mark as Inactive if no visit in 24 hours)
+cron.schedule('0 * * * *', async () => {
+  console.log('Running scheduled task: Update patient status...');
+  try {
+    // Mark patients as Inactive if no visit in last 24 hours
+    const [result] = await db.execute(`
+      UPDATE patients p
+      LEFT JOIN (
+        SELECT patient_id, MAX(created_at) as last_visit
+        FROM patient_visits
+        GROUP BY patient_id
+      ) v ON p.id = v.patient_id
+      SET p.status = 'Inactive'
+      WHERE p.status = 'Active'
+        AND (v.last_visit IS NULL OR v.last_visit < DATE_SUB(NOW(), INTERVAL 24 HOUR))
+    `);
+    
+    // Mark patients as Active if they have a visit in last 24 hours
+    const [result2] = await db.execute(`
+      UPDATE patients p
+      INNER JOIN (
+        SELECT patient_id, MAX(created_at) as last_visit
+        FROM patient_visits
+        GROUP BY patient_id
+      ) v ON p.id = v.patient_id
+      SET p.status = 'Active'
+      WHERE v.last_visit >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+    `);
+    
+    console.log(`✓ Patient status updated: ${result.affectedRows} marked Inactive, ${result2.affectedRows} marked Active`);
+  } catch (error) {
+    console.error('Error updating patient status:', error);
+  }
+});
+
+console.log('✓ Scheduled tasks initialized (Patient status updates every hour)');
