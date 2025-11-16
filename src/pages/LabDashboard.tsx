@@ -97,7 +97,7 @@ export default function LabDashboard() {
     if (pendingTests.length > 0) {
       await Promise.all(
         pendingTests.map(test => 
-          api.put(`/lab-tests/${test.id}`, { status: 'In Progress' })
+          api.put(`/labs/${test.id}`, { status: 'In Progress' })
         )
       );
       toast.info(`Started ${pendingTests.length} test(s)`);
@@ -189,7 +189,7 @@ export default function LabDashboard() {
 
   const handleUpdateStatus = async (testId: string, newStatus: string, patientId?: string) => {
     try {
-      await api.put(`/lab-tests/${testId}`, {
+      await api.put(`/labs/${testId}`, {
         status: newStatus,
         completed_date: newStatus === 'Completed' ? new Date().toISOString() : null
       });

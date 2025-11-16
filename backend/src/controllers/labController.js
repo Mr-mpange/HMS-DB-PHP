@@ -168,18 +168,33 @@ exports.createLabTest = async (req, res) => {
 // Update lab test status
 exports.updateLabTest = async (req, res) => {
   try {
-    const { status, notes } = req.body;
+    const { status, instructions, sample_collected } = req.body;
     
-    const updateData = { status };
-    if (status === 'Completed') {
-      updateData.completed_date = new Date().toISOString();
+    // Build update query dynamically based on provided fields
+    let updateFields = ['status = ?'];
+    let updateValues = [status];
+    
+    if (instructions !== undefined) {
+      updateFields.push('instructions = ?');
+      updateValues.push(instructions);
     }
+    
+    if (sample_collected !== undefined) {
+      updateFields.push('sample_collected = ?');
+      updateValues.push(sample_collected ? 1 : 0);
+    }
+    
+    // Add updated_at timestamp
+    updateFields.push('updated_at = NOW()');
+    
+    // Add the id parameter at the end
+    updateValues.push(req.params.id);
     
     await db.execute(
       `UPDATE lab_tests 
-       SET status = ?, notes = ?, completed_date = ?
+       SET ${updateFields.join(', ')}
        WHERE id = ?`,
-      [status, notes, updateData.completed_date || null, req.params.id]
+      updateValues
     );
     
     // Log activity

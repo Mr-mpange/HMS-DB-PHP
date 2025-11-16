@@ -79,6 +79,7 @@ app.use('/api/patients', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/labs', labRoutes);
+app.use('/api/lab-tests', labRoutes); // Alias for backward compatibility
 app.use('/api/pharmacy', pharmacyRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/visits', visitRoutes);
