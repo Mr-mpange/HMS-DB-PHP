@@ -108,17 +108,23 @@ export default function PharmacyDashboard() {
         medicationsRes,
         patientsRes,
         doctorsRes
-      ] = await Promise.all([
-        api.get('/pharmacy/prescriptions?limit=50'),
+      ] = await Promise.allSettled([
+        api.get('/prescriptions?limit=50'),
         api.get('/pharmacy/medications'),
         api.get('/patients?fields=id,full_name,date_of_birth'),
         api.get('/users/profiles?role=doctor')
       ]);
       
-      const prescriptionsData = prescriptionsRes.data.prescriptions || [];
-      const medicationsData = medicationsRes.data.medications || [];
-      const patientsData = patientsRes.data.patients || [];
-      const doctorsData = doctorsRes.data.profiles || [];
+      const prescriptionsData = prescriptionsRes.status === 'fulfilled' ? (prescriptionsRes.value.data.prescriptions || []) : [];
+      const medicationsData = medicationsRes.status === 'fulfilled' ? (medicationsRes.value.data.medications || []) : [];
+      const patientsData = patientsRes.status === 'fulfilled' ? (patientsRes.value.data.patients || []) : [];
+      const doctorsData = doctorsRes.status === 'fulfilled' ? (doctorsRes.value.data.profiles || []) : [];
+      
+      // Log any failed requests
+      if (prescriptionsRes.status === 'rejected') console.warn('Failed to fetch prescriptions:', prescriptionsRes.reason);
+      if (medicationsRes.status === 'rejected') console.warn('Failed to fetch medications:', medicationsRes.reason);
+      if (patientsRes.status === 'rejected') console.warn('Failed to fetch patients:', patientsRes.reason);
+      if (doctorsRes.status === 'rejected') console.warn('Failed to fetch doctors:', doctorsRes.reason);
       
       // Combine the data manually
       const combinedPrescriptions: PrescriptionWithRelations[] = (prescriptionsData || []).map((prescription: any) => ({
@@ -226,7 +232,7 @@ export default function PharmacyDashboard() {
       // First, get the prescription details
       let prescriptionRes;
       try {
-        prescriptionRes = await api.get(`/pharmacy/prescriptions/${prescriptionId}`);
+        prescriptionRes = await api.get(`/prescriptions/${prescriptionId}`);
       } catch (error: any) {
         console.error('Error fetching prescription:', error);
         await logActivity('pharmacy.dispense.error', { 
@@ -298,7 +304,7 @@ export default function PharmacyDashboard() {
       // Check if this is the last pending prescription for this patient
       let prescriptionsRes;
       try {
-        prescriptionsRes = await api.get(`/pharmacy/prescriptions?patient_id=${patientId}`);
+        prescriptionsRes = await api.get(`/prescriptions?patient_id=${patientId}`);
       } catch (error: any) {
         console.error('Error fetching patient prescriptions:', error);
         prescriptionsRes = { data: { prescriptions: [] } };

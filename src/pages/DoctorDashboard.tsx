@@ -488,24 +488,24 @@ export default function DoctorDashboard() {
   // Fetch available lab tests
   const fetchAvailableLabTests = useCallback(async () => {
     try {
-      const response = await api.get('/lab-tests');
-      if (response.status !== 200) throw new Error('Failed to fetch lab tests');
-      setAvailableLabTests(response.data.tests);
-    } catch (error) {
+      const response = await api.get('/labs');
+      if (response.data.error) throw new Error(response.data.error);
+      setAvailableLabTests(response.data.labTests || []);
+    } catch (error: any) {
       console.error('Error fetching lab tests:', error);
-      toast.error('Failed to load lab tests. Please try again later.');
+      // Don't show error toast - just log it
     }
   }, []);
 
   // Fetch available medications
   const fetchAvailableMedications = useCallback(async () => {
     try {
-      const response = await api.get('/medications');
-      if (response.status !== 200) throw new Error('Failed to fetch medications');
-      setAvailableMedications(response.data.medications);
-    } catch (error) {
+      const response = await api.get('/pharmacy/medications');
+      if (response.data.error) throw new Error(response.data.error);
+      setAvailableMedications(response.data.medications || []);
+    } catch (error: any) {
       console.error('Error fetching medications:', error);
-      toast.error('Failed to load medications. Please try again later.');
+      // Don't show error toast - just log it
     }
   }, []);
 
@@ -555,16 +555,8 @@ export default function DoctorDashboard() {
     }
 
     try {
-      const response = await api.post('/lab-tests/order', {
-        appointment_id: selectedVisit.id,
-        tests: labTestForm.selectedTests,
-        priority: labTestForm.priority,
-        notes: labTestForm.notes
-      });
-
-      if (response.status !== 200) throw new Error('Failed to order lab tests');
-
-      toast.success('Lab tests ordered successfully');
+      // This function is not currently used - submitLabTestOrder is the active function
+      toast.info('This feature is being updated. Please use the main lab test order button.');
       setShowLabTestDialog(false);
     } catch (error) {
       console.error('Error ordering lab tests:', error);
@@ -1067,21 +1059,33 @@ export default function DoctorDashboard() {
 
       console.log('Ordering lab tests:', labTests);
 
-      // Insert lab tests
-      const response = await api.post('/lab-tests', { labTests });
-
-      if (response.status !== 201) {
-        console.error('Lab test insert error:', response.statusText);
-        // Provide more specific error messages
-        throw new Error(`Database error: ${response.statusText}`);
+      // Insert lab tests one by one
+      const createdTests = [];
+      for (const test of labTests) {
+        try {
+          const response = await api.post('/labs', {
+            patient_id: test.patient_id,
+            doctor_id: user.id,
+            test_name: test.test_name,
+            test_type: test.test_type,
+            ordered_date: test.ordered_date,
+            status: 'Ordered',
+            priority: test.priority,
+            instructions: test.notes
+          });
+          
+          if (response.data.error) {
+            throw new Error(response.data.error);
+          }
+          
+          createdTests.push(response.data);
+        } catch (testError: any) {
+          console.error('Error creating lab test:', testError);
+          throw new Error(`Failed to create test "${test.test_name}": ${testError.message}`);
+        }
       }
 
-      const data = response.data;
-      if (!data || !data.labTests || data.labTests.length === 0) {
-        throw new Error('No lab tests were created. Please try again.');
-      }
-
-      console.log('Lab tests created successfully:', data);
+      console.log('Lab tests created successfully:', createdTests.length);
 
       // Update patient visit to lab stage
       const visitResponse = await api.put(`/visits/${selectedVisit.id}`, {

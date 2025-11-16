@@ -42,7 +42,21 @@ exports.getAllLabTests = async (req, res) => {
     
     const [labTests] = await db.execute(query, params);
     
-    res.json({ labTests });
+    // Transform to include nested patient and doctor objects
+    const labTestsWithRelations = labTests.map(test => ({
+      ...test,
+      patient: test.patient_name ? {
+        id: test.patient_id,
+        full_name: test.patient_name,
+        phone: test.patient_phone
+      } : null,
+      doctor: test.doctor_name ? {
+        id: test.doctor_id,
+        full_name: test.doctor_name
+      } : null
+    }));
+    
+    res.json({ labTests: labTestsWithRelations });
   } catch (error) {
     console.error('Get lab tests error:', error);
     res.status(500).json({ error: 'Failed to fetch lab tests' });

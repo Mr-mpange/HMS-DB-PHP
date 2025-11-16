@@ -36,8 +36,8 @@ export default function LabDashboard() {
 
   const fetchData = async () => {
     try {
-      const { data } = await api.get('/lab-tests?limit=50');
-      const testsData = data.tests || [];
+      const { data } = await api.get('/labs?limit=50');
+      const testsData = data.labTests || data.tests || [];
 
       // Remove duplicates based on ID
       const uniqueTests = testsData?.filter((test, index, self) =>
