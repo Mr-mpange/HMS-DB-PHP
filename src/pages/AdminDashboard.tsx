@@ -1067,18 +1067,43 @@ export default function AdminDashboard() {
       const { data } = await api.get('/departments');
       setDepartments(data.departments || []);
       
-      // Settings endpoints not yet implemented in MySQL backend
-      // For now, use default settings
-      setSystemSettings({
-        consultation_fee: '50000',
-        currency: 'TSh',
-        hospital_name: 'Hospital Management System',
-        hospital_address: '',
-        hospital_phone: '',
-        hospital_email: '',
-        report_header: '',
-        enable_appointment_fees: 'true'
-      });
+      // Fetch settings from backend
+      try {
+        const settingsRes = await api.get('/settings');
+        const settings = settingsRes.data.settings || [];
+        
+        // Convert array of settings to object with defaults
+        const settingsObj: any = {
+          consultation_fee: '50000',
+          currency: 'TSh',
+          hospital_name: 'Hospital Management System',
+          hospital_address: '',
+          hospital_phone: '',
+          hospital_email: '',
+          report_header: '',
+          enable_appointment_fees: 'true'
+        };
+        
+        settings.forEach((setting: any) => {
+          settingsObj[setting.key] = setting.value;
+        });
+        
+        setSystemSettings(settingsObj);
+      } catch (error) {
+        console.warn('Settings not found, using defaults');
+        // Use defaults if settings don't exist yet
+        setSystemSettings({
+          consultation_fee: '50000',
+          currency: 'TSh',
+          hospital_name: 'Hospital Management System',
+          hospital_address: '',
+          hospital_phone: '',
+          hospital_email: '',
+          report_header: '',
+          enable_appointment_fees: 'true'
+        });
+      }
+      
       setDepartmentFees({});
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -1089,10 +1114,29 @@ export default function AdminDashboard() {
   const saveSettings = async () => {
     setSavingSettings(true);
     try {
-      // Settings management not yet implemented in backend
-      toast.info('Settings management will be available soon');
+      // Save each setting to the backend
+      const settingsToSave = Object.keys(systemSettings).map(key => ({
+        key,
+        value: systemSettings[key]
+      }));
+
+      for (const setting of settingsToSave) {
+        try {
+          await api.put(`/settings/${setting.key}`, { value: setting.value });
+        } catch (error: any) {
+          // If setting doesn't exist, create it
+          if (error.response?.status === 404) {
+            await api.post('/settings', { key: setting.key, value: setting.value });
+          } else {
+            throw error;
+          }
+        }
+      }
+
+      toast.success('Settings saved successfully');
       setShowSettingsDialog(false);
       await logActivity('settings.update', { settings: systemSettings });
+      fetchSettings(); // Reload settings
     } catch (error) {
       console.error('Error saving settings:', error);
       toast.error('Failed to save settings');
