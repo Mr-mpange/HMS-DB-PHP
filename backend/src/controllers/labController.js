@@ -103,25 +103,44 @@ exports.getLabTest = async (req, res) => {
 // Create lab test order
 exports.createLabTest = async (req, res) => {
   try {
+    console.log('Creating lab test with body:', req.body);
+    
     const { 
       patient_id, doctor_id, visit_id, test_name, test_type,
-      priority, notes
+      priority, instructions, notes, ordered_date, status
     } = req.body;
     
     if (!patient_id || !test_name) {
+      console.log('Missing required fields:', { patient_id, test_name });
       return res.status(400).json({ error: 'Patient ID and test name are required' });
     }
     
     const labTestId = uuidv4();
+    const instructionsText = instructions || notes || null;
+    const testPriority = priority || 'Routine';
+    const testStatus = status || 'Ordered';
+    const orderDate = ordered_date || new Date();
+    
+    console.log('Inserting lab test:', {
+      labTestId,
+      patient_id,
+      doctor_id,
+      test_name,
+      test_type,
+      testPriority,
+      testStatus
+    });
     
     await db.execute(
       `INSERT INTO lab_tests (
         id, patient_id, doctor_id, visit_id, test_name, test_type,
-        priority, notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending')`,
-      [labTestId, patient_id, doctor_id, visit_id, test_name, test_type,
-       priority || 'Normal', notes]
+        ordered_date, priority, instructions, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [labTestId, patient_id, doctor_id || null, visit_id || null, 
+       test_name, test_type || null, orderDate, testPriority, instructionsText, testStatus]
     );
+    
+    console.log('Lab test created successfully:', labTestId);
     
     // Log activity
     await db.execute(

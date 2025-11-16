@@ -912,9 +912,9 @@ export default function DoctorDashboard() {
     
     // Fetch available lab tests from catalog, or use predefined list
     try {
-      const response = await api.get('/lab-tests');
+      const response = await api.get('/labs');
       
-      if (response.status !== 200) {
+      if (response.data.error) {
         console.warn('Lab test catalog not found, using predefined list');
         // Use predefined list if catalog doesn't exist
         const predefinedTests = [
@@ -1396,18 +1396,18 @@ export default function DoctorDashboard() {
           try {
             console.log('Fetching lab tests for patient:', visit.patient?.id, visit.patient?.full_name);
 
-            const labTestsResponse = await api.get(`/lab-tests?patient_id=${visit.patient?.id}`);
+            const labTestsResponse = await api.get(`/labs?patient_id=${visit.patient?.id}`);
             
-            if (labTestsResponse.status === 200) {
+            if (!labTestsResponse.data.error) {
               labTests = labTestsResponse.data.labTests || [];
             }
 
             console.log('Lab tests found for patient:', visit.patient?.id, labTests.length);
 
             // Also get any completed lab tests regardless of completion date
-            const completedTestsResponse = await api.get(`/lab-tests?patient_id=${visit.patient?.id}&status=Completed`);
+            const completedTestsResponse = await api.get(`/labs?patient_id=${visit.patient?.id}&status=Completed`);
             
-            if (completedTestsResponse.status === 200) {
+            if (!completedTestsResponse.data.error) {
               allCompletedTests = completedTestsResponse.data.labTests || [];
             }
             

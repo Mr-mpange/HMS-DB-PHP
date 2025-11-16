@@ -367,10 +367,17 @@ exports.getProfiles = async (req, res) => {
     const { role, search, limit = 100, offset = 0 } = req.query;
     
     let query = `
-      SELECT DISTINCT p.*, u.email, ur.role
-      FROM profiles p
-      INNER JOIN users u ON p.user_id = u.id
-      LEFT JOIN user_roles ur ON u.id = ur.user_id
+      SELECT DISTINCT 
+        u.id as user_id,
+        p.id as profile_id,
+        p.full_name,
+        p.phone,
+        p.avatar_url,
+        u.email,
+        ur.role
+      FROM users u
+      INNER JOIN user_roles ur ON u.id = ur.user_id
+      LEFT JOIN profiles p ON u.id = p.user_id
       WHERE u.is_active = TRUE
     `;
     let params = [];
@@ -391,7 +398,19 @@ exports.getProfiles = async (req, res) => {
     
     const [profiles] = await db.execute(query, params);
     
-    res.json({ profiles });
+    // Transform to ensure user_id is the actual user ID
+    const transformedProfiles = profiles.map(p => ({
+      id: p.user_id, // Use user ID as the main ID
+      user_id: p.user_id,
+      profile_id: p.profile_id,
+      full_name: p.full_name,
+      phone: p.phone,
+      avatar_url: p.avatar_url,
+      email: p.email,
+      role: p.role
+    }));
+    
+    res.json({ profiles: transformedProfiles });
   } catch (error) {
     console.error('Get profiles error:', error);
     res.status(500).json({ error: 'Failed to fetch profiles' });
