@@ -61,7 +61,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const { data } = await Promise.race([
               api.get('/auth/me'),
               new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Request timeout')), 5000)
+                setTimeout(() => reject(new Error('Request timeout - backend not responding')), 3000)
               )
             ]) as any;
             
@@ -94,9 +94,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               localStorage.removeItem('auth_token');
               setRolesLoaded(true);
             }
-          } catch (error) {
+          } catch (error: any) {
             console.error('Session check failed:', error);
+            console.error('Error message:', error.message);
             localStorage.removeItem('auth_token');
+            setUser(null);
+            setSession(null);
+            setRoles([]);
+            setPrimaryRole(null);
             setRolesLoaded(true);
           }
         } else {

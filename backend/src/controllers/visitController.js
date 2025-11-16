@@ -4,7 +4,7 @@ const db = require('../config/database');
 // Get all visits
 exports.getAllVisits = async (req, res) => {
   try {
-    const { patient_id, status, current_stage, limit = 100, offset = 0 } = req.query;
+    const { patient_id, status, current_stage, from, to, limit = 100, offset = 0 } = req.query;
     
     let query = `
       SELECT v.*, 
@@ -29,6 +29,17 @@ exports.getAllVisits = async (req, res) => {
     if (current_stage) {
       query += ' AND v.current_stage = ?';
       params.push(current_stage);
+    }
+    
+    // Date range filtering
+    if (from) {
+      query += ' AND v.visit_date >= ?';
+      params.push(from);
+    }
+    
+    if (to) {
+      query += ' AND v.visit_date <= ?';
+      params.push(to);
     }
     
     query += ' ORDER BY v.created_at DESC LIMIT ? OFFSET ?';

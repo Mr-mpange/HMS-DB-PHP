@@ -1,0 +1,194 @@
+/* Print Styles - Global print formatting */
+
+@media print {
+  /* Page setup */
+  @page {
+    margin: 1.5cm;
+    size: A4 portrait;
+  }
+  
+  /* Hide non-printable elements */
+  .print\:hidden,
+  .no-print {
+    display: none !important;
+    visibility: hidden !important;
+  }
+  
+  /* Show print-only elements */
+  .print\:block {
+    display: block !important;
+    visibility: visible !important;
+  }
+  
+  .print\:inline-block {
+    display: inline-block !important;
+    visibility: visible !important;
+  }
+  
+  /* Print header styling */
+  .print-header {
+    display: block !important;
+    visibility: visible !important;
+  }
+  
+  .print-header * {
+    visibility: visible !important;
+  }
+  
+  /* Prevent page breaks */
+  .print\:break-inside-avoid,
+  .no-page-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  
+  /* Table handling */
+  table {
+    page-break-inside: auto;
+    width: 100%;
+  }
+  
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  
+  thead {
+    display: table-header-group;
+  }
+  
+  tfoot {
+    display: table-footer-group;
+  }
+  
+  /* Remove shadows and unnecessary styling */
+  .shadow,
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl {
+    box-shadow: none !important;
+  }
+  
+  /* Ensure borders are visible */
+  .border,
+  .border-t,
+  .border-b,
+  .border-l,
+  .border-r {
+    border-color: #000 !important;
+  }
+  
+  /* Text colors for print */
+  body,
+  h1, h2, h3, h4, h5, h6,
+  p, span, div, td, th,
+  .text-gray-900,
+  .text-gray-800,
+  .text-gray-700 {
+    color: #000 !important;
+  }
+  
+  .text-gray-600,
+  .text-gray-500,
+  .text-muted-foreground {
+    color: #4b5563 !important;
+  }
+  
+  /* Background colors */
+  .bg-white {
+    background-color: #fff !important;
+  }
+  
+  /* Badge colors for print */
+  .bg-primary,
+  .bg-blue-600,
+  .bg-blue-500 {
+    background-color: #3b82f6 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .bg-secondary,
+  .bg-gray-600,
+  .bg-gray-500 {
+    background-color: #6b7280 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .bg-destructive,
+  .bg-red-600,
+  .bg-red-500 {
+    background-color: #ef4444 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .bg-green-600,
+  .bg-green-500 {
+    background-color: #10b981 !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* Card styling for print */
+  .card {
+    border: 1px solid #e5e7eb;
+    margin-bottom: 1rem;
+  }
+  
+  /* Spacing adjustments */
+  .space-y-8 > * + * {
+    margin-top: 1rem !important;
+  }
+  
+  .space-y-4 > * + * {
+    margin-top: 0.5rem !important;
+  }
+  
+  /* Font sizes */
+  .text-3xl {
+    font-size: 1.875rem !important;
+  }
+  
+  .text-2xl {
+    font-size: 1.5rem !important;
+  }
+  
+  .text-xl {
+    font-size: 1.25rem !important;
+  }
+  
+  .text-lg {
+    font-size: 1.125rem !important;
+  }
+  
+  /* Ensure links are visible */
+  a {
+    text-decoration: none;
+    color: #000 !important;
+  }
+  
+  /* Hide buttons and interactive elements */
+  button,
+  .btn,
+  input,
+  select,
+  textarea {
+    display: none !important;
+  }
+  
+  /* Print-specific utilities */
+  .print-page-break {
+    page-break-after: always;
+  }
+  
+  .print-no-break {
+    page-break-inside: avoid;
+  }
+}

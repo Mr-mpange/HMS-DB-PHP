@@ -4,15 +4,26 @@ const db = require('../config/database');
 // Get all patients
 exports.getAllPatients = async (req, res) => {
   try {
-    const { limit = 100, offset = 0, search = '' } = req.query;
+    const { limit = 100, offset = 0, search = '', from, to } = req.query;
     
-    let query = 'SELECT * FROM patients';
+    let query = 'SELECT * FROM patients WHERE 1=1';
     let params = [];
     
     if (search) {
-      query += ' WHERE full_name LIKE ? OR phone LIKE ? OR email LIKE ?';
+      query += ' AND (full_name LIKE ? OR phone LIKE ? OR email LIKE ?)';
       const searchTerm = `%${search}%`;
-      params = [searchTerm, searchTerm, searchTerm];
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+    
+    // Date range filtering
+    if (from) {
+      query += ' AND created_at >= ?';
+      params.push(from);
+    }
+    
+    if (to) {
+      query += ' AND created_at <= ?';
+      params.push(to);
     }
     
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
@@ -20,11 +31,27 @@ exports.getAllPatients = async (req, res) => {
     
     const [patients] = await db.execute(query, params);
     
-    // Get total count
-    const [countResult] = await db.execute(
-      'SELECT COUNT(*) as total FROM patients' + (search ? ' WHERE full_name LIKE ? OR phone LIKE ? OR email LIKE ?' : ''),
-      search ? [`%${search}%`, `%${search}%`, `%${search}%`] : []
-    );
+    // Get total count with same filters
+    let countQuery = 'SELECT COUNT(*) as total FROM patients WHERE 1=1';
+    let countParams = [];
+    
+    if (search) {
+      countQuery += ' AND (full_name LIKE ? OR phone LIKE ? OR email LIKE ?)';
+      const searchTerm = `%${search}%`;
+      countParams.push(searchTerm, searchTerm, searchTerm);
+    }
+    
+    if (from) {
+      countQuery += ' AND created_at >= ?';
+      countParams.push(from);
+    }
+    
+    if (to) {
+      countQuery += ' AND created_at <= ?';
+      countParams.push(to);
+    }
+    
+    const [countResult] = await db.execute(countQuery, countParams);
     
     res.json({ 
       patients,

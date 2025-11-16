@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Printer, Download } from 'lucide-react';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
+import { PrintHeader } from '@/components/PrintHeader';
 
 type DateFilter = 'today' | 'week' | 'month' | 'all';
 
@@ -110,7 +111,7 @@ export default function AdminReports() {
       const [patientsRes, appointmentsRes, visitsRes, prescriptionsRes, labTestsRes] = await Promise.allSettled([
         api.get(`/patients?from=${startStr}&to=${endStr}`),
         api.get(`/appointments?from=${startStr}&to=${endStr}`),
-        api.get(`/patient-visits?from=${startStr}&to=${endStr}`),
+        api.get(`/visits?from=${startStr}&to=${endStr}`),
         api.get(`/prescriptions?from=${startStr}&to=${endStr}`),
         api.get(`/lab-tests?from=${startStr}&to=${endStr}`)
       ]);
@@ -257,24 +258,12 @@ export default function AdminReports() {
       </div>
 
       {/* Print Header - Only visible on print */}
-      <div className="hidden print:block text-center mb-6">
-        <div className="flex items-center justify-center mb-4">
-          <img 
-            src="/logo.png" 
-            alt="Hospital Logo" 
-            className="h-16 w-16 object-contain"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.style.display = 'none';
-            }}
-          />
-        </div>
-        <h1 className="text-2xl font-bold">{settings.hospitalName}</h1>
-        <h2 className="text-xl">{settings.reportHeader}</h2>
-        <p className="text-sm text-gray-600">
-          Period: {getFilterLabel()} | Generated: {format(new Date(), 'MMM dd, yyyy HH:mm')}
-        </p>
-      </div>
+      <PrintHeader
+        title={settings.reportHeader}
+        hospitalName={settings.hospitalName}
+        showDate={true}
+        additionalInfo={`Period: ${getFilterLabel()}`}
+      />
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-5 print:grid-cols-5">
@@ -488,20 +477,19 @@ export default function AdminReports() {
         </Card>
       )}
 
-      {/* Print Styles */}
+      {/* Print Styles - Component specific */}
       <style>{`
         @media print {
           body * {
             visibility: hidden;
           }
-          .print\\:block, .print\\:block * {
+          
+          .space-y-8, .space-y-8 * {
             visibility: visible;
           }
-          .print\\:hidden {
-            display: none !important;
-          }
-          @page {
-            margin: 1cm;
+          
+          .print-header, .print-header * {
+            visibility: visible !important;
           }
         }
       `}</style>
