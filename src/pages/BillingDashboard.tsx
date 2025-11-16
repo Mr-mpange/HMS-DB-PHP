@@ -133,7 +133,8 @@ export default function BillingDashboard() {
     if (rawPaymentsData && rawPaymentsData.length > 0) {
       rawPaymentsData.forEach((payment: any) => {
         const paymentDate = payment.created_at?.split('T')[0];
-        if (paymentDate === today && payment.status === 'completed') {
+        // Payments table doesn't have status column - all payments are completed when recorded
+        if (paymentDate === today) {
           totalRevenue += Number(payment.amount || 0);
         }
       });
