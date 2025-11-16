@@ -70,8 +70,7 @@ exports.getPatient = async (req, res) => {
 exports.createPatient = async (req, res) => {
   try {
     const { 
-      full_name, date_of_birth, gender, phone, email, address,
-      emergency_contact, emergency_phone, blood_group, allergies, medical_history
+      full_name, date_of_birth, gender, phone, email, address, blood_group
     } = req.body;
     
     if (!full_name) {
@@ -82,9 +81,8 @@ exports.createPatient = async (req, res) => {
     
     await db.execute(
       `INSERT INTO patients (
-        id, full_name, date_of_birth, gender, phone, email, address,
-        emergency_contact, emergency_phone, blood_group, allergies, medical_history
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, full_name, date_of_birth, gender, phone, email, address, blood_group
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         patientId, 
         full_name, 
@@ -93,11 +91,7 @@ exports.createPatient = async (req, res) => {
         phone || null, 
         email || null, 
         address || null,
-        emergency_contact || null, 
-        emergency_phone || null, 
-        blood_group || null, 
-        allergies || null, 
-        medical_history || null
+        blood_group || null
       ]
     );
     
@@ -128,15 +122,13 @@ exports.createPatient = async (req, res) => {
 exports.updatePatient = async (req, res) => {
   try {
     const { 
-      full_name, date_of_birth, gender, phone, email, address,
-      emergency_contact, emergency_phone, blood_group, allergies, medical_history
+      full_name, date_of_birth, gender, phone, email, address, blood_group
     } = req.body;
     
     await db.execute(
       `UPDATE patients 
        SET full_name = ?, date_of_birth = ?, gender = ?, phone = ?, email = ?, 
-           address = ?, emergency_contact = ?, emergency_phone = ?, 
-           blood_group = ?, allergies = ?, medical_history = ?
+           address = ?, blood_group = ?
        WHERE id = ?`,
       [
         full_name, 
@@ -145,11 +137,7 @@ exports.updatePatient = async (req, res) => {
         phone || null, 
         email || null, 
         address || null,
-        emergency_contact || null, 
-        emergency_phone || null, 
-        blood_group || null, 
-        allergies || null, 
-        medical_history || null,
+        blood_group || null,
         req.params.id
       ]
     );

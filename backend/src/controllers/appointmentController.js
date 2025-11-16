@@ -82,19 +82,24 @@ exports.createAppointment = async (req, res) => {
       appointment_type, reason, notes
     } = req.body;
     
-    if (!patient_id || !doctor_id || !appointment_date || !appointment_time) {
+    if (!patient_id || !doctor_id || !appointment_date) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
     const appointmentId = uuidv4();
     
+    // Combine date and time into datetime
+    let appointmentDateTime = appointment_date;
+    if (appointment_time) {
+      appointmentDateTime = `${appointment_date} ${appointment_time}`;
+    }
+    
     await db.execute(
       `INSERT INTO appointments (
-        id, patient_id, doctor_id, appointment_date, appointment_time,
-        appointment_type, reason, notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled')`,
-      [appointmentId, patient_id, doctor_id, appointment_date, appointment_time,
-       appointment_type, reason, notes]
+        id, patient_id, doctor_id, appointment_date, type, reason, notes, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Scheduled')`,
+      [appointmentId, patient_id, doctor_id, appointmentDateTime,
+       appointment_type || 'Consultation', reason, notes]
     );
     
     // Log activity
@@ -116,7 +121,13 @@ exports.createAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('Create appointment error:', error);
-    res.status(500).json({ error: 'Failed to create appointment' });
+    console.error('Error message:', error.message);
+    console.error('SQL State:', error.sqlState);
+    console.error('SQL Message:', error.sqlMessage);
+    res.status(500).json({ 
+      error: 'Failed to create appointment',
+      details: error.message 
+    });
   }
 };
 
@@ -128,12 +139,17 @@ exports.updateAppointment = async (req, res) => {
       reason, notes, status
     } = req.body;
     
+    // Combine date and time if both provided
+    let appointmentDateTime = appointment_date;
+    if (appointment_date && appointment_time) {
+      appointmentDateTime = `${appointment_date} ${appointment_time}`;
+    }
+    
     await db.execute(
       `UPDATE appointments 
-       SET appointment_date = ?, appointment_time = ?, appointment_type = ?,
-           reason = ?, notes = ?, status = ?
+       SET appointment_date = ?, type = ?, reason = ?, notes = ?, status = ?
        WHERE id = ?`,
-      [appointment_date, appointment_time, appointment_type, reason, notes, status, req.params.id]
+      [appointmentDateTime || appointment_date, appointment_type, reason, notes, status, req.params.id]
     );
     
     // Log activity

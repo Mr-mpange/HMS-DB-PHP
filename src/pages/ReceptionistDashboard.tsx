@@ -420,11 +420,10 @@ export default function ReceptionistDashboard() {
   const fetchConsultationFee = async () => {
     try {
       // Fetch default consultation fee
-      const settingsRes = await api.get('/system-settings?key=consultation_fee');
-      const data = settingsRes.data.settings || [];
-
-      if (data && data.length > 0) {
-        setConsultationFee(Number(data[0].value));
+      const settingsRes = await api.get('/settings/consultation_fee');
+      
+      if (settingsRes.data && settingsRes.data.value) {
+        setConsultationFee(Number(settingsRes.data.value));
       }
 
       // Fetch department-specific fees

@@ -115,11 +115,16 @@ export default function NurseDashboard() {
     }
 
     try {
-      const response = await api.get(`/patients/search?q=${encodeURIComponent(query)}`);
-      setSearchResults(response.data || []);
-    } catch (error) {
+      const response = await api.get(`/patients?search=${encodeURIComponent(query)}&limit=20`);
+      
+      if (response.data.error) {
+        throw new Error(response.data.error);
+      }
+      
+      setSearchResults(response.data.patients || []);
+    } catch (error: any) {
       console.error('Search error:', error);
-      toast.error('Failed to search patients');
+      toast.error(error.response?.data?.error || 'Failed to search patients');
     }
   };
 
@@ -140,17 +145,22 @@ export default function NurseDashboard() {
     try {
       // Find the active visit for this patient
       const visitsResponse = await api.get(`/visits?patient_id=${selectedPatient.id}&current_stage=nurse&overall_status=Active&limit=1`);
-      const visits = visitsResponse.data;
+      const visits = visitsResponse.data.visits || [];
 
-      if (!visits || visits.length === 0) {
+      if (visits.length === 0) {
         toast.error('No active visit found for this patient');
         return;
       }
 
+      const visit = visits[0];
+
+      // Prepare vitals data as JSON string
+      const vitalsData = JSON.stringify(vitalsForm);
+
       // Update visit with vitals and move to doctor stage
-      await api.put(`/visits/${visits[0].id}`, {
+      await api.put(`/visits/${visit.id}`, {
         nurse_status: 'Completed',
-        nurse_vitals: vitalsForm,
+        nurse_notes: vitalsData, // Store vitals in nurse_notes as JSON
         nurse_completed_at: new Date().toISOString(),
         current_stage: 'doctor',
         doctor_status: 'Pending'
@@ -160,12 +170,27 @@ export default function NurseDashboard() {
       setShowVitalsDialog(false);
       setSelectedPatient(null);
       
+      // Reset vitals form
+      setVitalsForm({
+        blood_pressure: '',
+        heart_rate: '',
+        temperature: '',
+        oxygen_saturation: '',
+        weight: '',
+        weight_unit: 'kg',
+        height: '',
+        height_unit: 'cm',
+        muac: '',
+        muac_unit: 'cm',
+        notes: ''
+      });
+      
       // Update local state
-      setPendingVisits(prev => prev.filter(v => v.id !== visits[0].id));
+      setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
       fetchData(); // Refresh data
-    } catch (error) {
+    } catch (error: any) {
       console.error('Vitals submission error:', error);
-      toast.error('Failed to record vital signs');
+      toast.error(error.response?.data?.error || 'Failed to record vital signs');
     }
   };
 
@@ -193,16 +218,25 @@ export default function NurseDashboard() {
         appointment_date: scheduleForm.appointment_date,
         appointment_time: scheduleForm.appointment_time,
         reason: scheduleForm.reason,
-        department_id: scheduleForm.department_id || null,
+        appointment_type: 'Follow-up',
         status: 'Scheduled'
       });
 
       toast.success(`Follow-up scheduled for ${selectedPatient.full_name}`);
       setShowScheduleDialog(false);
       setSelectedPatient(null);
-    } catch (error) {
+      
+      // Reset form
+      setScheduleForm({
+        patient_id: '',
+        appointment_date: '',
+        appointment_time: '',
+        reason: '',
+        department_id: ''
+      });
+    } catch (error: any) {
       console.error('Schedule error:', error);
-      toast.error('Failed to schedule follow-up');
+      toast.error(error.response?.data?.error || 'Failed to schedule follow-up');
     }
   };
 
@@ -229,16 +263,16 @@ export default function NurseDashboard() {
 
       // Fetch visits waiting for nurse
       const visitsResponse = await api.get('/visits?current_stage=nurse&nurse_status=Pending&overall_status=Active');
-      const visitsData = visitsResponse.data || [];
+      const visitsData = Array.isArray(visitsResponse.data.visits) ? visitsResponse.data.visits : [];
 
       // Fetch today's appointments for this nurse
       const today = new Date().toISOString().split('T')[0];
       const appointmentsResponse = await api.get(`/appointments?date=${today}`);
-      const appointmentsData = appointmentsResponse.data || [];
+      const appointmentsData = Array.isArray(appointmentsResponse.data.appointments) ? appointmentsResponse.data.appointments : [];
 
       // Fetch recent patients
       const patientsResponse = await api.get('/patients?limit=10&sort=updated_at&order=desc');
-      const patientsData = patientsResponse.data || [];
+      const patientsData = Array.isArray(patientsResponse.data.patients) ? patientsResponse.data.patients : [];
 
       // Calculate stats
       setPendingVisits(visitsData);
