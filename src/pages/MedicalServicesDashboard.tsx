@@ -139,13 +139,18 @@ export default function MedicalServicesDashboard() {
 
     setLoading(true);
     try {
+      console.log('Fetching medical services data...');
       const { data: servicesData, error: servicesError } = await getMedicalServices();
       
       if (servicesError) {
         console.error('Error fetching services:', servicesError);
-        toast.error('Failed to load medical services');
+        toast.error('Failed to load medical services. Check console for details.');
       } else {
+        console.log('Received services:', servicesData);
         setServices(servicesData || []);
+        if (servicesData && servicesData.length > 0) {
+          toast.success(`Loaded ${servicesData.length} medical services`);
+        }
       }
       
       // Patient services and patients would be fetched from their respective endpoints

@@ -37,10 +37,13 @@ export const getMedicalServices = async (filters?: { is_active?: boolean; servic
       params.append('service_type', filters.service_type);
     }
     
+    console.log('Fetching medical services from API...');
     const response = await api.get(`/services?${params.toString()}`);
+    console.log('Medical services response:', response.data);
     return { data: response.data.services || [], error: null };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching medical services:', error);
+    console.error('Error details:', error.response?.data || error.message);
     return { data: [], error };
   }
 };
