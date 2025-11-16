@@ -914,6 +914,7 @@ export default function AdminDashboard() {
   }
 
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientRecords, setPatientRecords] = useState<MedicalRecord[]>([]);
   const [patientAppointments, setPatientAppointments] = useState<Appointment[]>([]);
@@ -1234,13 +1235,20 @@ export default function AdminDashboard() {
 
       console.log('Users with roles:', usersWithRoles);
 
+      // Fetch appointments from MySQL API
+      const { data: appointmentsResponse } = await api.get('/appointments');
+      const appointmentsData = appointmentsResponse.appointments || [];
+
       // Calculate stats from the data we have
       const patientCount = patientsData.length;
-      const appointmentCount = 0; // Will be populated when appointments are fetched
+      const appointmentCount = appointmentsData.filter((a: any) => 
+        a.status !== 'Cancelled' && a.status !== 'Completed'
+      ).length;
       const servicesCount = 0; // Will be populated when services are fetched
 
       setPatients(patientsData);
       setUsers(usersWithRoles);
+      setAppointments(appointmentsData);
       setMedicalServices([]); // Will be populated when medical services endpoint is ready
       setStats({
         totalPatients: patientCount,

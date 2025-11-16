@@ -628,7 +628,12 @@ export default function ReceptionistDashboard() {
 
   // Real-time search for returning patients
   useEffect(() => {
-    if (!showReturningPatientDialog || !returningPatientSearch.trim()) {
+    if (!showReturningPatientDialog) {
+      setReturningPatientResults([]);
+      return;
+    }
+
+    if (!returningPatientSearch.trim() || returningPatientSearch.trim().length < 2) {
       setReturningPatientResults([]);
       return;
     }
@@ -709,25 +714,21 @@ export default function ReceptionistDashboard() {
     }
   };
 
-  const searchPatients = async () => {
-    if (!searchQuery.trim()) {
-      toast.error('Please enter a search term');
+  const searchPatients = async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([]);
       return;
     }
 
     try {
       setLoading(true);
-      const searchRes = await api.get(`/patients?search=${encodeURIComponent(searchQuery)}&limit=20`);
+      const searchRes = await api.get(`/patients?search=${encodeURIComponent(query)}&limit=20`);
       
       if (searchRes.data.error) {
         throw new Error(searchRes.data.error);
       }
       
       setSearchResults(searchRes.data.patients || []);
-      
-      if (searchRes.data.patients && searchRes.data.patients.length === 0) {
-        toast.info('No patients found matching your search');
-      }
     } catch (error: any) {
       console.error('Search error:', error);
       toast.error(error.response?.data?.error || 'Failed to search patients');
@@ -735,6 +736,19 @@ export default function ReceptionistDashboard() {
       setLoading(false);
     }
   };
+
+  // Real-time search with debounce
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      if (searchQuery.trim().length >= 2) {
+        searchPatients(searchQuery);
+      } else if (searchQuery.trim().length === 0) {
+        setSearchResults([]);
+      }
+    }, 300); // Wait 300ms after user stops typing
+
+    return () => clearTimeout(debounceTimer);
+  }, [searchQuery]);
 
   const submitPatientRegistration = async () => {
     // Validate required fields
@@ -1379,17 +1393,19 @@ export default function ReceptionistDashboard() {
             <DialogDescription>Search for patients by name or phone number</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex gap-2">
+            <div className="relative">
               <Input
-                placeholder="Search by name or phone..."
+                placeholder="Search by name or phone (min 2 characters)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && searchPatients()}
                 disabled={loading}
+                className="pr-10"
               />
-              <Button onClick={searchPatients} disabled={loading}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
-              </Button>
+              {loading && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
             </div>
             {searchResults.length > 0 && (
               <div className="border rounded-lg p-4 max-h-96 overflow-y-auto">
@@ -1414,8 +1430,11 @@ export default function ReceptionistDashboard() {
                 ))}
               </div>
             )}
-            {searchResults.length === 0 && searchQuery && !loading && (
-              <p className="text-center text-muted-foreground py-8">No patients found matching your search.</p>
+            {searchResults.length === 0 && searchQuery.trim().length >= 2 && !loading && (
+              <p className="text-center text-muted-foreground py-8">No patients found matching "{searchQuery}"</p>
+            )}
+            {searchQuery.trim().length > 0 && searchQuery.trim().length < 2 && (
+              <p className="text-center text-muted-foreground py-8">Type at least 2 characters to search</p>
             )}
           </div>
         </DialogContent>
@@ -1544,7 +1563,7 @@ export default function ReceptionistDashboard() {
             <div>
               <Label>Search Patient</Label>
               <Input
-                placeholder="Search by name or phone..."
+                placeholder="Search by name or phone (min 2 characters)..."
                 value={returningPatientSearch}
                 onChange={(e) => setReturningPatientSearch(e.target.value)}
                 autoFocus
@@ -1557,7 +1576,11 @@ export default function ReceptionistDashboard() {
             <div className="max-h-96 overflow-y-auto border rounded-lg">
               {returningPatientResults.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
-                  {returningPatientSearch ? 'No patients found' : 'Start typing to search for patients'}
+                  {returningPatientSearch.trim().length >= 2 
+                    ? `No patients found matching "${returningPatientSearch}"` 
+                    : returningPatientSearch.trim().length > 0
+                    ? 'Type at least 2 characters to search'
+                    : 'Start typing to search for patients'}
                 </div>
               ) : (
                 <div className="divide-y">

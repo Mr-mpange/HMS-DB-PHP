@@ -8,6 +8,8 @@ exports.getAllAppointments = async (req, res) => {
     
     let query = `
       SELECT a.*, 
+             DATE(a.appointment_date) as appointment_date_only,
+             TIME_FORMAT(a.appointment_date, '%H:%i') as appointment_time,
              p.full_name as patient_name, p.phone as patient_phone,
              u.full_name as doctor_name
       FROM appointments a
@@ -18,7 +20,7 @@ exports.getAllAppointments = async (req, res) => {
     let params = [];
     
     if (date) {
-      query += ' AND a.appointment_date = ?';
+      query += ' AND DATE(a.appointment_date) = ?';
       params.push(date);
     }
     
@@ -42,7 +44,13 @@ exports.getAllAppointments = async (req, res) => {
     
     const [appointments] = await db.execute(query, params);
     
-    res.json({ appointments });
+    // Format the response to include both full datetime and separate date/time
+    const formattedAppointments = appointments.map(appt => ({
+      ...appt,
+      appointment_date: appt.appointment_date_only || appt.appointment_date
+    }));
+    
+    res.json({ appointments: formattedAppointments });
   } catch (error) {
     console.error('Get appointments error:', error);
     res.status(500).json({ error: 'Failed to fetch appointments' });
@@ -54,6 +62,8 @@ exports.getAppointment = async (req, res) => {
   try {
     const [appointments] = await db.execute(
       `SELECT a.*, 
+              DATE(a.appointment_date) as appointment_date_only,
+              TIME_FORMAT(a.appointment_date, '%H:%i') as appointment_time,
               p.full_name as patient_name, p.phone as patient_phone, p.email as patient_email,
               u.full_name as doctor_name
        FROM appointments a
@@ -67,7 +77,12 @@ exports.getAppointment = async (req, res) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
     
-    res.json({ appointment: appointments[0] });
+    const appointment = {
+      ...appointments[0],
+      appointment_date: appointments[0].appointment_date_only || appointments[0].appointment_date
+    };
+    
+    res.json({ appointment });
   } catch (error) {
     console.error('Get appointment error:', error);
     res.status(500).json({ error: 'Failed to fetch appointment' });

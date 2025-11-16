@@ -65,7 +65,7 @@ export default function LabDashboard() {
       }, {});
       setGroupedTests(grouped);
 
-      const pending = uniqueTests.filter(t => t.status === 'Pending').length;
+      const pending = uniqueTests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected').length;
       const inProgress = uniqueTests.filter(t => t.status === 'In Progress').length;
       const completed = uniqueTests.filter(t => t.status === 'Completed').length;
 
@@ -81,9 +81,10 @@ export default function LabDashboard() {
 
 
   const handleBatchTestSubmit = async (patientId: string) => {
-    // Get all tests for this patient that are pending or in progress
+    // Get all tests for this patient that are ordered, sample collected, or in progress
     const patientTests = labTests.filter(
-      test => test.patient_id === patientId && (test.status === 'Pending' || test.status === 'In Progress')
+      test => test.patient_id === patientId && 
+      (test.status === 'Ordered' || test.status === 'Sample Collected' || test.status === 'In Progress')
     );
     
     if (patientTests.length === 0) {
@@ -91,15 +92,15 @@ export default function LabDashboard() {
       return;
     }
 
-    // Auto-start all pending tests
-    const pendingTests = patientTests.filter(t => t.status === 'Pending');
+    // Auto-start all ordered/sample collected tests
+    const pendingTests = patientTests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected');
     if (pendingTests.length > 0) {
       await Promise.all(
         pendingTests.map(test => 
           api.put(`/lab-tests/${test.id}`, { status: 'In Progress' })
         )
       );
-      toast.info(`Started ${pendingTests.length} pending test(s)`);
+      toast.info(`Started ${pendingTests.length} test(s)`);
     }
 
     setSelectedPatientTests(patientTests);
@@ -341,9 +342,9 @@ export default function LabDashboard() {
                   Lab Tests Queue
                   <Badge variant="default" className="bg-blue-600">
                     {Object.entries(groupedTests).filter(([_, tests]) => 
-                      tests.some(t => t.status === 'Pending' || t.status === 'In Progress')
+                      tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
                     ).length} patient{Object.entries(groupedTests).filter(([_, tests]) => 
-                      tests.some(t => t.status === 'Pending' || t.status === 'In Progress')
+                      tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
                     ).length !== 1 ? 's' : ''}
                   </Badge>
                 </CardTitle>
@@ -367,9 +368,9 @@ export default function LabDashboard() {
                 </TableHeader>
                 <TableBody>
                   {Object.entries(groupedTests)
-                    .filter(([_, tests]) => tests.some(t => t.status === 'Pending' || t.status === 'In Progress'))
+                    .filter(([_, tests]) => tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress'))
                     .map(([patientId, tests]) => {
-                      const pendingCount = tests.filter(t => t.status === 'Pending').length;
+                      const pendingCount = tests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected').length;
                       const inProgressCount = tests.filter(t => t.status === 'In Progress').length;
                       const completedCount = tests.filter(t => t.status === 'Completed').length;
                       const hasSTAT = tests.some(t => t.priority === 'STAT');
@@ -440,8 +441,8 @@ export default function LabDashboard() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  // Only show pending and in-progress tests
-                                  const activeTests = tests.filter(t => t.status === 'Pending' || t.status === 'In Progress');
+                                  // Only show ordered, sample collected, and in-progress tests
+                                  const activeTests = tests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress');
                                   setSelectedPatientTests(activeTests);
                                   // Don't initialize batch results - this opens read-only view
                                   setBatchResults({});
@@ -467,7 +468,7 @@ export default function LabDashboard() {
                       );
                     })}
                   {Object.entries(groupedTests).filter(([_, tests]) => 
-                    tests.some(t => t.status === 'Pending' || t.status === 'In Progress')
+                    tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
                   ).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
@@ -583,12 +584,12 @@ export default function LabDashboard() {
                 Submit Results for {selectedPatientTests[0]?.patient?.full_name}
               </DialogTitle>
               <DialogDescription>
-                Enter results for {selectedPatientTests.filter(t => t.status === 'Pending' || t.status === 'In Progress').length} test(s)
+                Enter results for {selectedPatientTests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress').length} test(s)
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               {selectedPatientTests
-                .filter(test => test.status === 'Pending' || test.status === 'In Progress')
+                .filter(test => test.status === 'Ordered' || test.status === 'Sample Collected' || test.status === 'In Progress')
                 .map((test, index) => (
                 <Card key={test.id} className="border-2">
                   <div className="p-4 space-y-4">
