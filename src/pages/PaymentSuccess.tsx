@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, Loader2, XCircle, ArrowLeft, Download } from 'lucide-react';
 import { zenoPay } from '@/lib/zenopay';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/utils';
 
@@ -85,56 +85,10 @@ export default function PaymentSuccess() {
     amount: number
   ) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      // Get invoice details
-      const { data: invoice } = await supabase
-        .from('invoices')
-        .select('*, patient:patients(full_name)')
-        .eq('id', invoiceId)
-        .single();
-
-      if (!invoice) {
-        throw new Error('Invoice not found');
-      }
-
-      // Create payment record
-      const { error: paymentError } = await supabase
-        .from('payments')
-        .insert({
-          invoice_id: invoiceId,
-          amount: amount,
-          payment_method: 'ZenoPay',
-          payment_date: new Date().toISOString(),
-          transaction_id: transactionId,
-          status: 'completed',
-          received_by: user?.id,
-        });
-
-      if (paymentError) throw paymentError;
-
-      // Update invoice status
-      const { error: invoiceError } = await supabase
-        .from('invoices')
-        .update({
-          status: 'Paid',
-          paid_at: new Date().toISOString(),
-        })
-        .eq('id', invoiceId);
-
-      if (invoiceError) throw invoiceError;
-
-      // Log activity
-      await logActivity('billing.payment.received', {
-        invoice_id: invoiceId,
-        patient_id: invoice.patient_id,
-        amount: amount,
-        payment_method: 'ZenoPay',
-        transaction_id: transactionId,
-        invoice_number: invoice.invoice_number,
-      });
-
-      console.log('Payment recorded successfully');
+      // Payment recording not yet fully implemented in backend
+      // This would need a payment recording endpoint
+      console.log('Payment verified:', { invoiceId, transactionId, amount });
+      toast.info('Payment verified - recording feature coming soon');
     } catch (error) {
       console.error('Error updating payment in database:', error);
       toast.error('Payment verified but failed to update records');

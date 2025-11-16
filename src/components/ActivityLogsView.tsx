@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { Activity, Search, Download, RefreshCw, Loader2, FileText, User, Calendar, AlertCircle } from 'lucide-react';
@@ -56,13 +56,8 @@ export default function ActivityLogsView() {
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, full_name')
-        .order('full_name', { ascending: true });
-      
-      if (error) throw error;
-      setUsers(data || []);
+      const { data } = await api.get('/users');
+      setUsers(data.users || []);
     } catch (error) {
       console.error('Error fetching users:', error);
       toast.error('Failed to load users');
@@ -104,73 +99,50 @@ export default function ActivityLogsView() {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      const { start, end } = getDateRange();
-      const startStr = start.toISOString();
-      const endStr = end.toISOString();
-
-      // Fetch activity logs
-      const { data: logsData, error: logsError } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .gte('created_at', startStr)
-        .lte('created_at', endStr)
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (logsError) {
-        console.error('Error fetching activity logs:', logsError);
-        throw logsError;
-      }
-
-      // Get unique user IDs
-      const userIds = [...new Set((logsData || []).map(log => log.user_id).filter(Boolean))];
-      
-      // Fetch all users at once
-      let userMap: Record<string, any> = {};
-      if (userIds.length > 0) {
-        const { data: usersData } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', userIds);
-        
-        if (usersData) {
-          userMap = usersData.reduce((acc, user) => {
-            acc[user.id] = user;
-            return acc;
-          }, {} as Record<string, any>);
+      // Fetch activity logs from MySQL API
+      const { data } = await api.get('/activity', {
+        params: {
+          limit: 100,
+          offset: 0
         }
-      }
+      });
 
-      // Enrich logs with user information
-      const enrichedLogs = (logsData || []).map(log => ({
+      const logsData = data.logs || [];
+      
+      // Logs already include user info from the backend (email, full_name)
+      const enrichedLogs = logsData.map((log: any) => ({
         ...log,
-        user: log.user_id ? userMap[log.user_id] : null
+        user: {
+          full_name: log.full_name,
+          email: log.email
+        }
       }));
 
-      // Fetch stats for all time periods
+      setLogs(enrichedLogs);
+      
+      // Calculate stats from the logs we have
       const now = new Date();
-      const todayStart = startOfDay(now).toISOString();
-      const weekStart = startOfWeek(now).toISOString();
-      const monthStart = startOfMonth(now).toISOString();
+      const todayStart = startOfDay(now);
+      const weekStart = startOfWeek(now);
+      const monthStart = startOfMonth(now);
 
-      const [
-        { count: todayCount },
-        { count: weekCount },
-        { count: monthCount },
-        { count: totalCount }
-      ] = await Promise.all([
-        supabase.from('activity_logs').select('*', { count: 'exact', head: true }).gte('created_at', todayStart),
-        supabase.from('activity_logs').select('*', { count: 'exact', head: true }).gte('created_at', weekStart),
-        supabase.from('activity_logs').select('*', { count: 'exact', head: true }).gte('created_at', monthStart),
-        supabase.from('activity_logs').select('*', { count: 'exact', head: true })
-      ]);
+      const todayCount = logsData.filter((log: any) => 
+        new Date(log.created_at) >= todayStart
+      ).length;
+      
+      const weekCount = logsData.filter((log: any) => 
+        new Date(log.created_at) >= weekStart
+      ).length;
+      
+      const monthCount = logsData.filter((log: any) => 
+        new Date(log.created_at) >= monthStart
+      ).length;
 
-      setLogs(enrichedLogs || []);
       setStats({
-        total: totalCount || 0,
-        today: todayCount || 0,
-        thisWeek: weekCount || 0,
-        thisMonth: monthCount || 0
+        total: logsData.length,
+        today: todayCount,
+        thisWeek: weekCount,
+        thisMonth: monthCount
       });
 
     } catch (error) {

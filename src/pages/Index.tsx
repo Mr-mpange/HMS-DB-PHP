@@ -4,32 +4,38 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2 } from 'lucide-react';
 
 const Index = () => {
-  const { user, primaryRole, roles, loading } = useAuth();
+  const { user, primaryRole, roles, loading, rolesLoaded } = useAuth();
   const navigate = useNavigate();
-  const [redirectAttempted, setRedirectAttempted] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     // Don't redirect if still loading
     if (loading) return;
 
-    // Don't redirect if already attempted
-    if (redirectAttempted) return;
-
-    if (!user) {
-      navigate('/auth');
-      setRedirectAttempted(true);
+    // Don't redirect if already attempted or max retries reached
+    if (retryCount > 3) {
+      // If we've tried multiple times and still no roles, redirect to auth
+      if (!user) {
+        navigate('/auth');
+      } else {
+        // Default redirect for authenticated users with no roles
+        navigate('/patient');
+      }
       return;
     }
 
-    // Wait for roles to be loaded
-    if (roles.length === 0) {
-      setTimeout(() => {
-        if (roles.length === 0) {
-          console.log('Roles still empty, retrying...');
-          setRedirectAttempted(false);
-        }
-      }, 100);
+    if (!user) {
+      navigate('/auth');
       return;
+    }
+
+    // Wait for roles to be loaded, but with a retry limit
+    if (!rolesLoaded) {
+      const timer = setTimeout(() => {
+        console.log(`Roles still loading, retry attempt ${retryCount + 1}...`);
+        setRetryCount(prev => prev + 1);
+      }, 500);
+      return () => clearTimeout(timer);
     }
 
     // Use primary role if available, otherwise use priority order
@@ -45,7 +51,7 @@ const Index = () => {
         patient: '/patient'
       };
       navigate(roleRoutes[primaryRole] || '/patient');
-    } else {
+    } else if (roles && roles.length > 0) {
       // Fallback to priority order if no primary role set
       if (roles.includes('admin')) {
         navigate('/admin');
@@ -64,10 +70,11 @@ const Index = () => {
       } else {
         navigate('/patient');
       }
+    } else {
+      // No roles found, redirect to patient dashboard as default
+      navigate('/patient');
     }
-
-    setRedirectAttempted(true);
-  }, [user, primaryRole, roles, loading, navigate, redirectAttempted]);
+  }, [user, primaryRole, roles, loading, rolesLoaded, navigate, retryCount]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5">

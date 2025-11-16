@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Calendar, File, Activity, Loader2, Search } from 'lucide-react';
@@ -48,43 +48,22 @@ export default function PatientDashboard() {
 
     try {
       // Search for patient by name or phone
-      const { data: patients, error } = await supabase
-        .from('patients')
-        .select('*')
-        .or(`full_name.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`)
-        .limit(1);
-
-      if (error) {
-        toast.error('Error searching for patient');
-        return;
-      }
+      const { data } = await api.get(`/patients/search?query=${encodeURIComponent(searchTerm)}`);
+      const patients = data.patients || [];
 
       if (patients && patients.length > 0) {
         const patient = patients[0];
         setPatientData(patient);
 
         // Fetch patient's appointments
-        const { data: appointmentsData, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select(`
-            *,
-            department:departments(name)
-          `)
-          .eq('patient_id', patient.id)
-          .order('appointment_date', { ascending: true });
-
-        if (appointmentsError) {
-          console.error('Appointments fetch error:', appointmentsError);
-          toast.error('Failed to load appointments');
-        }
-
-        setAppointments(appointmentsData || []);
+        const { data: appointmentData } = await api.get(`/appointments?patient_id=${patient.id}`);
+        setAppointments(appointmentData.appointments || []);
       } else {
         toast.error('Patient not found');
         setPatientData(null);
         setAppointments([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error searching patient:', error);
       toast.error('Error searching for patient');
     }
@@ -93,34 +72,8 @@ export default function PatientDashboard() {
   // Helper function to create sample data for testing
   const createSampleData = async () => {
     try {
-      // Create sample patients if none exist
-      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
-      if (!existingPatients || existingPatients.length === 0) {
-        await supabase.from('patients').insert([
-          {
-            full_name: 'Sarah Johnson',
-            date_of_birth: '1995-06-10',
-            gender: 'Female',
-            phone: '+255700000007',
-            email: 'sarah@example.com',
-            blood_group: 'A-',
-            status: 'Active',
-            medical_history: 'No significant medical history'
-          },
-          {
-            full_name: 'David Wilson',
-            date_of_birth: '1983-09-22',
-            gender: 'Male',
-            phone: '+255700000008',
-            email: 'david@example.com',
-            blood_group: 'B-',
-            status: 'Active',
-            medical_history: 'Hypertension, Diabetes Type 2'
-          }
-        ]);
-      }
-
-      toast.success('Sample data created');
+      // Sample data creation not needed with MySQL backend
+      toast.info('Sample data feature not available');
     } catch (error) {
       console.error('Error creating sample data:', error);
       toast.error('Failed to create sample data');

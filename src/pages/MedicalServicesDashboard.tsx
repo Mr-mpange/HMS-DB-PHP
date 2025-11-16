@@ -11,7 +11,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import { logActivity } from '@/lib/utils';
 import { Plus, Stethoscope, DollarSign, Loader2, Trash2, Pencil, Check, X } from 'lucide-react';
 import { 
@@ -139,38 +138,16 @@ export default function MedicalServicesDashboard() {
 
     setLoading(true);
     try {
-      // Fetch medical services
-      const { data: servicesData, error: servicesError } = await supabase
-        .from('medical_services')
-        .select('*')
-        .order('service_name');
-
-      if (servicesError) throw servicesError;
-
-      // Fetch patient services
-      const { data: patientServicesData, error: patientServicesError } = await supabase
-        .from('patient_services')
-        .select(`
-          *,
-          service:medical_services(*)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (patientServicesError) throw patientServicesError;
-
-      // Fetch patients for assignment
-      const { data: patientsData, error: patientsError } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('status', 'Active')
-        .order('full_name');
-
-      if (patientsError) throw patientsError;
-
-      setServices(servicesData || []);
-      setPatientServices(patientServicesData || []);
-      setPatients(patientsData || []);
+      // Medical services management not yet implemented in backend
+      // Using empty data for now
+      setServices([]);
+      setPatientServices([]);
+      setPatients([]);
+      
+      // Show info message only once
+      if (services.length === 0 && patientServices.length === 0) {
+        toast.info('Medical services management will be available soon');
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load medical services data');
@@ -186,17 +163,8 @@ export default function MedicalServicesDashboard() {
     }
 
     try {
-      const { error } = await supabase
-        .from('medical_services')
-        .insert({
-          ...newService,
-          is_active: true
-        });
-
-      if (error) throw error;
-
-      toast.success('Medical service added successfully!');
-      logActivity('service.add', { service_code: newService.service_code, service_name: newService.service_name });
+      // Medical services management not yet implemented in backend
+      toast.info('Medical services management will be available soon');
       setShowAddDialog(false);
       setNewService({
         service_code: '',
@@ -206,7 +174,6 @@ export default function MedicalServicesDashboard() {
         base_price: 0,
         currency: 'TSh'
       });
-      fetchData();
     } catch (error) {
       console.error('Error adding service:', error);
       toast.error('Failed to add medical service');
@@ -589,14 +556,12 @@ export default function MedicalServicesDashboard() {
                       setImporting(false);
                       return;
                     }
-                    const { error } = await supabase.from('medical_services').insert(rows);
-                    if (error) throw error;
-                    toast.success(`Imported ${rows.length} services successfully`);
-                    logActivity('service.import', { count: rows.length });
+                    
+                    // CSV import not yet implemented in backend
+                    toast.info('CSV import will be available soon');
                     setImportDialogOpen(false);
                     setImportFile(null);
                     setImportPreview([]);
-                    fetchData();
                   } catch (err: any) {
                     console.error('CSV import error:', err);
                     setImportError(err?.message || 'Failed to import CSV');

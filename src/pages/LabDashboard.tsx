@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { FlaskConical, AlertCircle, CheckCircle, Clock, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
@@ -26,34 +26,18 @@ export default function LabDashboard() {
   useEffect(() => {
     fetchData();
 
-    // Set up real-time subscription for lab tests
-    const labTestsChannel = supabase
-      .channel('lab_tests_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'lab_tests' },
-        () => {
-          console.log('Lab tests updated');
-          fetchData();
-        }
-      )
-      .subscribe();
+    // Use polling instead of realtime subscriptions
+    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
 
-    // Cleanup
     return () => {
-      supabase.removeChannel(labTestsChannel);
+      clearInterval(interval);
     };
   }, []);
 
   const fetchData = async () => {
     try {
-      const { data: testsData } = await supabase
-        .from('lab_tests')
-        .select(`
-          *,
-          patient:patients(full_name, phone)
-        `)
-        .order('ordered_date', { ascending: false })
-        .limit(50);
+      const { data } = await api.get('/lab-tests?limit=50');
+      const testsData = data.tests || [];
 
       // Remove duplicates based on ID
       const uniqueTests = testsData?.filter((test, index, self) =>
@@ -112,10 +96,7 @@ export default function LabDashboard() {
     if (pendingTests.length > 0) {
       await Promise.all(
         pendingTests.map(test => 
-          supabase
-            .from('lab_tests')
-            .update({ status: 'In Progress' })
-            .eq('id', test.id)
+          api.put(`/lab-tests/${test.id}`, { status: 'In Progress' })
         )
       );
       toast.info(`Started ${pendingTests.length} pending test(s)`);
@@ -168,23 +149,11 @@ export default function LabDashboard() {
         return;
       }
 
-      // Insert all results
-      const { error: resultError } = await supabase
-        .from('lab_results')
-        .insert(resultsToInsert);
-
-      if (resultError) throw resultError;
-
-      // Update all test statuses
-      const { error: updateError } = await supabase
-        .from('lab_tests')
-        .update({
-          status: 'Completed',
-          completed_date: new Date().toISOString()
-        })
-        .in('id', testsToUpdate);
-
-      if (updateError) throw updateError;
+      // Insert all results and update test statuses
+      await api.post('/lab-results/batch', {
+        results: resultsToInsert,
+        testIds: testsToUpdate
+      });
 
       // Update patient workflow
       if (selectedPatientTests.length > 0) {
@@ -204,37 +173,26 @@ export default function LabDashboard() {
   };
 
   const updatePatientWorkflow = async (patientId: string) => {
-    const { data: visits } = await supabase
-      .from('patient_visits')
-      .select('*')
-      .eq('patient_id', patientId)
-      .eq('overall_status', 'Active')
-      .order('created_at', { ascending: false })
-      .limit(1);
+    const { data } = await api.get(`/patient-visits?patient_id=${patientId}&status=Active&limit=1`);
+    const visits = data.visits || [];
 
     if (visits && visits.length > 0) {
-      await supabase
-        .from('patient_visits')
-        .update({
-          lab_status: 'Completed',
-          lab_completed_at: new Date().toISOString(),
-          current_stage: 'doctor',
-          doctor_status: 'Pending'
-        })
-        .eq('id', visits[0].id);
+      await api.put(`/patient-visits/${visits[0].id}`, {
+        lab_status: 'Completed',
+        lab_completed_at: new Date().toISOString(),
+        current_stage: 'doctor',
+        doctor_status: 'Pending'
+      });
     }
   };
 
   const handleUpdateStatus = async (testId: string, newStatus: string, patientId?: string) => {
-    const { error } = await supabase
-      .from('lab_tests')
-      .update({
+    try {
+      await api.put(`/lab-tests/${testId}`, {
         status: newStatus,
         completed_date: newStatus === 'Completed' ? new Date().toISOString() : null
-      })
-      .eq('id', testId);
-
-    if (error) {
+      });
+    } catch (error) {
       toast.error('Failed to update test status');
       return;
     }
@@ -249,12 +207,8 @@ export default function LabDashboard() {
       });
 
       // Check if patient already has active prescriptions before proceeding
-      const { data: existingPrescriptions } = await supabase
-        .from('prescriptions')
-        .select('*')
-        .eq('patient_id', patientId)
-        .in('status', ['Pending', 'Active'])
-        .limit(1);
+      const { data: prescData } = await api.get(`/prescriptions?patient_id=${patientId}&status=Pending,Active&limit=1`);
+      const existingPrescriptions = prescData.prescriptions || [];
 
       if (existingPrescriptions && existingPrescriptions.length > 0) {
         console.log('Patient already has active prescriptions:', existingPrescriptions.length);
@@ -264,13 +218,8 @@ export default function LabDashboard() {
       }
 
       // First, let's find the correct patient visit for this patient
-      const { data: visits, error: visitError } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', patientId)
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: false })
-        .limit(5);
+      const { data: visitData } = await api.get(`/patient-visits?patient_id=${patientId}&status=Active&limit=5`);
+      const visits = visitData.visits || [];
 
       console.log('Found patient visits for workflow update:', {
         patientId,
@@ -283,41 +232,32 @@ export default function LabDashboard() {
         }))
       });
 
-      if (visitError) {
-        console.error('Error finding patient visits:', visitError);
-      }
-
       if (visits && visits.length > 0) {
         // Find the most appropriate visit to update (prefer one in lab stage)
         let visitToUpdate = visits.find(v => v.current_stage === 'lab') || visits[0];
 
         console.log('Updating visit:', visitToUpdate.id, 'from stage:', visitToUpdate.current_stage);
 
-        const { error: workflowError } = await supabase
-          .from('patient_visits')
-          .update({
+        try {
+          await api.put(`/patient-visits/${visitToUpdate.id}`, {
             lab_status: 'Completed',
             lab_completed_at: new Date().toISOString(),
             current_stage: 'doctor',
             doctor_status: 'Pending'
-          })
-          .eq('id', visitToUpdate.id);
-
-        if (workflowError) {
-          console.error('Failed to update patient visit workflow:', workflowError);
-          toast.error('Test completed but failed to update workflow');
-        } else {
+          });
           console.log('Successfully updated patient visit workflow');
           toast.success('Lab result submitted and patient moved to doctor consultation');
+        } catch (workflowError) {
+          console.error('Failed to update patient visit workflow:', workflowError);
+          toast.error('Test completed but failed to update workflow');
         }
       } else {
         console.log('No active patient visits found for lab workflow update');
         console.log('Creating a new patient visit for lab workflow...');
 
         // Create a patient visit if none exists
-        const { error: createError } = await supabase
-          .from('patient_visits')
-          .insert([{
+        try {
+          await api.post('/patient-visits', {
             patient_id: patientId,
             visit_date: new Date().toISOString().split('T')[0],
             current_stage: 'doctor',
@@ -327,14 +267,12 @@ export default function LabDashboard() {
             lab_status: 'Completed',
             doctor_status: 'Pending',
             lab_completed_at: new Date().toISOString()
-          }]);
-
-        if (createError) {
-          console.error('Failed to create patient visit:', createError);
-          toast.error('Test completed but failed to create patient visit');
-        } else {
+          });
           console.log('Created patient visit for lab workflow');
           toast.success('Lab result submitted and patient moved to doctor consultation');
+        } catch (createError) {
+          console.error('Failed to create patient visit:', createError);
+          toast.error('Test completed but failed to create patient visit');
         }
       }
     }

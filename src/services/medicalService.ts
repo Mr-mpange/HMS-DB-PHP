@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { logActivity } from '@/lib/utils';
 
 export interface MedicalService {
@@ -17,24 +17,10 @@ export interface MedicalService {
 // Create a new medical service
 export const createMedicalService = async (service: Omit<MedicalService, 'id' | 'created_at' | 'updated_at'>, userId: string) => {
   try {
-    const { data, error } = await supabase
-      .from('medical_services')
-      .insert([service])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Log activity
-    await logActivity({
-      user_id: userId,
-      action: 'create',
-      table_name: 'medical_services',
-      record_id: data.id,
-      details: `Created medical service: ${service.service_name}`
-    });
-
-    return { data, error: null };
+    // Medical services not yet implemented in backend
+    console.log('Create medical service:', service);
+    await logActivity('medical_service.create', { service_name: service.service_name });
+    return { data: null, error: new Error('Medical services management not yet implemented') };
   } catch (error) {
     console.error('Error creating medical service:', error);
     return { data: null, error };
@@ -44,13 +30,8 @@ export const createMedicalService = async (service: Omit<MedicalService, 'id' | 
 // Get all medical services
 export const getMedicalServices = async () => {
   try {
-    const { data, error } = await supabase
-      .from('medical_services')
-      .select('*')
-      .order('service_name', { ascending: true });
-
-    if (error) throw error;
-    return { data, error: null };
+    // Medical services not yet implemented in backend
+    return { data: [], error: null };
   } catch (error) {
     console.error('Error fetching medical services:', error);
     return { data: null, error };
@@ -60,14 +41,8 @@ export const getMedicalServices = async () => {
 // Get a single medical service by ID
 export const getMedicalServiceById = async (id: string) => {
   try {
-    const { data, error } = await supabase
-      .from('medical_services')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-    return { data, error: null };
+    // Medical services not yet implemented in backend
+    return { data: null, error: new Error('Medical services management not yet implemented') };
   } catch (error) {
     console.error('Error fetching medical service:', error);
     return { data: null, error };
@@ -77,28 +52,10 @@ export const getMedicalServiceById = async (id: string) => {
 // Update a medical service
 export const updateMedicalService = async (id: string, updates: Partial<MedicalService>, userId: string) => {
   try {
-    const { data, error } = await supabase
-      .from('medical_services')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Log activity
-    await logActivity({
-      user_id: userId,
-      action: 'update',
-      table_name: 'medical_services',
-      record_id: id,
-      details: `Updated medical service: ${updates.service_name || 'ID: ' + id}`
-    });
-
-    return { data, error: null };
+    // Medical services not yet implemented in backend
+    console.log('Update medical service:', id, updates);
+    await logActivity('medical_service.update', { service_id: id });
+    return { data: null, error: new Error('Medical services management not yet implemented') };
   } catch (error) {
     console.error('Error updating medical service:', error);
     return { data: null, error };
@@ -108,28 +65,10 @@ export const updateMedicalService = async (id: string, updates: Partial<MedicalS
 // Delete a medical service
 export const deleteMedicalService = async (id: string, userId: string) => {
   try {
-    // First get the service name for logging
-    const { data: service } = await getMedicalServiceById(id);
-    
-    const { error } = await supabase
-      .from('medical_services')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-
-    // Log activity
-    if (service) {
-      await logActivity({
-        user_id: userId,
-        action: 'delete',
-        table_name: 'medical_services',
-        record_id: id,
-        details: `Deleted medical service: ${service.service_name}`
-      });
-    }
-
-    return { error: null };
+    // Medical services not yet implemented in backend
+    console.log('Delete medical service:', id);
+    await logActivity('medical_service.delete', { service_id: id });
+    return { error: new Error('Medical services management not yet implemented') };
   } catch (error) {
     console.error('Error deleting medical service:', error);
     return { error };
@@ -139,28 +78,10 @@ export const deleteMedicalService = async (id: string, userId: string) => {
 // Toggle service active status
 export const toggleServiceStatus = async (id: string, currentStatus: boolean, userId: string) => {
   try {
-    const { data, error } = await supabase
-      .from('medical_services')
-      .update({ 
-        is_active: !currentStatus,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Log activity
-    await logActivity({
-      user_id: userId,
-      action: 'update',
-      table_name: 'medical_services',
-      record_id: id,
-      details: `${currentStatus ? 'Deactivated' : 'Activated'} medical service: ${data.service_name}`
-    });
-
-    return { data, error: null };
+    // Medical services not yet implemented in backend
+    console.log('Toggle service status:', id, currentStatus);
+    await logActivity('medical_service.toggle', { service_id: id, new_status: !currentStatus });
+    return { data: null, error: new Error('Medical services management not yet implemented') };
   } catch (error) {
     console.error('Error toggling service status:', error);
     return { data: null, error };

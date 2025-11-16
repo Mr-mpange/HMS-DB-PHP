@@ -3,7 +3,7 @@
  * Unified API for all Tanzanian mobile money providers (M-Pesa, Airtel Money, Tigo Pesa, Halopesa)
  */
 
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 
 export interface MobilePaymentRequest {
   phoneNumber: string;
@@ -300,26 +300,9 @@ class ZenoPayService {
 
   private async updatePaymentStatus(orderId: string, status: string): Promise<void> {
     try {
-      // Find payment by reference_number (which should contain the orderId for mobile payments)
-      const { data: payments } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('reference_number', orderId);
-
-      if (payments && payments.length > 0) {
-        const payment = payments[0];
-
-        // Update payment status
-        await supabase
-          .from('payments')
-          .update({ status })
-          .eq('id', payment.id);
-
-        // If payment is completed, update invoice
-        if (status === 'completed') {
-          await this.updateInvoiceAfterPayment(payment.invoice_id, payment.amount);
-        }
-      }
+      // Payment webhook processing not yet fully implemented
+      console.log('Payment status update:', { orderId, status });
+      // TODO: Implement payment status update via MySQL API
     } catch (error) {
       console.error('Error updating payment status:', error);
     }
@@ -327,46 +310,9 @@ class ZenoPayService {
 
   private async updateInvoiceAfterPayment(invoiceId: string, amount: number): Promise<void> {
     try {
-      const { data: invoice } = await supabase
-        .from('invoices')
-        .select('paid_amount, total_amount, patient_id')
-        .eq('id', invoiceId)
-        .single();
-
-      if (invoice) {
-        const newPaidAmount = Number(invoice.paid_amount) + amount;
-        const totalAmount = Number(invoice.total_amount);
-        const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
-
-        await supabase
-          .from('invoices')
-          .update({ paid_amount: newPaidAmount, status: newStatus })
-          .eq('id', invoiceId);
-
-        // If fully paid, complete the workflow
-        if (newStatus === 'Paid') {
-          const { data: visits } = await supabase
-            .from('patient_visits')
-            .select('*')
-            .eq('patient_id', invoice.patient_id)
-            .eq('current_stage', 'billing')
-            .eq('overall_status', 'Active')
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          if (visits && visits.length > 0) {
-            await supabase
-              .from('patient_visits')
-              .update({
-                billing_status: 'Paid',
-                billing_completed_at: new Date().toISOString(),
-                current_stage: 'completed',
-                overall_status: 'Completed'
-              })
-              .eq('id', visits[0].id);
-          }
-        }
-      }
+      // Invoice update after payment not yet fully implemented
+      console.log('Invoice update after payment:', { invoiceId, amount });
+      // TODO: Implement invoice update via MySQL API
     } catch (error) {
       console.error('Error updating invoice after payment:', error);
     }

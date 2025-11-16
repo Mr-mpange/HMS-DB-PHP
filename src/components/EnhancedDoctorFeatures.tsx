@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Pill, FlaskConical, AlertTriangle, CheckCircle } from 'lucide-react';
@@ -24,8 +24,13 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess, labResults = [] }:
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
 
   const fetchMedications = async () => {
-    const { data } = await supabase.from('medications').select('*').order('name');
-    setMedications(data || []);
+    try {
+      // Medications not yet implemented in backend
+      setMedications([]);
+    } catch (error) {
+      console.error('Error fetching medications:', error);
+      setMedications([]);
+    }
   };
 
   const handlePrescribe = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -37,7 +42,6 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess, labResults = [] }:
     const prescriptionData = {
       patient_id: formData.get('patientId') as string,
       doctor_id: user.id,
-      medication_id: formData.get('medicationId') as string || null,
       medication_name: formData.get('medicationName') as string,
       dosage: formData.get('dosage') as string,
       frequency: formData.get('frequency') as string,
@@ -45,55 +49,17 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess, labResults = [] }:
       quantity: Number(formData.get('quantity')),
       instructions: formData.get('instructions') as string || null,
       notes: formData.get('clinicalNotes') as string || null,
-      // Link to lab results if this prescription is based on lab findings
-      lab_result_id: formData.get('labResultId') as string || null,
     };
 
-    const { data: insertedPrescription, error: prescriptionError } = await supabase
-      .from('prescriptions')
-      .insert([prescriptionData])
-      .select();
-
-    if (prescriptionError) {
-      console.error('Error creating prescription:', prescriptionError);
-      console.error('Prescription data that failed:', prescriptionData);
-      toast.error(`Failed to create prescription: ${prescriptionError.message}`);
-    } else {
-      console.log('Prescription created successfully:', insertedPrescription);
-
-      // Update patient visit workflow to move to pharmacy
-      const { data: visits } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', prescriptionData.patient_id)
-        .eq('current_stage', 'doctor')
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (visits && visits.length > 0) {
-        const { error: workflowError } = await supabase
-          .from('patient_visits')
-          .update({
-            doctor_status: 'Completed',
-            doctor_completed_at: new Date().toISOString(),
-            current_stage: 'pharmacy',
-            pharmacy_status: 'Pending',
-          })
-          .eq('id', visits[0].id);
-
-        if (workflowError) {
-          console.error('Failed to update patient visit workflow:', workflowError);
-          toast.error('Prescription created but failed to update workflow');
-        } else {
-          toast.success('Prescription created successfully and sent to pharmacy');
-        }
-      } else {
-        toast.success('Prescription created successfully');
-      }
-
+    try {
+      // Create prescription via MySQL API
+      await api.post('/prescriptions', prescriptionData);
+      toast.success('Prescription created successfully');
       setPrescriptionDialogOpen(false);
       onSuccess();
+    } catch (error: any) {
+      console.error('Error creating prescription:', error);
+      toast.error(error.response?.data?.error || 'Failed to create prescription');
     }
   };
 
@@ -105,29 +71,24 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess, labResults = [] }:
 
     const labTestData = {
       patient_id: formData.get('patientId') as string,
-      ordered_by_doctor_id: user.id,
+      doctor_id: user.id,
       test_name: formData.get('testName') as string,
       test_type: formData.get('testType') as string,
       description: formData.get('description') as string || null,
       priority: formData.get('priority') as string || 'Normal',
       notes: formData.get('notes') as string || null,
-      status: 'Pending',
-      ordered_date: new Date().toISOString(),
     };
 
-    console.log('Inserting lab test:', labTestData);
-
-    const { data, error } = await supabase.from('lab_tests').insert([labTestData]).select();
-
-    if (error) {
-      console.error('Lab test error:', error);
-      toast.error(`Failed to order lab test: ${error.message}`);
-    } else {
-      console.log('Lab test created:', data);
+    try {
+      // Create lab test via MySQL API
+      await api.post('/labs', labTestData);
       toast.success('Lab test ordered successfully');
       setLabTestDialogOpen(false);
       e.currentTarget.reset();
       onSuccess();
+    } catch (error: any) {
+      console.error('Error ordering lab test:', error);
+      toast.error(error.response?.data?.error || 'Failed to order lab test');
     }
   };
 
@@ -138,37 +99,9 @@ export const EnhancedDoctorFeatures = ({ patients, onSuccess, labResults = [] }:
 
   const handleCompleteConsultation = async (patientId: string) => {
     try {
-      // Update patient visit workflow to mark doctor consultation as completed
-      const { data: visits } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', patientId)
-        .eq('current_stage', 'doctor')
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (visits && visits.length > 0) {
-        const { error: workflowError } = await supabase
-          .from('patient_visits')
-          .update({
-            doctor_status: 'Completed',
-            doctor_completed_at: new Date().toISOString(),
-            current_stage: 'pharmacy',
-            pharmacy_status: 'Pending',
-          })
-          .eq('id', visits[0].id);
-
-        if (workflowError) {
-          console.error('Failed to complete consultation:', workflowError);
-          toast.error('Failed to complete consultation');
-        } else {
-          toast.success('Consultation completed successfully');
-          onSuccess();
-        }
-      } else {
-        toast.error('No active consultation found for this patient');
-      }
+      // Visit workflow not yet implemented in backend
+      toast.info('Visit workflow will be available soon');
+      onSuccess();
     } catch (error) {
       console.error('Error completing consultation:', error);
       toast.error('Failed to complete consultation');

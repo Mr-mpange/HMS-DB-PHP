@@ -49,8 +49,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { supabase } from '@/integrations/supabase/client';
-import { supabaseAdmin } from '@/integrations/supabase/admin';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { logActivity } from '@/lib/utils';
 import AdminReports from '@/components/AdminReports';
@@ -677,40 +676,10 @@ const BillingAnalysis = () => {
 
   const fetchBillingData = async () => {
     try {
-      // Calculate date range based on filter
-      const now = new Date();
-      let startDate: Date;
-      
-      switch (timeFilter) {
-        case 'day':
-          startDate = new Date(now.setHours(0, 0, 0, 0));
-          break;
-        case 'week':
-          startDate = new Date(now.setDate(now.getDate() - 7));
-          break;
-        case 'month':
-          startDate = new Date(now.setMonth(now.getMonth() - 1));
-          break;
-      }
-
-      const startDateStr = startDate.toISOString();
-
-      // Fetch recent invoices with filter
-      const { data: invoices } = await supabase
-        .from('invoices')
-        .select(`
-          *,
-          patient:patients(full_name)
-        `)
-        .gte('invoice_date', startDateStr)
-        .order('invoice_date', { ascending: false })
-        .limit(10);
-
-      // Calculate statistics with filter
-      const { data: allInvoices } = await supabase
-        .from('invoices')
-        .select('total_amount, paid_amount, status, invoice_date')
-        .gte('invoice_date', startDateStr);
+      // Billing data from MySQL API
+      const { data } = await api.get('/billing/invoices');
+      const invoices = data.invoices || [];
+      const allInvoices = invoices;
 
       if (allInvoices) {
         const totalRevenue = allInvoices
@@ -1007,6 +976,9 @@ export default function AdminDashboard() {
     consultation_fee: '50000',
     currency: 'TSh',
     hospital_name: 'Medical Center',
+    hospital_address: '',
+    hospital_phone: '',
+    hospital_email: '',
     report_header: 'Healthcare Management System Report',
     enable_appointment_fees: 'true'
   });
@@ -1022,78 +994,11 @@ export default function AdminDashboard() {
   });
 
   useEffect(() => {
-    const loadUser = async () => {
-      if (user?.id) {
-        const { data: userData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-        // Optionally use userData here if needed
-      }
-    };
-    
-    loadUser();
     fetchData();
     fetchSettings();
-
-    // Set up real-time subscriptions for admin dashboard
-    const rolesChannel = supabase
-      .channel('admin_roles')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'user_roles' },
-        (payload) => {
-          console.log('User roles updated:', payload);
-          
-          // Show specific feedback based on the change
-          if (payload.eventType === 'INSERT') {
-            toast.success(`✅ New ${payload.new.role} role assigned successfully`);
-          } else if (payload.eventType === 'UPDATE') {
-            const oldRole = payload.old.role;
-            const newRole = payload.new.role;
-            if (payload.new.is_primary !== payload.old.is_primary) {
-              toast.info(`🔄 ${newRole} role set as ${payload.new.is_primary ? 'primary' : 'secondary'}`);
-            } else {
-              toast.info(`🔄 User role updated from ${oldRole} to ${newRole}`);
-            }
-          } else if (payload.eventType === 'DELETE') {
-            toast.warning(`🗑️ ${payload.old.role} role removed`);
-          }
-          
-          // Refresh data to show updated user lists and roles
-          fetchData();
-        }
-      )
-      .subscribe();
-
-    const profilesChannel = supabase
-      .channel('admin_profiles')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'profiles' },
-        () => {
-          console.log('User profiles updated');
-          fetchData(); // Refresh data when profiles change
-        }
-      )
-      .subscribe();
-
-    const patientsChannel = supabase
-      .channel('admin_patients')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'patients' },
-        () => {
-          console.log('Patients updated');
-          fetchData(); // Refresh data when patients change
-        }
-      )
-      .subscribe();
-
-    // Cleanup subscriptions
-    return () => {
-      supabase.removeChannel(rolesChannel);
-      supabase.removeChannel(profilesChannel);
-      supabase.removeChannel(patientsChannel);
-    };
+    
+    // Real-time updates would be implemented with Socket.io
+    // For now, we'll use polling or manual refresh
   }, [user]);
 
   // Filter patients based on selected time period
@@ -1128,45 +1033,19 @@ export default function AdminDashboard() {
   const fetchActivityLogs = async (userId?: string) => {
     try {
       setLogsLoading(true);
-      let query = supabase
-        .from('activity_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      // Filter by user if specified
-      if (userId && userId !== 'all') {
-        query = query.eq('user_id', userId);
-      }
-
-      const { data: logs, error } = await query;
-        
-      if (error) throw error;
+      const { data } = await api.get('/activity', {
+        params: { limit: 100 }
+      });
       
-      if (!logs) {
-        setActivityLogs([]);
-        return;
-      }
+      const logs = data.logs || [];
       
-      // Get user details for each log
-      const logsWithUserInfo = await Promise.all(
-        logs.map(async (log: ActivityLog) => {
-          if (!log.user_id) return log;
-          
-          const { data: userData } = await supabase
-            .from('profiles')
-            .select('full_name, email, avatar_url')
-            .eq('id', log.user_id)
-            .single();
-            
-          return {
-            ...log,
-            user_name: userData?.full_name || 'System',
-            user_email: userData?.email || 'system@example.com',
-            user_avatar: userData?.avatar_url || ''
-          } as ActivityLog;
-        })
-      );
+      // Logs already include user info from backend
+      const logsWithUserInfo = logs.map((log: any) => ({
+        ...log,
+        user_name: log.full_name || 'System',
+        user_email: log.email || 'system@example.com',
+        user_avatar: ''
+      }));
       
       setActivityLogs(logsWithUserInfo);
     } catch (error) {
@@ -1179,46 +1058,20 @@ export default function AdminDashboard() {
 
   const fetchSettings = async () => {
     try {
-      // Fetch system settings
-      const { data: settingsData, error: settingsError } = await supabase
-        .from('system_settings')
-        .select('*');
-
-      if (settingsError) throw settingsError;
-
-      if (settingsData) {
-        const settings: any = {};
-        settingsData.forEach((setting: any) => {
-          settings[setting.key] = setting.value;
-        });
-        setSystemSettings(prev => ({ ...prev, ...settings }));
-      }
-
-      // Fetch departments
-      const { data: deptData, error: deptError } = await supabase
-        .from('departments')
-        .select('*')
-        .order('name');
-
-      if (deptError) throw deptError;
-      setDepartments(deptData || []);
-
-      // Fetch department fees
-      const { data: feesData, error: feesError } = await supabase
-        .from('department_fees')
-        .select('*');
-
-      if (feesError && feesError.code !== 'PGRST116') { // Ignore "not found" errors
-        console.error('Error fetching department fees:', feesError);
-      }
-
-      if (feesData) {
-        const fees: Record<string, string> = {};
-        feesData.forEach((fee: any) => {
-          fees[fee.department_id] = fee.fee_amount.toString();
-        });
-        setDepartmentFees(fees);
-      }
+      // Settings endpoints not yet implemented in MySQL backend
+      // For now, use default settings
+      setSystemSettings({
+        consultation_fee: '50000',
+        currency: 'TSh',
+        hospital_name: 'Hospital Management System',
+        hospital_address: '',
+        hospital_phone: '',
+        hospital_email: '',
+        report_header: '',
+        enable_appointment_fees: 'true'
+      });
+      setDepartments([]);
+      setDepartmentFees({});
     } catch (error) {
       console.error('Error fetching settings:', error);
       toast.error('Failed to load settings');
@@ -1228,40 +1081,8 @@ export default function AdminDashboard() {
   const saveSettings = async () => {
     setSavingSettings(true);
     try {
-      // Save system settings
-      for (const [key, value] of Object.entries(systemSettings)) {
-        const { error } = await supabase
-          .from('system_settings')
-          .upsert({
-            key,
-            value,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: 'key'
-          });
-
-        if (error) throw error;
-      }
-
-      // Save department fees
-      for (const [deptId, feeAmount] of Object.entries(departmentFees)) {
-        if (feeAmount && parseFloat(feeAmount) > 0) {
-          const { error } = await supabase
-            .from('department_fees')
-            .upsert({
-              department_id: deptId,
-              fee_amount: parseFloat(feeAmount),
-              currency: systemSettings.currency,
-              updated_at: new Date().toISOString()
-            }, {
-              onConflict: 'department_id'
-            });
-
-          if (error) throw error;
-        }
-      }
-
-      toast.success('Settings saved successfully');
+      // Settings management not yet implemented in backend
+      toast.info('Settings management will be available soon');
       setShowSettingsDialog(false);
       await logActivity('settings.update', { settings: systemSettings });
     } catch (error) {
@@ -1292,33 +1113,9 @@ export default function AdminDashboard() {
     }
 
     try {
-      if (editingDepartment) {
-        // Update existing department
-        const { error } = await supabase
-          .from('departments')
-          .update({
-            name: departmentForm.name,
-            description: departmentForm.description
-          })
-          .eq('id', editingDepartment.id);
-
-        if (error) throw error;
-        toast.success('Department updated successfully');
-      } else {
-        // Create new department
-        const { error } = await supabase
-          .from('departments')
-          .insert([{
-            name: departmentForm.name,
-            description: departmentForm.description
-          }]);
-
-        if (error) throw error;
-        toast.success('Department created successfully');
-      }
-
+      // Department management not yet implemented in backend
+      toast.info('Department management will be available soon');
       setShowDepartmentDialog(false);
-      fetchData(); // Refresh data
     } catch (error: any) {
       console.error('Error saving department:', error);
       toast.error(error.message || 'Failed to save department');
@@ -1331,14 +1128,8 @@ export default function AdminDashboard() {
     }
 
     try {
-      const { error } = await supabase
-        .from('departments')
-        .delete()
-        .eq('id', deptId);
-
-      if (error) throw error;
-      toast.success('Department deleted successfully');
-      fetchData(); // Refresh data
+      // Department management not yet implemented in backend
+      toast.info('Department management will be available soon');
     } catch (error: any) {
       console.error('Error deleting department:', error);
       toast.error(error.message || 'Failed to delete department');
@@ -1352,91 +1143,47 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Fetch patients
-      const { data: patientsData } = await supabase
-        .from('patients')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Fetch patients from MySQL API
+      const { data: patientsResponse } = await api.get('/patients', {
+        params: { limit: 10 }
+      });
+      const patientsData = patientsResponse.patients || [];
 
-      // Fetch users with their roles
-      const { data: usersData, error: usersError } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, phone')
-        .limit(20);
-
-      if (usersError) {
-        console.error('Error fetching users:', usersError);
-        throw usersError;
-      }
+      // Fetch users with their roles from MySQL API
+      const { data: usersResponse } = await api.get('/users');
+      const usersData = usersResponse.users || [];
 
       console.log('Fetched users data:', usersData);
 
-      // Fetch user roles
-      const { data: rolesData } = await supabase
-        .from('user_roles')
-        .select('id, user_id, role, is_primary');
-
-      console.log('Fetched roles data:', rolesData);
-
-      // Combine users with their roles and active role
-      const usersWithRoles = usersData?.map(user => {
-        const userRoles = rolesData?.filter(r => r.user_id === user.id) || [];
-        const activeRole = userRoles.find(r => r.is_primary)?.role || 
-                         (userRoles[0]?.role || 'No role assigned');
-                          
-        return {
-          ...user,
-          roles: userRoles.map(r => ({
-            id: r.id,
-            role: r.role,
-            is_primary: r.is_primary
-          })),
-          activeRole
-        };
-      }) || [];
+      // Users from API already include roles
+      const usersWithRoles = usersData.map((user: any) => ({
+        ...user,
+        roles: user.roles || [],
+        activeRole: user.primaryRole || user.roles?.[0] || 'No role assigned'
+      }));
 
       console.log('Users with roles:', usersWithRoles);
 
-      // Fetch stats
-      const { count: patientCount } = await supabase
-        .from('patients')
-        .select('*', { count: 'exact', head: true });
+      // Calculate stats from the data we have
+      const patientCount = patientsData.length;
+      const appointmentCount = 0; // Will be populated when appointments are fetched
+      const servicesCount = 0; // Will be populated when services are fetched
 
-      const { count: appointmentCount } = await supabase
-        .from('appointments')
-        .select('*', { count: 'exact', head: true })
-        .in('status', ['Scheduled', 'Confirmed']);
-
-      // Fetch medical services
-      const { data: servicesData } = await supabase
-        .from('medical_services')
-        .select('*')
-        .order('service_name');
-
-      const { count: servicesCount } = await supabase
-        .from('medical_services')
-        .select('*', { count: 'exact', head: true });
-
-      setPatients(patientsData || []);
+      setPatients(patientsData);
       setUsers(usersWithRoles);
-      setMedicalServices(servicesData || []);
+      setMedicalServices([]); // Will be populated when medical services endpoint is ready
       setStats({
-        totalPatients: patientCount || 0,
-        activeAppointments: appointmentCount || 0,
-        totalUsers: usersData?.length || 0,
-        totalServices: servicesCount || 0
+        totalPatients: patientCount,
+        activeAppointments: appointmentCount,
+        totalUsers: usersData.length,
+        totalServices: servicesCount
       });
       
-      // Fetch activity logs
-      await fetchActivityLogs();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching admin data:', error);
       console.error('Error details:', {
         message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
+        response: error.response?.data
       });
 
       // Set empty data to prevent crashes
@@ -1470,132 +1217,25 @@ export default function AdminDashboard() {
     };
 
     try {
-      let newUserId: string | null = null;
+      // Create patient via MySQL API
+      const { data } = await api.post('/patients', patientData);
 
-      // Only attempt to create an auth user if an email is provided
-      if (patientData.email && patientData.email.trim().length > 0) {
-        const randomPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8);
-        const { data: authData, error: authError } = await supabase.auth.signUp({
-          email: patientData.email,
-          password: randomPassword,
-          options: {
-            data: {
-              full_name: patientData.full_name,
-              phone: patientData.phone,
-            },
-            emailRedirectTo: undefined,
-          },
-        });
-
-        if (authError) {
-          // If email already exists, try to find the existing user profile by email
-          if (authError.message?.toLowerCase().includes('already')) {
-            const { data: existingProfile } = await supabase
-              .from('profiles')
-              .select('id')
-              .eq('email', patientData.email)
-              .maybeSingle();
-            if (existingProfile?.id) {
-              newUserId = existingProfile.id;
-            } else {
-              // Proceed without linking if we cannot resolve the user id
-              toast.warning('Email already exists. Patient will be created without linking to user account.');
-            }
-          } else {
-            // Other signup errors: proceed without linking
-            toast.warning('Could not create user account. Creating patient without account.');
-          }
-        } else if (authData?.user?.id) {
-          // Use newly created auth user id
-          newUserId = authData.user.id;
-        }
+      if (data && data.patientId) {
+        toast.success('Patient added successfully');
+        logActivity('patient.create', { full_name: patientData.full_name });
+        setDialogOpen(false);
+        fetchData();
       }
-
-      // If we think a user exists but the profile trigger may be eventual, double-check via profiles when email present
-      if (!newUserId && patientData.email) {
-        const { data: profileCheck } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('email', patientData.email)
-          .maybeSingle();
-        if (profileCheck?.id) {
-          newUserId = profileCheck.id;
-        }
-      }
-
-      // Validate user id via profiles before linking to avoid FK violations
-      let finalUserId: string | null = null;
-      if (newUserId) {
-        const { data: profileById } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', newUserId)
-          .maybeSingle();
-        if (profileById?.id) {
-          finalUserId = profileById.id;
-        }
-      }
-
-      // Create the patient record (link only if verified)
-      const { error: patientError } = await supabase.from('patients').insert([{
-        ...patientData,
-        user_id: finalUserId,
-      }]);
-
-      if (patientError) {
-        toast.error('Failed to add patient: ' + patientError.message);
-      } else {
-        // Assign the patient role if we have a user ID
-        if (finalUserId) {
-          const { error: roleError } = await supabase
-            .from('user_roles')
-            .insert([{
-              user_id: finalUserId,
-              role: 'patient',
-              is_primary: true,
-            }]);
-
-          if (roleError) {
-            toast.error('Patient created but failed to assign role: ' + roleError.message);
-          } else {
-            toast.success('Patient added successfully with user account');
-            logActivity('patient.create', { full_name: patientData.full_name, linked_user: true });
-            setDialogOpen(false);
-            fetchData();
-          }
-        } else {
-          toast.success('Patient created successfully (no user account created)');
-          logActivity('patient.create', { full_name: patientData.full_name, linked_user: false });
-          setDialogOpen(false);
-          fetchData();
-        }
-      }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating patient:', error);
-      toast.error('An unexpected error occurred');
+      toast.error(error.response?.data?.error || 'Failed to add patient');
     }
   };
 
   const handleSetPrimaryRole = async (userId: string, roleId: string) => {
     try {
-      // First, set all roles for this user to non-primary
-      const { error: clearError } = await supabase
-        .from('user_roles')
-        .update({ is_primary: false })
-        .eq('user_id', userId);
-
-      if (clearError) throw clearError;
-
-      // Then set the selected role as primary
-      const { error: setError } = await supabase
-        .from('user_roles')
-        .update({ is_primary: true })
-        .eq('id', roleId);
-
-      if (setError) throw setError;
-
-      toast.success('Primary role updated successfully');
-      fetchData();
+      // Role management not yet implemented in backend
+      toast.info('Role management will be available soon');
     } catch (error) {
       console.error('Error updating primary role:', error);
       toast.error('Failed to update primary role');
@@ -1620,16 +1260,8 @@ export default function AdminDashboard() {
     }
 
     try {
-      const { error } = await supabase
-        .from('medical_services')
-        .insert({
-          ...serviceForm,
-          is_active: true
-        });
-
-      if (error) throw error;
-
-      toast.success('Medical service added successfully!');
+      // Medical services management not yet implemented in backend
+      toast.info('Medical services management will be available soon');
       setServiceDialogOpen(false);
       setServiceForm({
         service_code: '',
@@ -1640,7 +1272,6 @@ export default function AdminDashboard() {
         currency: 'TSh',
         is_active: true
       });
-      fetchData();
     } catch (error) {
       console.error('Error adding service:', error);
       toast.error('Failed to add medical service');
@@ -1665,14 +1296,8 @@ export default function AdminDashboard() {
     if (!editingService) return;
 
     try {
-      const { error } = await supabase
-        .from('medical_services')
-        .update(serviceForm)
-        .eq('id', editingService.id);
-
-      if (error) throw error;
-
-      toast.success('Medical service updated successfully!');
+      // Medical services management not yet implemented in backend
+      toast.info('Medical services management will be available soon');
       setServiceDialogOpen(false);
       setEditingService(null);
       setServiceForm({
@@ -1684,7 +1309,6 @@ export default function AdminDashboard() {
         currency: 'TSh',
         is_active: true
       });
-      fetchData();
     } catch (error) {
       console.error('Error updating service:', error);
       toast.error('Failed to update medical service');
@@ -1697,15 +1321,8 @@ export default function AdminDashboard() {
     }
 
     try {
-      const { error } = await supabase
-        .from('medical_services')
-        .delete()
-        .eq('id', serviceId);
-
-      if (error) throw error;
-
-      toast.success('Medical service deleted successfully!');
-      fetchData();
+      // Medical services management not yet implemented in backend
+      toast.info('Medical services management will be available soon');
     } catch (error) {
       console.error('Error deleting service:', error);
       toast.error('Failed to delete medical service');
@@ -1753,76 +1370,42 @@ export default function AdminDashboard() {
       
       console.log('Creating user with email:', email);
       
-      // Use regular signup instead of admin API
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // Create user via MySQL API
+      const { data } = await api.post('/users', {
         email: email,
         password: password,
-        options: {
-          data: {
-            full_name: fullName,
-            phone: userForm.phone
-          },
-          emailRedirectTo: window.location.origin
-        }
+        full_name: fullName,
+        phone: userForm.phone,
+        role: userForm.role
       });
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Failed to create user');
-
-      // Wait a moment for the profile trigger to create the profile
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Update profile with additional info
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          full_name: userForm.full_name,
-          phone: userForm.phone,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', authData.user.id);
-
-      if (profileError) {
-        console.warn('Profile update warning:', profileError);
-        // Don't throw - profile might have been created by trigger
+      if (data && data.userId) {
+        toast.success(`User created successfully with ${userForm.role} role.`);
+        setShowCreateUserDialog(false);
+        setUserForm({
+          full_name: '',
+          email: '',
+          phone: '',
+          password: '',
+          role: 'receptionist'
+        });
+        
+        // Refresh data
+        setTimeout(() => fetchData(), 500);
       }
-
-      // Assign role
-      const { error: roleError } = await supabase
-        .from('user_roles')
-        .insert([{
-          user_id: authData.user.id,
-          role: userForm.role,
-          is_primary: true,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (roleError) throw roleError;
-
-      toast.success(`User created successfully with ${userForm.role} role. They will receive a confirmation email.`);
-      setShowCreateUserDialog(false);
-      setUserForm({
-        full_name: '',
-        email: '',
-        phone: '',
-        password: '',
-        role: 'receptionist'
-      });
-      
-      // Refresh data
-      setTimeout(() => fetchData(), 1500);
     } catch (error: any) {
       console.error('Error creating user:', error);
       
       // Provide more helpful error messages
-      if (error.message?.includes('User already registered')) {
+      const errorMessage = error.response?.data?.error || error.message;
+      if (errorMessage?.includes('already')) {
         toast.error('A user with this email already exists');
-      } else if (error.message?.includes('Password')) {
+      } else if (errorMessage?.includes('Password')) {
         toast.error('Password must be at least 6 characters');
-      } else if (error.message?.includes('Email')) {
+      } else if (errorMessage?.includes('Email')) {
         toast.error('Please provide a valid email address');
       } else {
-        toast.error(`Failed to create user: ${error.message}`);
+        toast.error(`Failed to create user: ${errorMessage}`);
       }
     }
   };
@@ -1843,37 +1426,29 @@ export default function AdminDashboard() {
     if (!editingUser) return;
     
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: userForm.full_name,
-          phone: userForm.phone,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', editingUser.id);
+      // Update user via MySQL API
+      const { data } = await api.put(`/users/${editingUser.id}`, {
+        email: userForm.email,
+        full_name: userForm.full_name,
+        phone: userForm.phone,
+        role: userForm.role
+      });
+
+      if (data) {
+        toast.success('User updated successfully');
+        setEditingUser(null);
         
-      if (error) throw error;
-      
-      // Update email in auth if changed
-      if (userForm.email !== editingUser.email) {
-        const { error: emailError } = await supabase.auth.admin.updateUserById(editingUser.id, {
-          email: userForm.email
-        });
-        if (emailError) throw emailError;
+        // Update local state
+        setUsers(prev => prev.map(u => 
+          u.id === editingUser.id 
+            ? { ...u, full_name: userForm.full_name, phone: userForm.phone, email: userForm.email }
+            : u
+        ));
+        fetchData();
       }
-      
-      toast.success('User updated successfully');
-      setEditingUser(null);
-      
-      // Update local state
-      setUsers(prev => prev.map(u => 
-        u.id === editingUser.id 
-          ? { ...u, full_name: userForm.full_name, phone: userForm.phone, email: userForm.email }
-          : u
-      ));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating user:', error);
-      toast.error('Failed to update user');
+      toast.error(error.response?.data?.error || 'Failed to update user');
     }
   };
 
@@ -1883,46 +1458,16 @@ export default function AdminDashboard() {
     }
     
     try {
-      // First, delete related records to avoid foreign key constraints
-      // 1. Delete from user_roles using the admin client
-      const { error: roleError } = await supabaseAdmin
-        .from('user_roles')
-        .delete()
-        .eq('user_id', userId);
-      
-      if (roleError) throw roleError;
-      
-      // 2. Delete from profiles using the admin client
-      const { error: profileError } = await supabaseAdmin
-        .from('profiles')
-        .delete()
-        .eq('id', userId);
-        
-      if (profileError) throw profileError;
-      
-      // 3. Delete the auth user using the admin client
-      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-      if (authError) throw authError;
-      
+      // Delete user via MySQL API
+      await api.delete(`/users/${userId}`);
       toast.success('User deleted successfully');
       
       // Update local state
       setUsers(prev => prev.filter(u => u.id !== userId));
-    } catch (error) {
+      fetchData();
+    } catch (error: any) {
       console.error('Error deleting user:', error);
-      
-      // More specific error messages
-      if (error instanceof Error) {
-        if (error.message.includes('foreign key constraint')) {
-          toast.error('Cannot delete user: User has related records in the database');
-        } else if (error.message.includes('403')) {
-          toast.error('Permission denied: You do not have sufficient permissions to delete users');
-        } else {
-          toast.error(`Failed to delete user: ${error.message}`);
-        }
-      } else {
-        toast.error('Failed to delete user. Please check the console for details.');
-      }
+      toast.error(error.response?.data?.error || 'Failed to delete user');
     }
   };
 
@@ -1949,95 +1494,10 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Check if the user already has this role
-      const { data: existingRole, error: checkError } = await supabase
-        .from('user_roles')
-        .select('id, is_primary')
-        .eq('user_id', selectedUserId)
-        .eq('role', role)
-        .maybeSingle();
-
-      if (checkError) throw checkError;
-
-      if (existingRole) {
-        // If role exists, make it the active role
-        const { error: clearError } = await supabase
-          .from('user_roles')
-          .update({ is_primary: false })
-          .eq('user_id', selectedUserId)
-          .neq('id', existingRole.id);
-        
-        if (clearError) throw clearError;
-
-        // Set this role as primary
-        const { error: updateError } = await supabase
-          .from('user_roles')
-          .update({ is_primary: true })
-          .eq('id', existingRole.id);
-        
-        if (updateError) throw updateError;
-        
-        // Update the user's active role in your auth context or state
-        // This part depends on how you're managing user session/state
-        if (selectedUserId === user?.id) {
-          // If the current user is changing their own role, update the UI/state
-          // You might need to implement a context update or refresh the session
-          // For example:
-          // updateUserSession({ ...user, activeRole: role });
-          // or refresh the session to get the updated roles
-          await supabase.auth.refreshSession();
-        }
-        
-        toast.success(`Switched to ${role} role`);
-      } else {
-        // Role doesn't exist, insert new role
-        if (isPrimary) {
-          // Clear primary flag from other roles if needed
-          const { error: clearError } = await supabase
-            .from('user_roles')
-            .update({ is_primary: false })
-            .eq('user_id', selectedUserId);
-          if (clearError) throw clearError;
-        }
-
-        const { error: insertError } = await supabase
-          .from('user_roles')
-          .upsert(
-            { 
-              user_id: selectedUserId, 
-              role, 
-              is_primary: isPrimary
-            },
-            { 
-              onConflict: 'user_id,role',
-              ignoreDuplicates: false
-            }
-          )
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        
-        toast.success('Role assigned successfully');
-      }
-
-      // Log the role assignment
-      await logActivity('user.role.assigned', {
-        user_id: selectedUserId,
-        role,
-        is_primary: isPrimary
-      });
-
+      // Role assignment not yet implemented in backend
+      toast.info('Role assignment will be available soon');
       setRoleDialogOpen(false);
       setSelectedUserId(null);
-      
-      // Update local state
-      setUsers(prev => prev.map(u => {
-        if (u.id === selectedUserId) {
-          return { ...u, activeRole: isPrimary ? role : u.activeRole };
-        }
-        return u;
-      }));
     } catch (error) {
       console.error('Error assigning role:', error);
       const message = (error as { message?: string })?.message || 'Failed to assign role';
@@ -2110,15 +1570,11 @@ export default function AdminDashboard() {
         return;
       }
       
-      const { error } = await supabase.from('medical_services').insert(rows);
-      
-      if (error) throw error;
-      
-      toast.success(`Imported ${rows.length} services successfully`);
+      // CSV import not yet implemented in backend
+      toast.info('CSV import will be available soon');
       setImportDialogOpen(false);
       setImportFile(null);
       setImportPreview([]);
-      fetchData();
     } catch (err: any) {
       console.error('CSV import error:', err);
       setImportError(err?.message || 'Failed to import CSV');
@@ -2149,17 +1605,8 @@ export default function AdminDashboard() {
   const fetchPatientRecords = async (patientId: string) => {
     try {
       setIsLoadingRecords(true);
-      const { data, error } = await supabase
-        .from('patient_services')
-        .select(`
-          *,
-          service:medical_services(*)
-        `)
-        .eq('patient_id', patientId)
-        .order('service_date', { ascending: false });
-        
-      if (error) throw error;
-      setPatientRecords(data || []);
+      // Patient records not yet implemented in backend
+      setPatientRecords([]);
     } catch (error) {
       console.error('Error fetching patient records:', error);
       toast.error('Failed to load patient records');
@@ -2170,14 +1617,11 @@ export default function AdminDashboard() {
   
   const fetchPatientAppointments = async (patientId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('patient_id', patientId)
-        .order('appointment_date', { ascending: false });
-        
-      if (error) throw error;
-      setPatientAppointments(data || []);
+      // Fetch appointments via MySQL API
+      const { data } = await api.get('/appointments', {
+        params: { patient_id: patientId }
+      });
+      setPatientAppointments(data.appointments || []);
     } catch (error) {
       console.error('Error fetching patient appointments:', error);
       toast.error('Failed to load patient appointments');

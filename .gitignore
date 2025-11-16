@@ -7,10 +7,19 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+package-lock.json
+
+# Build outputs
 dist
 dist-ssr
 *.local
+
+# Environment files
+.env
+.env.local
+.env.*.local
 
 # Editor directories and files
 .vscode/*
@@ -23,5 +32,63 @@ dist-ssr
 *.sln
 *.sw?
 
-.env
+# Deployment artifacts
+deployment-package/
+hostinger-deployment.zip
+*.zip
+test-results/
+backups/
+
+# Database backups
+*.sql.gz
+*.sql.zip
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE files
+*.sublime-project
+*.sublime-workspace
+.vscode/settings.json
+.vscode/launch.json
+
+# Backend specific
+backend/node_modules
+backend/dist
+backend/logs
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/.env
+backend/.env.local
+backend/.env.production.local
+
+# Test files
+coverage/
+.nyc_output/
+
+# PM2
+.pm2/
+ecosystem.config.js.backup
+
+# Docker
+.dockerignore.backup
+docker-compose.override.yml
+
+# Misc
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.vercel
+.netlify
 

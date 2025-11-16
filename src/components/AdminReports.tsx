@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { Printer, Download } from 'lucide-react';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
@@ -46,13 +46,12 @@ export default function AdminReports() {
 
   const fetchSystemSettings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .select('*');
+      const { data } = await api.get('/settings');
+      const settings = data.settings || [];
 
-      if (!error && data) {
+      if (settings.length > 0) {
         const settingsMap: Record<string, string> = {};
-        data.forEach(setting => {
+        settings.forEach((setting: any) => {
           settingsMap[setting.key] = setting.value;
         });
 
@@ -107,58 +106,20 @@ export default function AdminReports() {
       const startStr = start.toISOString();
       const endStr = end.toISOString();
 
-      // Fetch patients
-      const { data: patientsData } = await supabase
-        .from('patients')
-        .select('*')
-        .gte('created_at', startStr)
-        .lte('created_at', endStr)
-        .order('created_at', { ascending: false });
+      // Fetch all data from MySQL API
+      const [patientsRes, appointmentsRes, visitsRes, prescriptionsRes, labTestsRes] = await Promise.all([
+        api.get(`/patients?from=${startStr}&to=${endStr}`),
+        api.get(`/appointments?from=${startStr}&to=${endStr}`),
+        api.get(`/patient-visits?from=${startStr}&to=${endStr}`),
+        api.get(`/prescriptions?from=${startStr}&to=${endStr}`),
+        api.get(`/lab-tests?from=${startStr}&to=${endStr}`)
+      ]);
 
-      // Fetch appointments
-      const { data: appointmentsData } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          patient:patients(full_name, phone),
-          doctor:users(full_name)
-        `)
-        .gte('created_at', startStr)
-        .lte('created_at', endStr)
-        .order('appointment_date', { ascending: false });
-
-      // Fetch visits
-      const { data: visitsData } = await supabase
-        .from('patient_visits')
-        .select(`
-          *,
-          patient:patients(full_name, phone)
-        `)
-        .gte('created_at', startStr)
-        .lte('created_at', endStr)
-        .order('created_at', { ascending: false });
-
-      // Fetch prescriptions
-      const { data: prescriptionsData } = await supabase
-        .from('prescriptions')
-        .select(`
-          *,
-          patient:patients(full_name, phone)
-        `)
-        .gte('created_at', startStr)
-        .lte('created_at', endStr)
-        .order('created_at', { ascending: false });
-
-      // Fetch lab tests
-      const { data: labTestsData } = await supabase
-        .from('lab_tests')
-        .select(`
-          *,
-          patient:patients(full_name, phone)
-        `)
-        .gte('created_at', startStr)
-        .lte('created_at', endStr)
-        .order('ordered_date', { ascending: false });
+      const patientsData = patientsRes.data.patients || [];
+      const appointmentsData = appointmentsRes.data.appointments || [];
+      const visitsData = visitsRes.data.visits || [];
+      const prescriptionsData = prescriptionsRes.data.prescriptions || [];
+      const labTestsData = labTestsRes.data.tests || [];
 
       setReportData({
         patients: patientsData || [],

@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { Calendar as CalendarIcon } from 'lucide-react';
 
@@ -39,26 +39,25 @@ const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppointment
   }, [selectedDepartment, doctors]);
 
   const fetchDepartments = async () => {
-    const { data } = await supabase.from('departments').select('*').order('name');
-    setDepartments(data || []);
+    try {
+      // Departments not yet implemented in backend
+      setDepartments([]);
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+    }
   };
 
   const fetchDoctors = async () => {
-    // Fetch all users with doctor role
-    const { data: doctorRoles } = await supabase
-      .from('user_roles')
-      .select('user_id')
-      .eq('role', 'doctor');
-
-    if (doctorRoles && doctorRoles.length > 0) {
-      const doctorIds = doctorRoles.map(r => r.user_id);
-      const { data: doctorProfiles } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', doctorIds);
-
-      setDoctors(doctorProfiles || []);
-      setFilteredDoctors(doctorProfiles || []);
+    try {
+      // Fetch users with doctor role via MySQL API
+      const { data } = await api.get('/users', { params: { role: 'doctor' } });
+      const doctorList = data.users || [];
+      setDoctors(doctorList);
+      setFilteredDoctors(doctorList);
+    } catch (error) {
+      console.error('Error fetching doctors:', error);
+      setDoctors([]);
+      setFilteredDoctors([]);
     }
   };
 
@@ -69,45 +68,22 @@ const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppointment
     const appointmentData = {
       patient_id: formData.get('patientId') as string,
       doctor_id: formData.get('doctorId') as string,
-      department_id: formData.get('departmentId') as string || null,
       appointment_date: formData.get('appointmentDate') as string,
       appointment_time: formData.get('appointmentTime') as string,
+      appointment_type: 'Consultation',
       reason: formData.get('reason') as string,
       notes: formData.get('notes') as string,
-      status: 'Scheduled',
     };
 
-    const { error } = await supabase.from('appointments').insert([appointmentData]);
-
-    if (error) {
-      toast.error('Failed to book appointment');
-    } else {
-      // Create patient visit record to track workflow
-      const visitData = {
-        patient_id: appointmentData.patient_id,
-        appointment_id: null, // Will be updated when we have the appointment ID
-        visit_date: appointmentData.appointment_date,
-        current_stage: 'reception',
-        overall_status: 'Active',
-        reception_status: 'Pending',
-        reception_notes: `Appointment scheduled for ${appointmentData.appointment_date} at ${appointmentData.appointment_time}`,
-      };
-
-      const { data: visit, error: visitError } = await supabase
-        .from('patient_visits')
-        .insert([visitData])
-        .select()
-        .single();
-
-      if (visitError) {
-        console.error('Failed to create patient visit:', visitError);
-        toast.error('Appointment booked but failed to create visit record');
-      } else {
-        toast.success('Appointment booked successfully');
-      }
-
+    try {
+      // Create appointment via MySQL API
+      await api.post('/appointments', appointmentData);
+      toast.success('Appointment booked successfully');
       setDialogOpen(false);
       onSuccess();
+    } catch (error: any) {
+      console.error('Error booking appointment:', error);
+      toast.error(error.response?.data?.error || 'Failed to book appointment');
     }
   };
 

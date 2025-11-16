@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 
 interface PaymentDialogProps {
@@ -34,13 +34,8 @@ export function PaymentDialog({ open, onOpenChange, appointment, onPaymentComple
 
   const fetchConsultationFee = async () => {
     try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'consultation_fee')
-        .single();
-
-      if (!error && data) {
+      const { data } = await api.get('/settings/consultation_fee');
+      if (data && data.value) {
         setConsultationFee(Number(data.value));
       }
     } catch (error) {
@@ -60,18 +55,14 @@ export function PaymentDialog({ open, onOpenChange, appointment, onPaymentComple
     setLoading(true);
     try {
       // Create payment record
-      const { error: paymentError } = await supabase
-        .from('payments')
-        .insert({
-          patient_id: appointment.patient?.id || appointment.patient_id,
-          amount: amountPaid,
-          payment_method: paymentForm.payment_method,
-          payment_type: 'Consultation Fee',
-          status: 'Completed',
-          payment_date: new Date().toISOString()
-        });
-
-      if (paymentError) throw paymentError;
+      await api.post('/payments', {
+        patient_id: appointment.patient?.id || appointment.patient_id,
+        amount: amountPaid,
+        payment_method: paymentForm.payment_method,
+        payment_type: 'Consultation Fee',
+        status: 'Completed',
+        payment_date: new Date().toISOString()
+      });
 
       toast.success(`Payment of TSh ${amountPaid} received`);
       onPaymentComplete(appointment.id);

@@ -1,0 +1,71 @@
+import axios from 'axios';
+import { io, Socket } from 'socket.io-client';
+
+// Create axios instance for API calls
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 30000,
+});
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle auth errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('auth_token');
+      window.location.href = '/auth';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Socket.io client for real-time updates
+let socket: Socket | null = null;
+
+export const getSocket = () => {
+  if (!socket) {
+    socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000', {
+      auth: {
+        token: localStorage.getItem('auth_token')
+      },
+      autoConnect: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
+    });
+
+    socket.on('connect', () => {
+      console.log('✅ Socket connected');
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ Socket disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+    });
+  }
+  return socket;
+};
+
+export const disconnectSocket = () => {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+};
+
+export default api;

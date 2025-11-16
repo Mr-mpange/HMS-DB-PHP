@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +15,7 @@ import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, P
 import { format, formatDistanceToNow } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 import { DispenseDialog } from '@/components/DispenseDialog';
+import api from '@/lib/api';
 
 interface Medication {
   id: string;
@@ -102,40 +102,26 @@ export default function PharmacyDashboard() {
       setLoading(true);
       setLoadError(null);
 
-      // First, fetch all the data we need
+      // Fetch all the data we need from MySQL API
       const [
-        { data: prescriptionsData, error: prescriptionsError },
-        { data: medicationsData, error: medicationsError },
-        { data: patientsData, error: patientsError },
-        { data: doctorsData, error: doctorsError }
+        prescriptionsRes,
+        medicationsRes,
+        patientsRes,
+        doctorsRes
       ] = await Promise.all([
-        supabase
-          .from('prescriptions')
-          .select('*')
-          .order('prescribed_date', { ascending: false })
-          .limit(50),
-        
-        supabase
-          .from('medications')
-          .select('*')
-          .order('name', { ascending: true }),
-          
-        supabase
-          .from('patients')
-          .select('id, full_name, date_of_birth'),
-          
-        supabase
-          .from('profiles')
-          .select('id, full_name, email')
+        api.get('/pharmacy/prescriptions?limit=50'),
+        api.get('/pharmacy/medications'),
+        api.get('/patients?fields=id,full_name,date_of_birth'),
+        api.get('/users/profiles?role=doctor')
       ]);
       
-      if (prescriptionsError) throw prescriptionsError;
-      if (medicationsError) throw medicationsError;
-      if (patientsError) throw patientsError;
-      if (doctorsError) throw doctorsError;
+      const prescriptionsData = prescriptionsRes.data.prescriptions || [];
+      const medicationsData = medicationsRes.data.medications || [];
+      const patientsData = patientsRes.data.patients || [];
+      const doctorsData = doctorsRes.data.profiles || [];
       
       // Combine the data manually
-      const combinedPrescriptions: PrescriptionWithRelations[] = (prescriptionsData || []).map(prescription => ({
+      const combinedPrescriptions: PrescriptionWithRelations[] = (prescriptionsData || []).map((prescription: any) => ({
         ...prescription,
         patient: (patientsData || []).find((p: any) => p.id === prescription.patient_id) || null,
         doctor_profile: (doctorsData || []).find((d: any) => d.id === prescription.doctor_id) || null,
@@ -175,45 +161,20 @@ export default function PharmacyDashboard() {
     }
   };
 
-  // Initial data load and real-time subscriptions
+  // Initial data load and polling for updates
   useEffect(() => {
     if (!user) return;
     
     loadPharmacyData();
 
-    // Set up real-time subscription for prescriptions
-    const prescriptionsChannel = supabase
-      .channel('pharmacy_prescriptions_changes')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'prescriptions' },
-        (payload) => {
-          console.log('Prescription change detected:', payload);
-          loadPharmacyData(false); // Refresh without toast
-        }
-      )
-      .subscribe();
+    // Set up polling instead of real-time subscriptions (every 30 seconds)
+    const intervalId = setInterval(() => {
+      loadPharmacyData(false); // Refresh without toast
+    }, 30000);
 
-    // Set up real-time subscription for patient visits at pharmacy stage
-    const visitsChannel = supabase
-      .channel('pharmacy_visits_changes')
-      .on('postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'patient_visits',
-          filter: 'current_stage=eq.pharmacy'
-        },
-        (payload) => {
-          console.log('Patient visit change detected:', payload);
-          loadPharmacyData(false); // Refresh without toast
-        }
-      )
-      .subscribe();
-
-    // Cleanup subscriptions on unmount
+    // Cleanup interval on unmount
     return () => {
-      supabase.removeChannel(prescriptionsChannel);
-      supabase.removeChannel(visitsChannel);
+      clearInterval(intervalId);
     };
   }, [user]);
 
@@ -263,21 +224,19 @@ export default function PharmacyDashboard() {
       });
 
       // First, get the prescription details
-      const { data: prescription, error: fetchError } = await supabase
-        .from('prescriptions')
-        .select('*')
-        .eq('id', prescriptionId)
-        .single();
-
-      if (fetchError) {
-        console.error('Error fetching prescription:', fetchError);
+      let prescriptionRes;
+      try {
+        prescriptionRes = await api.get(`/pharmacy/prescriptions/${prescriptionId}`);
+      } catch (error: any) {
+        console.error('Error fetching prescription:', error);
         await logActivity('pharmacy.dispense.error', { 
           error: 'Failed to fetch prescription',
-          details: fetchError.message 
+          details: error.message 
         });
         toast.error('Failed to fetch prescription details');
         return;
       }
+      const prescription = prescriptionRes.data.prescription;
 
       if (!prescription) {
         await logActivity('pharmacy.dispense.error', { 
@@ -298,17 +257,15 @@ export default function PharmacyDashboard() {
       }
 
       // Get medication details for stock update
-      const { data: medicationData, error: medError } = await supabase
-        .from('medications')
-        .select('*')
-        .eq('id', prescription.medication_id)
-        .single();
-
-      if (medError || !medicationData) {
-        console.error('Error fetching medication:', medError);
+      let medicationRes;
+      try {
+        medicationRes = await api.get(`/pharmacy/medications/${prescription.medication_id}`);
+      } catch (error: any) {
+        console.error('Error fetching medication:', error);
         toast.error('Failed to fetch medication details');
         return;
       }
+      const medicationData = medicationRes.data.medication;
 
       // Update prescription status with dispense details
       const updateData: any = {
@@ -323,33 +280,32 @@ export default function PharmacyDashboard() {
         updateData.notes = dispenseData.pharmacist_notes;
       }
 
-      const { error: updateError } = await supabase
-        .from('prescriptions')
-        .update(updateData)
-        .eq('id', prescriptionId);
-
-      if (updateError) {
-        console.error('Error updating prescription:', updateError);
+      try {
+        await api.put(`/pharmacy/prescriptions/${prescriptionId}`, updateData);
+      } catch (error: any) {
+        console.error('Error updating prescription:', error);
         await logActivity('pharmacy.dispense.error', { 
           error: 'Failed to update prescription',
-          details: updateError.message,
+          details: error.message,
           prescription_id: prescriptionId
         });
-        toast.error(`Failed to update prescription: ${updateError.message}`);
+        toast.error(`Failed to update prescription: ${error.message}`);
         return;
       }
 
+
+
       // Check if this is the last pending prescription for this patient
-      const { data: allPatientPrescriptions, error: prescError } = await supabase
-        .from('prescriptions')
-        .select('id, status')
-        .eq('patient_id', patientId);
-      
-      if (prescError) {
-        console.error('Error fetching patient prescriptions:', prescError);
+      let prescriptionsRes;
+      try {
+        prescriptionsRes = await api.get(`/pharmacy/prescriptions?patient_id=${patientId}`);
+      } catch (error: any) {
+        console.error('Error fetching patient prescriptions:', error);
+        prescriptionsRes = { data: { prescriptions: [] } };
       }
       
-      const pendingCount = allPatientPrescriptions?.filter(p => p.status === 'Pending' && p.id !== prescriptionId).length || 0;
+      const allPatientPrescriptions = prescriptionsRes.data.prescriptions;
+      const pendingCount = allPatientPrescriptions?.filter((p: any) => p.status === 'Pending' && p.id !== prescriptionId).length || 0;
       const isLastPrescription = pendingCount === 0;
       
       console.log(`Dispensing prescription. Remaining pending prescriptions: ${pendingCount}`);
@@ -358,35 +314,29 @@ export default function PharmacyDashboard() {
       if (isLastPrescription) {
         console.log('This is the last prescription - moving patient to billing');
         
-        const { data: visits, error: visitsError } = await supabase
-          .from('patient_visits')
-          .select('*')
-          .eq('patient_id', patientId)
-          .eq('overall_status', 'Active')
-          .order('created_at', { ascending: false })
-          .limit(1);
+        let visitsRes;
+        try {
+          visitsRes = await api.get(`/visits?patient_id=${patientId}&overall_status=Active&limit=1`);
+        } catch (error: any) {
+          console.error('Error fetching patient visits:', error);
+          visitsRes = { data: { visits: [] } };
+        }
+        
+        const visits = visitsRes.data.visits;
 
-        if (!visitsError && visits && visits.length > 0) {
+        if (visits && visits.length > 0) {
           const visit = visits[0];
           console.log('Updating patient visit to billing stage:', visit.id);
           
-          const { error: visitUpdateError } = await supabase
-            .from('patient_visits')
-            .update({
+          try {
+            await api.put(`/visits/${visit.id}`, {
               pharmacy_status: 'Completed',
               pharmacy_completed_at: new Date().toISOString(),
               current_stage: 'billing',
               billing_status: 'Pending',
               overall_status: 'Active',
               updated_at: new Date().toISOString()
-            })
-            .eq('id', visit.id);
-          
-          if (visitUpdateError) {
-            console.error('Error updating patient visit:', visitUpdateError);
-            toast.error(`Failed to update patient visit: ${visitUpdateError.message}`);
-            return;
-          }
+            });
           
           console.log('✅ Patient visit successfully moved to billing stage');
           await logActivity('pharmacy.visit.moved_to_billing', {
@@ -394,6 +344,11 @@ export default function PharmacyDashboard() {
             patient_id: patientId,
             user_id: user.id
           });
+        } catch (error: any) {
+          console.error('Error updating patient visit:', error);
+          toast.error(`Failed to update patient visit: ${error.message}`);
+          return;
+        }
         } else {
           console.warn('No active visit found for patient, but continuing with dispensing');
         }
@@ -416,73 +371,66 @@ export default function PharmacyDashboard() {
         return;
       }
       
-      const { error: updateStockError } = await supabase
-        .from('medications')
-        .update({
+      try {
+        await api.put(`/pharmacy/medications/${prescription.medication_id}`, {
           quantity_in_stock: newStock,
           updated_at: new Date().toISOString()
-        })
-        .eq('id', prescription.medication_id);
-
-      if (updateStockError) {
-        console.error('Error updating stock:', updateStockError);
-        toast.error(`Failed to update stock: ${updateStockError.message}`);
+        });
+      } catch (error: any) {
+        console.error('Error updating stock:', error);
+        toast.error(`Failed to update stock: ${error.message}`);
         return;
       }
+
+
 
       // Create invoice for billing using actual dispensed quantity
       const invoiceNumber = await generateInvoiceNumber();
       const unitPrice = medicationData.unit_price || 0;
       const invoiceAmount = unitPrice * dispensedQuantity;
       
-      const { data: newInvoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .insert([
-          {
-            invoice_number: invoiceNumber,
-            patient_id: patientId,
-            total_amount: invoiceAmount,
-            paid_amount: 0,
-            status: 'Unpaid',
-            invoice_date: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
-        ])
-        .select()
-        .single();
-
-      if (invoiceError) {
-        console.error('Error creating invoice:', invoiceError);
-        toast.error(`Failed to create invoice: ${invoiceError.message}`);
+      let newInvoice;
+      try {
+        const invoiceRes = await api.post('/billing/invoices', {
+          invoice_number: invoiceNumber,
+          patient_id: patientId,
+          total_amount: invoiceAmount,
+          paid_amount: 0,
+          status: 'Unpaid',
+          invoice_date: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        newInvoice = invoiceRes.data.invoice;
+      } catch (error: any) {
+        console.error('Error creating invoice:', error);
+        toast.error(`Failed to create invoice: ${error.message}`);
         await logActivity('pharmacy.dispense.error', { 
           error: 'Failed to create invoice',
-          details: invoiceError.message
+          details: error.message
         });
         return;
       }
 
+
+
       // Create invoice item for the medication
       if (newInvoice) {
-        const { error: itemError } = await supabase
-          .from('invoice_items')
-          .insert([
-            {
-              invoice_id: newInvoice.id,
-              description: `${prescription.medication_name} - ${prescription.dosage}`,
-              item_type: 'Medication',
-              quantity: prescription.quantity,
-              unit_price: unitPrice,
-              total_price: invoiceAmount
-            }
-          ]);
-        
-        if (itemError) {
-          console.error('Error creating invoice item:', itemError);
-          toast.error(`Failed to create invoice item: ${itemError.message}`);
+        try {
+          await api.post('/billing/invoice-items', {
+            invoice_id: newInvoice.id,
+            description: `${prescription.medication_name} - ${prescription.dosage}`,
+            item_type: 'Medication',
+            quantity: prescription.quantity,
+            unit_price: unitPrice,
+            total_price: invoiceAmount
+          });
+        } catch (error: any) {
+          console.error('Error creating invoice item:', error);
+          toast.error(`Failed to create invoice item: ${error.message}`);
           await logActivity('pharmacy.dispense.error', { 
             error: 'Failed to create invoice item',
-            details: itemError.message
+            details: error.message
           });
           return;
         }
@@ -540,19 +488,17 @@ export default function PharmacyDashboard() {
       return;
     }
 
-    const { error } = await supabase
-      .from('medications')
-      .update({ quantity_in_stock: newQuantity })
-      .eq('id', selectedMedication.id);
-
-    if (error) {
+    try {
+      await api.put(`/pharmacy/medications/${selectedMedication.id}`, { quantity_in_stock: newQuantity });
+    } catch (error: any) {
       toast.error('Failed to update stock');
-    } else {
-      toast.success('Stock updated successfully');
-      setStockDialogOpen(false);
-      setSelectedMedication(null);
-      loadPharmacyData();
+      return;
     }
+
+    toast.success('Stock updated successfully');
+    setStockDialogOpen(false);
+    setSelectedMedication(null);
+    loadPharmacyData();
   };
 
   const handleSaveMedication = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -592,26 +538,21 @@ export default function PharmacyDashboard() {
       expiry_date: formData.get('expiryDate') as string || null,
     };
 
-    let error;
-    if (editingMedication) {
-      ({ error } = await supabase
-        .from('medications')
-        .update(medicationData)
-        .eq('id', editingMedication.id));
-    } else {
-      ({ error } = await supabase
-        .from('medications')
-        .insert([medicationData]));
+    try {
+      if (editingMedication) {
+        await api.put(`/pharmacy/medications/${editingMedication.id}`, medicationData);
+      } else {
+        await api.post('/pharmacy/medications', medicationData);
+      }
+    } catch (error: any) {
+      toast.error(`Failed to ${editingMedication ? 'update' : 'add'} medication`);
+      return;
     }
 
-    if (error) {
-      toast.error(`Failed to ${editingMedication ? 'update' : 'add'} medication`);
-    } else {
-      toast.success(`Medication ${editingMedication ? 'updated' : 'added'} successfully`);
-      setMedicationDialogOpen(false);
-      setEditingMedication(null);
-      loadPharmacyData();
-    }
+    toast.success(`Medication ${editingMedication ? 'updated' : 'added'} successfully`);
+    setMedicationDialogOpen(false);
+    setEditingMedication(null);
+    loadPharmacyData();
   };
 
   const openStockDialog = (medication: any) => {
@@ -757,23 +698,15 @@ export default function PharmacyDashboard() {
     }));
 
     try {
-      const { error } = await supabase
-        .from('medications')
-        .insert(medicationsToImport);
-
-      if (error) {
-        console.error('Bulk import error:', error);
-        toast.error(`Failed to import medications: ${error.message}`);
-      } else {
-        toast.success(`Successfully imported ${medicationsToImport.length} medications`);
-        setImportDialogOpen(false);
-        setImportFile(null);
-        setImportPreview([]);
-        loadPharmacyData();
-      }
-    } catch (error) {
-      console.error('Unexpected error during import:', error);
-      toast.error('An unexpected error occurred during import');
+      await api.post('/pharmacy/medications/bulk', { medications: medicationsToImport });
+      toast.success(`Successfully imported ${medicationsToImport.length} medications`);
+      setImportDialogOpen(false);
+      setImportFile(null);
+      setImportPreview([]);
+      loadPharmacyData();
+    } catch (error: any) {
+      console.error('Bulk import error:', error);
+      toast.error(`Failed to import medications: ${error.message}`);
     } finally {
       setImportLoading(false);
       setImportProgress(0);
@@ -797,16 +730,15 @@ export default function PharmacyDashboard() {
 
       // Get medication details to calculate pricing
       console.log('Fetching medication details for ID:', prescription.medication_id);
-      const { data: medicationData, error: medError } = await supabase
-        .from('medications')
-        .select('*')
-        .eq('id', prescription.medication_id)
-        .single();
-
-      if (medError) {
-        console.error('Error fetching medication:', medError);
-        throw new Error(`Failed to fetch medication details: ${medError.message}`);
+      let medicationRes;
+      try {
+        medicationRes = await api.get(`/pharmacy/medications/${prescription.medication_id}`);
+      } catch (error: any) {
+        console.error('Error fetching medication:', error);
+        throw new Error(`Failed to fetch medication details: ${error.message}`);
       }
+
+      const medicationData = medicationRes.data.medication;
 
       if (!medicationData) {
         throw new Error('Medication not found');
@@ -841,17 +773,15 @@ export default function PharmacyDashboard() {
 
           console.log(`Attempt ${attempts + 1}: Creating invoice with number:`, invoiceNumber);
           
-          const { data, error: invoiceError } = await supabase
-            .from('invoices')
-            .insert([invoiceData])
-            .select()
-            .single();
-
-          if (invoiceError) {
-            console.error(`Invoice creation attempt ${attempts + 1} failed:`, invoiceError);
+          let data;
+          try {
+            const invoiceRes = await api.post('/billing/invoices', invoiceData);
+            data = invoiceRes.data.invoice;
+          } catch (error: any) {
+            console.error(`Invoice creation attempt ${attempts + 1} failed:`, error);
             
             // If it's a duplicate key error and we have retries left, try again
-            if (invoiceError.code === '23505' || (invoiceError as any).code === '23505') {
+            if (error.response?.status === 409 || (error as any).code === '23505') {
               if (attempts < maxAttempts - 1) {
               console.warn(`Duplicate invoice number ${invoiceNumber}, retrying...`);
                 attempts++;
@@ -865,28 +795,27 @@ export default function PharmacyDashboard() {
                 const timestamp = Date.now().toString().slice(-6);
                 const fallbackInvoiceNumber = `INV-${timestamp}`;
                 
-                const { data: fallbackData, error: fallbackError } = await supabase
-                  .from('invoices')
-                  .insert([{
+                try {
+                  const fallbackRes = await api.post('/billing/invoices', {
                     ...invoiceData,
                     invoice_number: fallbackInvoiceNumber,
                     status: 'unpaid' // Ensure status is set for fallback as well
-                  }])
-                  .select()
-                  .single();
+                  });
                   
-                if (fallbackError) {
+                  data = fallbackRes.data.invoice;
+                } catch (fallbackError: any) {
                   console.error('Fallback invoice creation failed:', fallbackError);
                   throw new Error(`Failed to create invoice after ${maxAttempts} attempts and fallback: ${fallbackError.message}`);
                 }
                 
-                invoice = fallbackData;
                 break;
               }
             }
             // If it's a different error, throw it
-            throw new Error(`Failed to create invoice: ${invoiceError.message}`);
+            throw new Error(`Failed to create invoice: ${error.message}`);
           }
+
+
           
           invoice = data;
           break; // Success, exit the retry loop
@@ -919,13 +848,11 @@ export default function PharmacyDashboard() {
       };
 
       console.log('Creating invoice item:', invoiceItemData);
-      const { error: itemError } = await supabase
-        .from('invoice_items')
-        .insert([invoiceItemData]);
-
-      if (itemError) {
-        console.error('Error creating invoice item:', itemError);
-        throw new Error(`Failed to create invoice item: ${itemError.message}`);
+      try {
+        await api.post('/billing/invoice-items', invoiceItemData);
+      } catch (error: any) {
+        console.error('Error creating invoice item:', error);
+        throw new Error(`Failed to create invoice item: ${error.message}`);
       }
 
       console.log('Invoice item created successfully');

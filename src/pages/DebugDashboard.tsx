@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { Loader2, User, AlertCircle, CheckCircle } from 'lucide-react';
 
@@ -22,37 +22,18 @@ export default function DebugDashboard() {
   const assignRole = async (role: string) => {
     setAssigningRole(true);
     try {
-      const { error } = await supabase
-        .from('user_roles')
-        .insert({
-          user_id: user.id,
-          role: role,
-          is_primary: true
-        });
+      await api.post('/users/assign-role', {
+        user_id: user.id,
+        role: role,
+        is_primary: true
+      });
 
-      if (error) {
-        // If role already exists, update it instead
-        if (error.code === '23505') { // Unique constraint violation
-          const { error: updateError } = await supabase
-            .from('user_roles')
-            .update({ is_primary: true })
-            .eq('user_id', user.id)
-            .eq('role', role);
-
-          if (updateError) throw updateError;
-          toast.success(`${role} role updated successfully!`);
-        } else {
-          throw error;
-        }
-      } else {
-        toast.success(`${role} role assigned successfully!`);
-      }
-
+      toast.success(`${role} role assigned successfully!`);
       fetchDebugInfo();
       refreshRoles(); // Refresh the auth context roles
-    } catch (error) {
+    } catch (error: any) {
       console.error('Role assignment error:', error);
-      toast.error(`Failed to assign ${role} role: ${error.message}`);
+      toast.error(`Failed to assign ${role} role: ${error.response?.data?.message || error.message}`);
     } finally {
       setAssigningRole(false);
     }
@@ -63,27 +44,23 @@ export default function DebugDashboard() {
 
     try {
       // Test database connection and permissions
-      const { data: userRoles, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('*')
-        .eq('user_id', user.id);
+      const { data: rolesData } = await api.get(`/users/${user.id}/roles`);
+      const userRoles = rolesData.roles || [];
 
-      const { data: testPatient, error: patientError } = await supabase
-        .from('patients')
-        .select('*')
-        .limit(1);
+      const { data: patientData } = await api.get('/patients?limit=1');
+      const testPatient = patientData.patients || [];
 
       setDebugInfo({
-        userRoles: userRoles || [],
-        rolesError: rolesError?.message,
-        patientError: patientError?.message,
-        canViewPatients: !patientError,
+        userRoles: userRoles,
+        rolesError: null,
+        patientError: null,
+        canViewPatients: testPatient.length > 0,
         user: {
           id: user.id,
           email: user.email,
         }
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Debug error:', error);
       setDebugInfo({ error: error.message });
     }
@@ -101,23 +78,13 @@ export default function DebugDashboard() {
         status: 'Active'
       };
 
-      const { data, error } = await supabase
-        .from('patients')
-        .insert(testPatient)
-        .select()
-        .single();
-
-      if (error) {
-        toast.error(`Registration failed: ${error.message}`);
-        console.error('Patient registration error:', error);
-      } else {
-        toast.success('Test patient registered successfully!');
-        console.log('Test patient created:', data);
-        fetchDebugInfo();
-      }
-    } catch (error) {
-      toast.error(`Registration error: ${error.message}`);
-      console.error('Registration error:', error);
+      const { data } = await api.post('/patients', testPatient);
+      toast.success('Test patient registered successfully!');
+      console.log('Test patient created:', data.patient);
+      fetchDebugInfo();
+    } catch (error: any) {
+      toast.error(`Registration failed: ${error.response?.data?.message || error.message}`);
+      console.error('Patient registration error:', error);
     } finally {
       setTesting(false);
     }
@@ -138,13 +105,8 @@ export default function DebugDashboard() {
         status: 'Active'
       };
 
-      const { data: patient, error: patientError } = await supabase
-        .from('patients')
-        .insert(testPatient)
-        .select()
-        .single();
-
-      if (patientError) throw patientError;
+      const { data: patientData } = await api.post('/patients', testPatient);
+      const patient = patientData.patient;
 
       // Now create patient visit
       const visitData = {
@@ -156,22 +118,12 @@ export default function DebugDashboard() {
         overall_status: 'Active'
       };
 
-      const { data: visit, error: visitError } = await supabase
-        .from('patient_visits')
-        .insert(visitData)
-        .select()
-        .single();
-
-      if (visitError) {
-        toast.error(`Visit creation failed: ${visitError.message}`);
-        console.error('Visit creation error:', visitError);
-      } else {
-        toast.success('Test patient visit created successfully!');
-        console.log('Test visit created:', visit);
-        fetchDebugInfo();
-      }
-    } catch (error) {
-      toast.error(`Visit creation error: ${error.message}`);
+      const { data: visitResponse } = await api.post('/patient-visits', visitData);
+      toast.success('Test patient visit created successfully!');
+      console.log('Test visit created:', visitResponse.visit);
+      fetchDebugInfo();
+    } catch (error: any) {
+      toast.error(`Visit creation error: ${error.response?.data?.message || error.message}`);
       console.error('Visit creation error:', error);
     } finally {
       setTesting(false);

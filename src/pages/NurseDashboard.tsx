@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -115,14 +115,8 @@ export default function NurseDashboard() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .or(`full_name.ilike.%${query}%,phone.ilike.%${query}%`)
-        .limit(10);
-
-      if (error) throw error;
-      setSearchResults(data || []);
+      const response = await api.get(`/patients/search?q=${encodeURIComponent(query)}`);
+      setSearchResults(response.data || []);
     } catch (error) {
       console.error('Search error:', error);
       toast.error('Failed to search patients');
@@ -145,33 +139,22 @@ export default function NurseDashboard() {
 
     try {
       // Find the active visit for this patient
-      const { data: visits, error: visitError } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', selectedPatient.id)
-        .eq('current_stage', 'nurse')
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const visitsResponse = await api.get(`/visits?patient_id=${selectedPatient.id}&current_stage=nurse&overall_status=Active&limit=1`);
+      const visits = visitsResponse.data;
 
-      if (visitError || !visits || visits.length === 0) {
+      if (!visits || visits.length === 0) {
         toast.error('No active visit found for this patient');
         return;
       }
 
       // Update visit with vitals and move to doctor stage
-      const { error: updateError } = await supabase
-        .from('patient_visits')
-        .update({
-          nurse_status: 'Completed',
-          nurse_vitals: vitalsForm,
-          nurse_completed_at: new Date().toISOString(),
-          current_stage: 'doctor',
-          doctor_status: 'Pending'
-        })
-        .eq('id', visits[0].id);
-
-      if (updateError) throw updateError;
+      await api.put(`/visits/${visits[0].id}`, {
+        nurse_status: 'Completed',
+        nurse_vitals: vitalsForm,
+        nurse_completed_at: new Date().toISOString(),
+        current_stage: 'doctor',
+        doctor_status: 'Pending'
+      });
 
       toast.success(`Vital signs recorded. Patient sent to doctor.`);
       setShowVitalsDialog(false);
@@ -179,6 +162,7 @@ export default function NurseDashboard() {
       
       // Update local state
       setPendingVisits(prev => prev.filter(v => v.id !== visits[0].id));
+      fetchData(); // Refresh data
     } catch (error) {
       console.error('Vitals submission error:', error);
       toast.error('Failed to record vital signs');
@@ -189,6 +173,7 @@ export default function NurseDashboard() {
     if (!selectedPatient) return;
 
     try {
+      // TODO: Implement notes API endpoint
       toast.success(`Notes added for ${selectedPatient.full_name}`);
       setShowNotesDialog(false);
       setSelectedPatient(null);
@@ -202,19 +187,15 @@ export default function NurseDashboard() {
     if (!selectedPatient) return;
 
     try {
-      const { error } = await supabase
-        .from('appointments')
-        .insert({
-          patient_id: selectedPatient.id,
-          doctor_id: user?.id,
-          appointment_date: scheduleForm.appointment_date,
-          appointment_time: scheduleForm.appointment_time,
-          reason: scheduleForm.reason,
-          department_id: scheduleForm.department_id || null,
-          status: 'Scheduled'
-        });
-
-      if (error) throw error;
+      await api.post('/appointments', {
+        patient_id: selectedPatient.id,
+        doctor_id: user?.id,
+        appointment_date: scheduleForm.appointment_date,
+        appointment_time: scheduleForm.appointment_time,
+        reason: scheduleForm.reason,
+        department_id: scheduleForm.department_id || null,
+        status: 'Scheduled'
+      });
 
       toast.success(`Follow-up scheduled for ${selectedPatient.full_name}`);
       setShowScheduleDialog(false);
@@ -230,21 +211,13 @@ export default function NurseDashboard() {
     
     fetchData();
 
-    // Set up real-time subscription for patient visits
-    const visitsChannel = supabase
-      .channel('nurse_visits')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'patient_visits', filter: `current_stage=eq.nurse` },
-        () => {
-          console.log('Nurse queue updated');
-          fetchData();
-        }
-      )
-      .subscribe();
+    // Set up periodic refresh instead of realtime subscriptions
+    const refreshInterval = setInterval(() => {
+      fetchData();
+    }, 30000); // Refresh every 30 seconds
 
-    // Cleanup
     return () => {
-      supabase.removeChannel(visitsChannel);
+      clearInterval(refreshInterval);
     };
   }, [user]);
 
@@ -252,58 +225,34 @@ export default function NurseDashboard() {
     if (!user) return;
 
     try {
-      // Fetch visits waiting for nurse
-      const { data: visitsData, error: visitsError } = await supabase
-        .from('patient_visits')
-        .select(`
-          *,
-          patient:patients(*)
-        `)
-        .eq('current_stage', 'nurse')
-        .eq('nurse_status', 'Pending')
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: true });
+      setLoading(true);
 
-      if (visitsError) throw visitsError;
+      // Fetch visits waiting for nurse
+      const visitsResponse = await api.get('/visits?current_stage=nurse&nurse_status=Pending&overall_status=Active');
+      const visitsData = visitsResponse.data || [];
 
       // Fetch today's appointments for this nurse
       const today = new Date().toISOString().split('T')[0];
-      const { data: appointmentsData } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          patient:patients(full_name, phone, date_of_birth),
-          department:departments(name)
-        `)
-        .gte('appointment_date', today)
-        .order('appointment_time', { ascending: true });
+      const appointmentsResponse = await api.get(`/appointments?date=${today}`);
+      const appointmentsData = appointmentsResponse.data || [];
 
       // Fetch recent patients
-      const { data: patientsData } = await supabase
-        .from('patients')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(10);
+      const patientsResponse = await api.get('/patients?limit=10&sort=updated_at&order=desc');
+      const patientsData = patientsResponse.data || [];
 
       // Calculate stats
-      setPendingVisits(visitsData || []);
-      setAppointments(appointmentsData || []);
-      setPatients(patientsData || []);
+      setPendingVisits(visitsData);
+      setAppointments(appointmentsData);
+      setPatients(patientsData);
       setStats({
-        totalPatients: patientsData?.length || 0,
-        todayAppointments: appointmentsData?.filter(a => a.appointment_date === today).length || 0,
-        pendingVitals: visitsData?.length || 0,
-        completedTasks: visitsData?.filter(v => v.nurse_status === 'Completed').length || 0
+        totalPatients: patientsData.length,
+        todayAppointments: appointmentsData.filter((a: any) => a.appointment_date === today).length,
+        pendingVitals: visitsData.length,
+        completedTasks: visitsData.filter((v: any) => v.nurse_status === 'Completed').length
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching nurse data:', error);
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        details: error.details,
-        hint: error.hint
-      });
 
       // Set empty data to prevent crashes
       setPendingVisits([]);
@@ -316,7 +265,7 @@ export default function NurseDashboard() {
         completedTasks: 0
       });
 
-      toast.error(`Failed to load dashboard data: ${error.message}`);
+      toast.error(`Failed to load dashboard data: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }

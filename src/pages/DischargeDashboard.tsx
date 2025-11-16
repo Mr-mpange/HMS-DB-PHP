@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -58,27 +58,13 @@ export default function DischargeDashboard() {
       setLoading(true);
 
       // Fetch visits ready for discharge (completed pharmacy/billing)
-      const { data: visitsData, error: visitsError } = await supabase
-        .from('patient_visits')
-        .select(`
-          *,
-          patient:patients(*),
-          prescriptions(*),
-          appointments(*)
-        `)
-        .in('overall_status', ['Active'])
-        .or('current_stage.eq.discharge_ready,billing_status.eq.Paid,pharmacy_status.eq.Completed')
-        .order('created_at', { ascending: false });
-
-      if (visitsError) throw visitsError;
+      const { data } = await api.get('/patient-visits?status=Active&ready_for_discharge=true');
+      const visitsData = data.visits || [];
 
       // Fetch completed visits for today
       const today = new Date().toISOString().split('T')[0];
-      const { data: completedVisits } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('overall_status', 'Completed')
-        .eq('discharge_date', today);
+      const { data: completedData } = await api.get(`/patient-visits?status=Completed&discharge_date=${today}`);
+      const completedVisits = completedData.visits || [];
 
       // Calculate stats
       const readyForDischarge = visitsData?.filter(v =>
@@ -90,13 +76,8 @@ export default function DischargeDashboard() {
       // Get follow-ups for next 7 days
       const nextWeek = new Date();
       nextWeek.setDate(nextWeek.getDate() + 7);
-      const { data: followUpVisits } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('overall_status', 'Completed')
-        .not('follow_up_date', 'is', null)
-        .gte('follow_up_date', today)
-        .lte('follow_up_date', nextWeek.toISOString().split('T')[0]);
+      const { data: followUpData } = await api.get(`/patient-visits?status=Completed&follow_up_from=${today}&follow_up_to=${nextWeek.toISOString().split('T')[0]}`);
+      const followUpVisits = followUpData.visits || [];
 
       const followUps = followUpVisits?.length || 0;
 
@@ -138,38 +119,31 @@ export default function DischargeDashboard() {
 
     try {
       // Update patient visit to completed status
-      const { error: visitError } = await supabase
-        .from('patient_visits')
-        .update({
-          overall_status: 'Completed',
-          current_stage: 'completed',
-          discharge_date: dischargeForm.discharge_date,
-          discharge_time: dischargeForm.discharge_time,
-          discharge_type: dischargeForm.discharge_type,
-          discharge_instructions: dischargeForm.discharge_instructions,
-          medications_summary: dischargeForm.medications_summary,
-          follow_up_date: dischargeForm.follow_up_date || null,
-          follow_up_doctor: dischargeForm.follow_up_doctor || null,
-          follow_up_notes: dischargeForm.follow_up_notes || null,
-          discharge_completed_at: new Date().toISOString()
-        })
-        .eq('id', selectedVisit.id);
-
-      if (visitError) throw visitError;
+      await api.put(`/patient-visits/${selectedVisit.id}`, {
+        overall_status: 'Completed',
+        current_stage: 'completed',
+        discharge_date: dischargeForm.discharge_date,
+        discharge_time: dischargeForm.discharge_time,
+        discharge_type: dischargeForm.discharge_type,
+        discharge_instructions: dischargeForm.discharge_instructions,
+        medications_summary: dischargeForm.medications_summary,
+        follow_up_date: dischargeForm.follow_up_date || null,
+        follow_up_doctor: dischargeForm.follow_up_doctor || null,
+        follow_up_notes: dischargeForm.follow_up_notes || null,
+        discharge_completed_at: new Date().toISOString()
+      });
 
       // Create follow-up appointment if scheduled
       if (dischargeForm.next_appointment_date && dischargeForm.next_appointment_time) {
-        const { error: appointmentError } = await supabase
-          .from('appointments')
-          .insert({
+        try {
+          await api.post('/appointments', {
             patient_id: selectedVisit.patient_id,
             appointment_date: dischargeForm.next_appointment_date,
             appointment_time: dischargeForm.next_appointment_time,
             reason: dischargeForm.next_appointment_reason || 'Follow-up appointment',
             status: 'Scheduled'
           });
-
-        if (appointmentError) {
+        } catch (appointmentError) {
           console.error('Error creating follow-up appointment:', appointmentError);
           toast.error('Discharge completed but failed to create follow-up appointment');
         }
@@ -269,14 +243,6 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
             <CardContent>
               <div className="text-2xl font-bold text-purple-600">{stats.followUps}</div>
               <p className="text-xs text-muted-foreground">Next 7 days</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={createSampleData}
-                className="mt-2 text-purple-600 border-purple-200 hover:bg-purple-50"
-              >
-                Create Sample Data
-              </Button>
             </CardContent>
           </Card>
         </div>

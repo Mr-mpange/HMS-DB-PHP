@@ -6,7 +6,7 @@ import { Stethoscope, LogOut, User, Menu, X } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useState, useEffect } from 'react';
 import Logo from '@/components/Logo';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -20,24 +20,15 @@ export const DashboardLayout = ({ children, title }: DashboardLayoutProps) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userFullName, setUserFullName] = useState<string>('');
 
-  // Fetch user's full name from profiles table
+  // Get user's full name from auth context
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      if (user?.id) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', user.id)
-          .single();
-        
-        if (data && !error) {
-          setUserFullName(data.full_name || '');
-        }
-      }
-    };
-    
-    fetchUserProfile();
-  }, [user?.id]);
+    if (user?.user_metadata?.full_name) {
+      setUserFullName(user.user_metadata.full_name);
+    } else if (user?.email) {
+      // Fallback to email if no full name
+      setUserFullName(user.email.split('@')[0]);
+    }
+  }, [user]);
 
   const handleSignOut = async () => {
     await signOut();

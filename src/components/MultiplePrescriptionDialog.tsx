@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { supabase } from '@/integrations/supabase/client';
+import api from '@/lib/api';
 import { toast } from 'sonner';
 import { Pill, Plus, Trash2, DollarSign } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -70,11 +70,8 @@ export function MultiplePrescriptionDialog({
   }, [open]);
 
   const fetchMedications = async () => {
-    const { data } = await supabase
-      .from('medications')
-      .select('*')
-      .order('name');
-    setMedications(data || []);
+    const { data } = await api.get('/medications');
+    setMedications(data.medications || []);
   };
 
   const addPrescriptionItem = () => {
@@ -153,31 +150,20 @@ export function MultiplePrescriptionDialog({
         include_in_billing: item.include_in_billing
       }));
 
-      const { error: prescriptionError } = await supabase
-        .from('prescriptions')
-        .insert(prescriptionsToInsert);
+      await api.post('/prescriptions/batch', {
+        prescriptions: prescriptionsToInsert
+      });
 
-      if (prescriptionError) throw prescriptionError;
-
-      const { data: visits } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', selectedPatientId)
-        .eq('current_stage', 'doctor')
-        .eq('overall_status', 'Active')
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const { data: visitData } = await api.get(`/patient-visits?patient_id=${selectedPatientId}&stage=doctor&status=Active&limit=1`);
+      const visits = visitData.visits || [];
 
       if (visits && visits.length > 0) {
-        await supabase
-          .from('patient_visits')
-          .update({
-            doctor_status: 'Completed',
-            doctor_completed_at: new Date().toISOString(),
-            current_stage: 'pharmacy',
-            pharmacy_status: 'Pending'
-          })
-          .eq('id', visits[0].id);
+        await api.put(`/patient-visits/${visits[0].id}`, {
+          doctor_status: 'Completed',
+          doctor_completed_at: new Date().toISOString(),
+          current_stage: 'pharmacy',
+          pharmacy_status: 'Pending'
+        });
       }
 
       toast.success(`${validItems.length} prescription(s) created successfully`);

@@ -12,10 +12,10 @@ import { Badge } from '@/components/ui/badge';
 import { StatCard } from '@/components/StatCard';
 import { AppointmentsCard } from '@/components/AppointmentsCard';
 import { PatientsCard } from '@/components/PatientsCard';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { logActivity } from '@/lib/utils';
+import api from '@/lib/api';
 import {
   Loader2,
   Building,
@@ -118,74 +118,14 @@ export default function ReceptionistDashboard() {
     fetchData();
     fetchConsultationFee();
 
-    // Set up real-time subscriptions
-    const appointmentsChannel = supabase
-      .channel('receptionist_appointments')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'appointments' },
-        () => {
-          console.log('Appointments updated');
-          fetchData();
-        }
-      )
-      .subscribe();
+    // Set up polling instead of real-time subscriptions (every 30 seconds)
+    const intervalId = setInterval(() => {
+      fetchData();
+    }, 30000);
 
-    const patientsChannel = supabase
-      .channel('receptionist_patients')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'patients' },
-        () => {
-          console.log('Patients updated');
-          fetchData();
-        }
-      )
-      .subscribe();
-
-    const visitsChannel = supabase
-      .channel('receptionist_visits')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'patient_visits' },
-        () => {
-          console.log('Patient visits updated');
-          fetchData();
-        }
-      )
-      .subscribe();
-
-    const rolesChannel = supabase
-      .channel('receptionist_roles')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'user_roles' },
-        (payload) => {
-          console.log('User roles updated:', payload);
-          
-          // Show visual indicator
-          setRoleUpdateIndicator('Updating user roles...');
-          
-          // Show specific feedback based on the change
-          if (payload.eventType === 'INSERT') {
-            toast.success(`✅ New ${payload.new.role} role assigned - Doctor list updated`);
-          } else if (payload.eventType === 'UPDATE') {
-            toast.info(`🔄 User role updated to ${payload.new.role} - Doctor list refreshed`);
-          } else if (payload.eventType === 'DELETE') {
-            toast.warning(`🗑️ ${payload.old.role} role removed - Doctor list updated`);
-          }
-          
-          // Refresh data to show updated doctor lists
-          fetchData().then(() => {
-            // Clear indicator after data is loaded
-            setTimeout(() => setRoleUpdateIndicator(null), 1000);
-          });
-        }
-      )
-      .subscribe();
-
-    // Cleanup subscriptions
+    // Cleanup interval on unmount
     return () => {
-      supabase.removeChannel(appointmentsChannel);
-      supabase.removeChannel(patientsChannel);
-      supabase.removeChannel(visitsChannel);
-      supabase.removeChannel(rolesChannel);
+      clearInterval(intervalId);
     };
   }, [user]);
 
@@ -197,70 +137,41 @@ export default function ReceptionistDashboard() {
       const today = new Date().toISOString().split('T')[0];
 
       // First, get appointments with basic info (get all appointments for better data handling)
-      const { data: appointmentsBasic, error: appointmentsError } = await supabase
-        .from('appointments')
-        .select(`
-          *,
-          patient:patients(full_name, phone, date_of_birth),
-          department:departments(name)
-        `)
-        .order('appointment_time', { ascending: true });
-
-      if (appointmentsError) throw appointmentsError;
+      const appointmentsRes = await api.get('/appointments?order=appointment_time.asc');
+      const appointmentsBasic = appointmentsRes.data.appointments || [];
 
       // Then get doctor profiles for the appointments
       const doctorIds = [...new Set(appointmentsBasic?.map(apt => apt.doctor_id).filter(Boolean) || [])];
 
       let appointmentsData = appointmentsBasic;
       if (doctorIds.length > 0) {
-        const { data: doctorsData, error: doctorsError } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', doctorIds);
+        const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
+        const doctorsData = doctorsRes.data.profiles || [];
 
-        if (!doctorsError && doctorsData) {
-          // Merge doctor information into appointments
-          appointmentsData = appointmentsBasic?.map(apt => ({
-            ...apt,
-            doctor: doctorsData.find(doc => doc.id === apt.doctor_id) || null
-          }));
-        }
+        // Merge doctor information into appointments
+        appointmentsData = appointmentsBasic?.map(apt => ({
+          ...apt,
+          doctor: doctorsData.find(doc => doc.id === apt.doctor_id) || null
+        }));
       }
 
-      const { data: patientsData, error: patientsError } = await supabase
-        .from('patients')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const patientsRes = await api.get('/patients?order=created_at.desc&limit=10');
+      const patientsData = patientsRes.data.patients || [];
 
-      if (patientsError) throw patientsError;
-
-      const { data: departmentsData, error: departmentsError } = await supabase
-        .from('departments')
-        .select('*')
-        .order('name');
-
-      if (departmentsError) throw departmentsError;
+      const departmentsRes = await api.get('/departments?order=name');
+      const departmentsData = departmentsRes.data.departments || [];
 
       // Fetch doctors - get profiles that have doctor role
       let doctorsData = [];
       try {
         // First try with correct join syntax
-        const { data: doctorRoles, error: rolesError } = await supabase
-          .from('user_roles')
-          .select('user_id')
-          .eq('role', 'doctor');
-
-        if (rolesError) throw rolesError;
+        const rolesRes = await api.get('/users/roles?role=doctor');
+        const doctorRoles = rolesRes.data.roles || [];
 
         if (doctorRoles && doctorRoles.length > 0) {
           const doctorIds = doctorRoles.map(dr => dr.user_id);
-          const { data: doctorProfiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('id, full_name, email')
-            .in('id', doctorIds);
-
-          if (profilesError) throw profilesError;
+          const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
+          const doctorProfiles = doctorsRes.data.profiles || [];
           doctorsData = doctorProfiles || [];
           console.log('Found doctor profiles:', doctorsData.length);
         } else {
@@ -271,40 +182,27 @@ export default function ReceptionistDashboard() {
         console.warn('Could not fetch doctors with roles, using fallback:', error);
         try {
           // Alternative approach: query user_roles first, then get profiles
-          const { data: doctorRoles, error: rolesError } = await supabase
-            .from('user_roles')
-            .select('user_id')
-            .eq('role', 'doctor');
+          const rolesRes = await api.get('/users/roles?role=doctor');
+          const doctorRoles = rolesRes.data.roles || [];
 
           console.log('Doctor roles found:', doctorRoles?.length || 0);
 
-          if (rolesError) throw rolesError;
-
           if (doctorRoles && doctorRoles.length > 0) {
             const doctorIds = doctorRoles.map(dr => dr.user_id);
-            const { data: doctorProfiles, error: profilesError } = await supabase
-              .from('profiles')
-              .select('*')
-              .in('id', doctorIds);
-
-            if (!profilesError) {
-              doctorsData = doctorProfiles || [];
-              console.log('Found doctor profiles:', doctorsData.length);
-            }
+            const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
+            const doctorProfiles = doctorsRes.data.profiles || [];
+            doctorsData = doctorProfiles || [];
+            console.log('Found doctor profiles:', doctorsData.length);
           } else {
             console.log('No doctor roles found, checking all profiles...');
           }
         } catch (fallbackError) {
           console.warn('Fallback also failed, using all profiles:', fallbackError);
           // Final fallback: get all profiles (for development)
-          const { data: allProfiles, error: finalFallbackError } = await supabase
-            .from('profiles')
-            .select('*')
-            .limit(10);
-          if (!finalFallbackError) {
-            doctorsData = allProfiles || [];
-            console.log('Using all profiles as doctors:', doctorsData.length);
-          }
+          const profilesRes = await api.get('/users/profiles?limit=10');
+          const allProfiles = profilesRes.data.profiles || [];
+          doctorsData = allProfiles || [];
+          console.log('Using all profiles as doctors:', doctorsData.length);
         }
       }
 
@@ -313,38 +211,29 @@ export default function ReceptionistDashboard() {
         console.log('No doctors found, attempting to create sample doctors...');
         try {
           // Check if we have any profiles at all
-          const { data: allProfiles, error: checkError } = await supabase
-            .from('profiles')
-            .select('*')
-            .limit(5);
+          const profilesRes = await api.get('/users/profiles?limit=5');
+          const allProfiles = profilesRes.data.profiles || [];
 
-          if (!checkError && allProfiles && allProfiles.length > 0) {
+          if (allProfiles && allProfiles.length > 0) {
             // Assign doctor role to first few profiles for demo
             for (let i = 0; i < Math.min(3, allProfiles.length); i++) {
               const profile = allProfiles[i];
-              await supabase.from('user_roles').upsert({
+              await api.post('/users/roles', {
                 user_id: profile.id,
                 role: 'doctor'
               });
             }
 
             // Now fetch doctors again
-            const { data: newDoctors, error: retryError } = await supabase
-              .from('user_roles')
-              .select('user_id')
-              .eq('role', 'doctor');
+            const rolesRes = await api.get('/users/roles?role=doctor');
+            const newDoctors = rolesRes.data.roles || [];
 
-            if (!retryError && newDoctors && newDoctors.length > 0) {
+            if (newDoctors && newDoctors.length > 0) {
               const doctorIds = newDoctors.map(dr => dr.user_id);
-              const { data: doctorProfiles, error: profilesError } = await supabase
-                .from('profiles')
-                .select('*')
-                .in('id', doctorIds);
-
-              if (!profilesError) {
-                doctorsData = doctorProfiles || [];
-                console.log('Created and found sample doctors:', doctorsData.length);
-              }
+              const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
+              const doctorProfiles = doctorsRes.data.profiles || [];
+              doctorsData = doctorProfiles || [];
+              console.log('Created and found sample doctors:', doctorsData.length);
             }
           }
         } catch (createError) {
@@ -353,12 +242,11 @@ export default function ReceptionistDashboard() {
       }
 
       // Fetch patient visits to get accurate workflow stats
-      const { data: patientVisits, error: visitsError } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('overall_status', 'Active');
-
-      if (visitsError) {
+      let patientVisits = [];
+      try {
+        const visitsRes = await api.get('/visits?overall_status=Active');
+        patientVisits = visitsRes.data.visits || [];
+      } catch (visitsError) {
         console.error('Error fetching patient visits:', visitsError);
       }
 
@@ -438,9 +326,10 @@ export default function ReceptionistDashboard() {
 
     try {
       // Create sample departments if none exist
-      const { data: existingDepts } = await supabase.from('departments').select('id').limit(1);
+      const deptsRes = await api.get('/departments?limit=1');
+      const existingDepts = deptsRes.data.departments || [];
       if (!existingDepts || existingDepts.length === 0) {
-        await supabase.from('departments').insert([
+        await api.post('/departments', [
           { name: 'General Medicine', description: 'General medical care' },
           { name: 'Cardiology', description: 'Heart and cardiovascular system' },
           { name: 'Pediatrics', description: 'Children and infants' }
@@ -448,9 +337,10 @@ export default function ReceptionistDashboard() {
       }
 
       // Create sample patients if none exist
-      const { data: existingPatients } = await supabase.from('patients').select('id').limit(1);
+      const patientsRes = await api.get('/patients?limit=1');
+      const existingPatients = patientsRes.data.patients || [];
       if (!existingPatients || existingPatients.length === 0) {
-        const { data: newPatients } = await supabase.from('patients').insert([
+        const newPatientsRes = await api.post('/patients', [
           {
             full_name: 'John Doe',
             date_of_birth: '1990-01-01',
@@ -469,11 +359,12 @@ export default function ReceptionistDashboard() {
             blood_group: 'A+',
             status: 'Active'
           }
-        ]).select();
+        ]);
+        const newPatients = newPatientsRes.data.patients || [];
 
         if (newPatients && newPatients.length > 0) {
           // Create sample appointments
-          await supabase.from('appointments').insert([
+          await api.post('/appointments', [
             {
               patient_id: newPatients[0].id,
               doctor_id: user.id,
@@ -554,22 +445,18 @@ export default function ReceptionistDashboard() {
   const fetchConsultationFee = async () => {
     try {
       // Fetch default consultation fee
-      const { data, error } = await supabase
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'consultation_fee')
-        .single();
+      const settingsRes = await api.get('/system-settings?key=consultation_fee');
+      const data = settingsRes.data.settings || [];
 
-      if (!error && data) {
-        setConsultationFee(Number(data.value));
+      if (data && data.length > 0) {
+        setConsultationFee(Number(data[0].value));
       }
 
       // Fetch department-specific fees
-      const { data: deptFeesData, error: deptError } = await supabase
-        .from('department_fees')
-        .select('department_id, fee_amount');
+      const deptFeesRes = await api.get('/department-fees');
+      const deptFeesData = deptFeesRes.data.fees || [];
 
-      if (!deptError && deptFeesData) {
+      if (deptFeesData && deptFeesData.length > 0) {
         const feesMap: Record<string, number> = {};
         deptFeesData.forEach(fee => {
           feesMap[fee.department_id] = fee.fee_amount;
@@ -608,18 +495,17 @@ export default function ReceptionistDashboard() {
 
     try {
       // Create payment record
-      const { error: paymentError } = await supabase
-        .from('payments')
-        .insert({
-          patient_id: selectedAppointmentForPayment.patient_id,
-          amount: amountPaid,
-          payment_method: paymentForm.payment_method,
-          payment_type: 'Consultation Fee',
-          status: 'Completed',
-          payment_date: new Date().toISOString()
-        });
-
-      if (paymentError) throw paymentError;
+      const paymentData = {
+        patient_id: selectedAppointmentForPayment.patient_id,
+        amount: amountPaid,
+        payment_method: paymentForm.payment_method,
+        payment_type: 'Consultation Fee',
+        status: 'Completed',
+        payment_date: new Date().toISOString()
+      };
+      
+      const paymentRes = await api.post('/payments', paymentData);
+      if (paymentRes.status !== 200 || paymentRes.data.error) throw new Error(paymentRes.data.error || 'Failed to create payment');
 
       // Now proceed with check-in
       await handleCheckIn(selectedAppointmentForPayment.id);
@@ -636,77 +522,59 @@ export default function ReceptionistDashboard() {
   const handleCheckIn = async (appointmentId: string) => {
     try {
       // First, get appointment details
-      const { data: appointment, error: appointmentFetchError } = await supabase
-        .from('appointments')
-        .select('patient_id')
-        .eq('id', appointmentId)
-        .single();
-
-      if (appointmentFetchError) throw appointmentFetchError;
+      const appointmentRes = await api.get(`/appointments/${appointmentId}`);
+      const appointment = appointmentRes.data.appointment;
+      if (appointmentRes.status !== 200 || appointmentRes.data.error) throw new Error(appointmentRes.data.error || 'Failed to fetch appointment');
 
       // Update appointment status
-      const { error: appointmentError } = await supabase
-        .from('appointments')
-        .update({ status: 'Confirmed', updated_at: new Date().toISOString() })
-        .eq('id', appointmentId);
-
-      if (appointmentError) throw appointmentError;
+      const updateRes = await api.put(`/appointments/${appointmentId}`, { 
+        status: 'Confirmed', 
+        updated_at: new Date().toISOString() 
+      });
+      if (updateRes.status !== 200 || updateRes.data.error) throw new Error(updateRes.data.error || 'Failed to update appointment');
 
       // Use upsert to update existing visit or create new one (prevents duplicates)
       // First, try to find existing visit
-      const { data: existingVisit } = await supabase
-        .from('patient_visits')
-        .select('id')
-        .eq('appointment_id', appointmentId)
-        .maybeSingle();
+      const visitsRes = await api.get(`/visits?appointment_id=${appointmentId}`);
+      const visitsData = visitsRes.data.visits || [];
+      const existingVisit = visitsData.length > 0 ? visitsData[0] : null;
 
       if (existingVisit) {
         // Update existing visit
-        const { error: visitError } = await supabase
-          .from('patient_visits')
-          .update({
+        const visitRes = await api.put(`/visits/${existingVisit.id}`, {
+          reception_status: 'Checked In',
+          reception_completed_at: new Date().toISOString(),
+          current_stage: 'nurse',
+          nurse_status: 'Pending',
+          updated_at: new Date().toISOString()
+        });
+        if (visitRes.status !== 200 || visitRes.data.error) throw new Error(visitRes.data.error || 'Failed to update visit');
+      } else {
+        // Create new visit only if it doesn't exist
+        const visitData = {
+          patient_id: appointment.patient_id,
+          appointment_id: appointmentId,
+          visit_date: new Date().toISOString().split('T')[0],
+          reception_status: 'Checked In',
+          reception_completed_at: new Date().toISOString(),
+          current_stage: 'nurse',
+          nurse_status: 'Pending',
+          overall_status: 'Active'
+        };
+        
+        const visitRes = await api.post('/visits', visitData);
+        if (visitRes.status !== 200 || visitRes.data.error) {
+          // If error is duplicate, just update the existing one
+          // In this case, we'll assume the visit was created and try to update it
+          const updateRes = await api.put(`/visits?appointment_id=${appointmentId}`, {
             reception_status: 'Checked In',
             reception_completed_at: new Date().toISOString(),
             current_stage: 'nurse',
             nurse_status: 'Pending',
             updated_at: new Date().toISOString()
-          })
-          .eq('id', existingVisit.id);
-
-        if (visitError) throw visitError;
-      } else {
-        // Create new visit only if it doesn't exist
-        const { error: visitError } = await supabase
-          .from('patient_visits')
-          .insert({
-            patient_id: appointment.patient_id,
-            appointment_id: appointmentId,
-            visit_date: new Date().toISOString().split('T')[0],
-            reception_status: 'Checked In',
-            reception_completed_at: new Date().toISOString(),
-            current_stage: 'nurse',
-            nurse_status: 'Pending',
-            overall_status: 'Active'
           });
-
-        if (visitError) {
-          // If error is duplicate, just update the existing one
-          if (visitError.code === '23505') {
-            const { error: updateError } = await supabase
-              .from('patient_visits')
-              .update({
-                reception_status: 'Checked In',
-                reception_completed_at: new Date().toISOString(),
-                current_stage: 'nurse',
-                nurse_status: 'Pending',
-                updated_at: new Date().toISOString()
-              })
-              .eq('appointment_id', appointmentId);
-            
-            if (updateError) throw updateError;
-          } else {
-            throw visitError;
-          }
+          
+          if (updateRes.status !== 200 || updateRes.data.error) throw new Error(updateRes.data.error || 'Failed to update visit');
         }
       }
 
@@ -724,23 +592,15 @@ export default function ReceptionistDashboard() {
   const handleCancelAppointment = async (appointmentId: string) => {
     try {
       // Update appointment status
-      const { error: appointmentError } = await supabase
-        .from('appointments')
-        .update({ status: 'Cancelled' })
-        .eq('id', appointmentId);
-
-      if (appointmentError) throw appointmentError;
+      const updateRes = await api.put(`/appointments/${appointmentId}`, { status: 'Cancelled' });
+      if (updateRes.status !== 200 || updateRes.data.error) throw new Error(updateRes.data.error || 'Failed to update appointment');
 
       // Update patient visit workflow
-      const { error: visitError } = await supabase
-        .from('patient_visits')
-        .update({
-          overall_status: 'Cancelled',
-          reception_status: 'Cancelled'
-        })
-        .eq('appointment_id', appointmentId);
-
-      if (visitError) throw visitError;
+      const visitRes = await api.put(`/visits?appointment_id=${appointmentId}`, {
+        overall_status: 'Cancelled',
+        reception_status: 'Cancelled'
+      });
+      if (visitRes.status !== 200 || visitRes.data.error) throw new Error(visitRes.data.error || 'Failed to update visit');
 
       toast.success('Appointment cancelled');
       logActivity('appointment.cancel', { appointment_id: appointmentId });
@@ -797,14 +657,9 @@ export default function ReceptionistDashboard() {
     
     const timeoutId = setTimeout(async () => {
       try {
-        const { data, error } = await supabase
-          .from('patients')
-          .select('*')
-          .or(`full_name.ilike.%${returningPatientSearch}%,phone.ilike.%${returningPatientSearch}%`)
-          .limit(10);
-
-        if (error) throw error;
-        setReturningPatientResults(data || []);
+        const searchRes = await api.get(`/patients?search=${encodeURIComponent(returningPatientSearch)}&limit=10`);
+        if (searchRes.status !== 200 || searchRes.data.error) throw new Error(searchRes.data.error || 'Failed to search patients');
+        setReturningPatientResults(searchRes.data.patients || []);
       } catch (error) {
         console.error('Search error:', error);
       }
@@ -819,18 +674,14 @@ export default function ReceptionistDashboard() {
       console.log('Creating visit for returning patient:', patient);
 
       // Check if patient already has an active visit
-      const { data: existingVisits, error: checkError } = await supabase
-        .from('patient_visits')
-        .select('*')
-        .eq('patient_id', patient.id)
-        .eq('overall_status', 'Active')
-        .limit(1);
-
-      if (checkError) {
+      const visitsRes = await api.get(`/visits?patient_id=${patient.id}&overall_status=Active&limit=1`);
+      if (visitsRes.status !== 200 || visitsRes.data.error) {
+        const checkError = new Error(visitsRes.data.error || 'Failed to check existing visits');
         console.error('Error checking existing visits:', checkError);
         throw checkError;
       }
 
+      const existingVisits = visitsRes.data.visits || [];
       if (existingVisits && existingVisits.length > 0) {
         console.log('Patient already has active visit:', existingVisits[0]);
         toast.error('This patient already has an active visit. Please complete the current visit first.');
@@ -851,17 +702,14 @@ export default function ReceptionistDashboard() {
 
       console.log('Creating visit with data:', visitData);
 
-      const { data: newVisit, error: visitError } = await supabase
-        .from('patient_visits')
-        .insert([visitData])
-        .select()
-        .single();
-
-      if (visitError) {
+      const visitRes = await api.post('/visits', visitData);
+      if (visitRes.status !== 200 || visitRes.data.error) {
+        const visitError = new Error(visitRes.data.error || 'Failed to create visit');
         console.error('Error creating visit:', visitError);
         throw visitError;
       }
 
+      const newVisit = visitRes.data.visit;
       console.log('Visit created successfully:', newVisit);
       toast.success(`New visit created for ${patient.full_name}. Patient sent to Nurse.`);
       setShowReturningPatientDialog(false);
@@ -887,14 +735,9 @@ export default function ReceptionistDashboard() {
 
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .or(`full_name.ilike.%${searchQuery}%,phone.ilike.%${searchQuery}%`)
-        .limit(20);
-
-      if (error) throw error;
-      setSearchResults(data || []);
+      const searchRes = await api.get(`/patients?search=${encodeURIComponent(searchQuery)}&limit=20`);
+      if (searchRes.status !== 200 || searchRes.data.error) throw new Error(searchRes.data.error || 'Failed to search patients');
+      setSearchResults(searchRes.data.patients || []);
     } catch (error) {
       console.error('Search error:', error);
       toast.error('Failed to search patients');
@@ -919,30 +762,26 @@ export default function ReceptionistDashboard() {
 
     try {
       // Insert patient
-      const { data: newPatient, error: patientError } = await supabase
-        .from('patients')
-        .insert({
-          full_name: registerForm.full_name,
-          date_of_birth: registerForm.date_of_birth,
-          gender: registerForm.gender,
-          phone: registerForm.phone,
-          email: registerForm.email || null,
-          blood_group: registerForm.blood_group || null,
-          address: registerForm.address || null,
-          status: 'Active',
-        })
-        .select()
-        .single();
-
-      if (patientError) {
+      const patientData = {
+        full_name: registerForm.full_name,
+        date_of_birth: registerForm.date_of_birth,
+        gender: registerForm.gender,
+        phone: registerForm.phone,
+        email: registerForm.email || null,
+        blood_group: registerForm.blood_group || null,
+        address: registerForm.address || null,
+        status: 'Active',
+      };
+      
+      const patientRes = await api.post('/patients', patientData);
+      if (patientRes.status !== 200 || patientRes.data.error) {
+        const patientError = new Error(patientRes.data.error || 'Failed to register patient');
         console.error('Patient registration error:', patientError);
         
         // Provide specific error messages
-        if (patientError.code === '42501') {
+        if (patientRes.status === 403) {
           toast.error('Permission denied. You need receptionist role to register patients. Please contact your administrator.');
-        } else if (patientError.message.includes('row-level security')) {
-          toast.error('Access denied. Please ensure you have receptionist permissions.');
-        } else if (patientError.code === '23505') {
+        } else if (patientRes.status === 409) {
           toast.error('A patient with this information already exists.');
         } else {
           toast.error(`Registration failed: ${patientError.message}`);
@@ -950,23 +789,25 @@ export default function ReceptionistDashboard() {
         return;
       }
 
+      const newPatient = patientRes.data.patient;
+
       // Success message
       toast.success('Patient registered successfully! Adding to nurse queue...');
 
       // Create patient visit workflow directly to nurse stage (for new registrations)
-      const { error: visitError } = await supabase
-        .from('patient_visits')
-        .insert({
-          patient_id: newPatient.id,
-          visit_date: new Date().toISOString().split('T')[0],
-          reception_status: 'Checked In',
-          reception_completed_at: new Date().toISOString(),
-          current_stage: 'nurse',
-          nurse_status: 'Pending',
-          overall_status: 'Active'
-        });
-
-      if (visitError) {
+      const visitData = {
+        patient_id: newPatient.id,
+        visit_date: new Date().toISOString().split('T')[0],
+        reception_status: 'Checked In',
+        reception_completed_at: new Date().toISOString(),
+        current_stage: 'nurse',
+        nurse_status: 'Pending',
+        overall_status: 'Active'
+      };
+      
+      const visitRes = await api.post('/visits', visitData);
+      if (visitRes.status !== 200 || visitRes.data.error) {
+        const visitError = new Error(visitRes.data.error || 'Failed to create patient visit');
         console.error('Error creating patient visit:', visitError);
         toast.error('Patient registered but failed to add to nurse queue');
       } else {
@@ -996,41 +837,39 @@ export default function ReceptionistDashboard() {
 
     // console.log('Booking appointment with form data:', appointmentForm);
     try {
-      const { data: newAppointment, error: appointmentError } = await supabase
-        .from('appointments')
-        .insert({
-          patient_id: appointmentForm.patient_id,
-          doctor_id: appointmentForm.doctor_id,
-          appointment_date: appointmentForm.appointment_date,
-          appointment_time: appointmentForm.appointment_time,
-          ...(appointmentForm.reason && { reason: appointmentForm.reason }),
-          department_id: appointmentForm.department_id || null,
-          status: 'Scheduled',
-        })
-        .select()
-        .single();
-
-      if (appointmentError) throw appointmentError;
+      const appointmentData = {
+        patient_id: appointmentForm.patient_id,
+        doctor_id: appointmentForm.doctor_id,
+        appointment_date: appointmentForm.appointment_date,
+        appointment_time: appointmentForm.appointment_time,
+        ...(appointmentForm.reason && { reason: appointmentForm.reason }),
+        department_id: appointmentForm.department_id || null,
+        status: 'Scheduled',
+      };
+      
+      const appointmentRes = await api.post('/appointments', appointmentData);
+      if (appointmentRes.status !== 200 || appointmentRes.data.error) throw new Error(appointmentRes.data.error || 'Failed to create appointment');
+      
+      const newAppointment = appointmentRes.data.appointment;
       
       // console.log('New appointment created:', newAppointment);
       // console.log('Appointment date type:', typeof newAppointment.appointment_date, 'value:', newAppointment.appointment_date);
 
       // Create patient visit workflow for appointment (starts at reception for check-in)
       try {
-        const { error: visitError } = await supabase
-          .from('patient_visits')
-          .insert({
-            patient_id: appointmentForm.patient_id,
-            appointment_id: newAppointment.id,
-            reception_status: 'Pending',
-            current_stage: 'reception',
-            overall_status: 'Active'
-          });
+        const visitData = {
+          patient_id: appointmentForm.patient_id,
+          appointment_id: newAppointment.id,
+          reception_status: 'Pending',
+          current_stage: 'reception',
+          overall_status: 'Active'
+        };
+        
+        const visitRes = await api.post('/visits', visitData);
+        if (visitRes.status !== 200 || visitRes.data.error) throw new Error(visitRes.data.error || 'Failed to create patient visit');
 
         // console.log('Patient visit created for appointment:', newAppointment.id);
-
-        if (visitError) throw visitError;
-      } catch (visitError) {
+      } catch (visitError: any) {
         console.error('Error creating patient visit:', visitError);
         // Don't fail the appointment creation if visit creation fails
         toast.warning('Appointment created but visit tracking failed');
@@ -1109,9 +948,9 @@ export default function ReceptionistDashboard() {
         reason: '',
         department_id: '',
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Booking error:', error);
-      toast.error('Failed to book appointment');
+      toast.error(`Failed to book appointment: ${error.message || 'Unknown error'}`);
     }
   };
 

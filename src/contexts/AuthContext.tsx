@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
+import { User, Session } from '@/types/auth';
+import api from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 
 type AppRole = 'admin' | 'doctor' | 'nurse' | 'receptionist' | 'lab_tech' | 'pharmacist' | 'billing' | 'patient';
@@ -31,85 +31,163 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const navigate = useNavigate();
 
   const fetchUserRoles = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('user_roles')
-      .select('role, is_primary')
-      .eq('user_id', userId);
-    
-    if (!error && data) {
-      setRoles(data.map(r => r.role as AppRole));
-      const primary = data.find(r => r.is_primary);
-      setPrimaryRole(primary ? primary.role as AppRole : null);
+    try {
+      console.log('Fetching user roles for user:', userId);
+      const { data } = await api.get('/auth/me');
+      console.log('User roles data received:', data);
+      if (data && data.user && data.user.roles) {
+        setRoles(data.user.roles as AppRole[]);
+        setPrimaryRole(data.user.primaryRole as AppRole || data.user.roles[0]);
+      }
+      setRolesLoaded(true);
+    } catch (error) {
+      console.error('Failed to fetch user roles:', error);
+      setRolesLoaded(true); // Ensure rolesLoaded is set even on error
     }
-    setRolesLoaded(true);
   };
 
   useEffect(() => {
-    // Set up auth state listener first
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        if (session?.user) {
-          // Defer fetching roles to avoid blocking
-          setTimeout(() => {
-            fetchUserRoles(session.user.id);
-          }, 0);
-        } else {
-          setRoles([]);
+    // Check for existing session on mount
+    const checkSession = async () => {
+      console.log('Checking for existing session...');
+      const token = localStorage.getItem('auth_token');
+      console.log('Auth token found:', !!token);
+      
+      if (token) {
+        try {
+          console.log('Verifying token and fetching user profile...');
+          // Verify token and get user profile
+          const { data } = await api.get('/auth/me');
+          console.log('User profile data received:', data);
+          
+          if (data && data.user) {
+            const user: User = {
+              id: data.user.id,
+              email: data.user.email,
+              user_metadata: {
+                full_name: data.user.full_name,
+                role: data.user.role,
+              },
+            };
+            
+            const session: Session = {
+              access_token: token,
+              user: user,
+            };
+            
+            setUser(user);
+            setSession(session);
+            
+            // Fetch roles
+            console.log('Fetching user roles...');
+            await fetchUserRoles(data.user.id);
+          } else {
+            // Invalid token
+            console.log('Invalid token, removing from localStorage');
+            localStorage.removeItem('auth_token');
+            setRolesLoaded(true);
+          }
+        } catch (error) {
+          console.error('Session check failed:', error);
+          localStorage.removeItem('auth_token');
           setRolesLoaded(true);
         }
-        
-        setLoading(false);
-      }
-    );
-
-    // Then check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        fetchUserRoles(session.user.id);
       } else {
+        console.log('No auth token found, setting rolesLoaded to true');
         setRolesLoaded(true);
       }
+      
+      console.log('Setting loading to false');
       setLoading(false);
-    });
+    };
 
-    return () => subscription.unsubscribe();
+    checkSession();
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { error };
+    try {
+      const { data } = await api.post('/auth/login', {
+        email,
+        password,
+      });
+      
+      if (data && data.token) {
+        // Store token
+        localStorage.setItem('auth_token', data.token);
+        
+        // Set user and session
+        const user: User = {
+          id: data.user.id,
+          email: data.user.email,
+          user_metadata: {
+            full_name: data.user.full_name,
+            role: data.user.primaryRole || data.user.roles[0],
+          },
+        };
+        
+        const session: Session = {
+          access_token: data.token,
+          user: user,
+        };
+        
+        setUser(user);
+        setSession(session);
+        
+        // Set roles from login response
+        setRoles(data.user.roles as AppRole[]);
+        setPrimaryRole(data.user.primaryRole as AppRole || data.user.roles[0]);
+        setRolesLoaded(true);
+        
+        return { error: null };
+      }
+      
+      return { error: { message: 'Login failed' } };
+    } catch (error: any) {
+      console.error('Sign in error:', error);
+      setRolesLoaded(true); // Ensure rolesLoaded is set even on error
+      return { 
+        error: { 
+          message: error.response?.data?.error || 'Invalid email or password' 
+        } 
+      };
+    }
   };
 
   const signUp = async (email: string, password: string, fullName: string, phone?: string) => {
-    const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          full_name: fullName,
-          phone: phone,
-        },
-      },
-    });
-    return { error };
+    try {
+      const { data } = await api.post('/auth/register', {
+        email,
+        password,
+        full_name: fullName,
+        phone: phone,
+      });
+      
+      if (data && data.success) {
+        return { error: null };
+      }
+      
+      return { error: { message: 'Registration failed' } };
+    } catch (error: any) {
+      console.error('Sign up error:', error);
+      return { 
+        error: { 
+          message: error.response?.data?.message || 'Registration failed' 
+        } 
+      };
+    }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // Clear local storage
+    localStorage.removeItem('auth_token');
+    
+    // Clear state
+    setUser(null);
+    setSession(null);
     setRoles([]);
     setPrimaryRole(null);
+    
+    // Navigate to auth page
     navigate('/auth');
   };
 
