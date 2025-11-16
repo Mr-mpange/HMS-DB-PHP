@@ -813,7 +813,9 @@ export default function BillingDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {invoices.map((patientData) => (
+                      {invoices
+                        .filter((patientData) => patientData.status !== 'Paid') // Hide fully paid patients
+                        .map((patientData) => (
                         <TableRow key={patientData.patient.id}>
                           <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
                           <TableCell className="text-sm">{patientData.patient.phone}</TableCell>
