@@ -57,6 +57,9 @@ app.use('/api/', limiter);
 // Make io accessible to routes
 app.set('io', io);
 
+// Middleware
+const { authenticate } = require('./middleware/auth');
+
 // Routes
 const authRoutes = require('./routes/auth');
 const patientRoutes = require('./routes/patients');
@@ -90,6 +93,10 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/insurance', insuranceRoutes);
+
+// Department fees endpoint
+const departmentController = require('./controllers/departmentController');
+app.get('/api/department-fees', authenticate, departmentController.getAllDepartmentFees);
 
 // Health check
 app.get('/api/health', (req, res) => {

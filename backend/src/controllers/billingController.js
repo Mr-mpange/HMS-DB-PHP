@@ -162,7 +162,7 @@ exports.createInvoice = async (req, res) => {
       `INSERT INTO activity_logs (id, user_id, action, details) 
        VALUES (?, ?, ?, ?)`,
       [uuidv4(), req.user.id, 'invoice.created', 
-       JSON.stringify({ invoice_id: invoiceId, invoice_number: invoiceNumber, patient_id, total })]
+       JSON.stringify({ invoice_id: invoiceId, invoice_number: finalInvoiceNumber, patient_id, total })]
     );
     
     await connection.commit();
@@ -171,7 +171,7 @@ exports.createInvoice = async (req, res) => {
     if (global.emitUpdate) {
       global.emitUpdate('invoices', 'invoice:created', { 
         id: invoiceId,
-        invoice_number: invoiceNumber
+        invoice_number: finalInvoiceNumber
       });
     }
     

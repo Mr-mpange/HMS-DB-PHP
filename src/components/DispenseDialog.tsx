@@ -126,20 +126,14 @@ export function DispenseDialog({
                         </SelectTrigger>
                         <SelectContent>
                           {medications
-                            .sort((a, b) => {
-                              // Sort by stock (available first) then by name
-                              if (a.stock_quantity === 0 && b.stock_quantity > 0) return 1;
-                              if (a.stock_quantity > 0 && b.stock_quantity === 0) return -1;
-                              return a.name.localeCompare(b.name);
-                            })
+                            .filter(m => m.stock_quantity > 0) // Only show medications with stock
+                            .sort((a, b) => a.name.localeCompare(b.name)) // Sort alphabetically
                             .map((medication) => (
                               <SelectItem 
                                 key={medication.id} 
                                 value={medication.id}
-                                disabled={medication.stock_quantity === 0}
                               >
                                 {medication.name} (Stock: {medication.stock_quantity})
-                                {medication.stock_quantity === 0 && ' - OUT OF STOCK'}
                               </SelectItem>
                             ))}
                         </SelectContent>

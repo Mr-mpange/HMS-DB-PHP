@@ -200,3 +200,21 @@ exports.removeDoctor = async (req, res) => {
     res.status(500).json({ error: 'Failed to remove doctor' });
   }
 };
+
+
+// Get all department fees
+exports.getAllDepartmentFees = async (req, res) => {
+  try {
+    const [fees] = await db.execute(`
+      SELECT df.*, d.name as department_name
+      FROM department_fees df
+      LEFT JOIN departments d ON df.department_id = d.id
+      ORDER BY d.name
+    `);
+    
+    res.json({ fees });
+  } catch (error) {
+    console.error('Get department fees error:', error);
+    res.status(500).json({ error: 'Failed to fetch department fees' });
+  }
+};
