@@ -175,29 +175,39 @@ export default function LabDashboard() {
 
   const updatePatientWorkflow = async (patientId: string) => {
     try {
+      console.log('🔄 Starting workflow update for patient:', patientId);
+      
       // Get active visits for this patient that are in lab stage
       const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
       const visits = data.visits || [];
 
-      console.log('Updating patient workflow:', { patientId, visitsFound: visits.length });
+      console.log('📋 Visits found:', visits.length, visits);
 
       if (visits && visits.length > 0) {
         const visitId = visits[0].id;
-        console.log('Updating visit:', visitId);
+        console.log('✏️  Updating visit:', visitId);
         
-        await api.put(`/visits/${visitId}`, {
+        const updateData = {
           lab_status: 'Completed',
           lab_completed_at: new Date().toISOString(),
           current_stage: 'doctor',
           doctor_status: 'Pending'
-        });
+        };
         
-        console.log('Visit updated successfully');
+        console.log('📤 Sending update:', updateData);
+        
+        const response = await api.put(`/visits/${visitId}`, updateData);
+        
+        console.log('✅ Visit updated successfully!', response.data);
+        toast.success('Patient sent back to doctor for prescription');
       } else {
-        console.warn('No active lab visit found for patient:', patientId);
+        console.warn('⚠️  No active lab visit found for patient:', patientId);
+        toast.warning('Could not find active visit to update');
       }
-    } catch (error) {
-      console.error('Error updating patient workflow:', error);
+    } catch (error: any) {
+      console.error('❌ Error updating patient workflow:', error);
+      console.error('Error details:', error.response?.data);
+      toast.error(`Failed to update workflow: ${error.response?.data?.error || error.message}`);
       // Don't throw error - results were already saved successfully
     }
   };
