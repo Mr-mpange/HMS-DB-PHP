@@ -515,67 +515,9 @@ export default function DoctorDashboard() {
     fetchAvailableMedications();
   }, [fetchAppointments, fetchAvailableLabTests, fetchAvailableMedications]);
 
-  // Function to update appointment status
-  const updateAppointmentStatus = useCallback(async (appointmentId: string, status: string) => {
-    try {
-      const response = await api.put(`/appointments/${appointmentId}`, { status });
-      if (response.status !== 200) throw new Error('Failed to update appointment status');
-      setAppointments(prev => 
-        prev.map(a => 
-          a.id === appointmentId 
-            ? { ...a, status } 
-            : a
-        )
-      );
-    } catch (error) {
-      console.error('Error updating appointment status:', error);
-      toast.error('Failed to update appointment status. Please try again later.');
-    }
-  }, []);
+  // Function to update appointment status - moved to line 708
 
-  // Function to handle rescheduling an appointment
-  const handleRescheduleAppointment = async () => {
-    if (!rescheduleDate || !rescheduleTime || !rescheduleReason) {
-      toast.error('Please fill in all fields');
-      return;
-    }
-
-    try {
-      setIsRescheduling(true);
-      const fullDateTime = new Date(`${rescheduleDate.toISOString().split('T')[0]}T${rescheduleTime}:00`);
-      const response = await api.put(`/appointments/${selectedAppointment.id}`, { 
-        appointment_date: fullDateTime.toISOString().split('T')[0],
-        appointment_time: fullDateTime.toISOString().split('T')[1].slice(0, 5),
-        reschedule_reason: rescheduleReason
-      });
-
-      if (response.status !== 200) throw new Error('Failed to reschedule appointment');
-
-      setAppointments(prev => 
-        prev.map(a => 
-          a.id === selectedAppointment.id 
-            ? { ...a, 
-                appointment_date: fullDateTime.toISOString().split('T')[0],
-                appointment_time: fullDateTime.toISOString().split('T')[1].slice(0, 5),
-                reschedule_reason: rescheduleReason
-              } 
-            : a
-        )
-      );
-
-      toast.success('Appointment rescheduled successfully');
-      setShowRescheduleForm(false);
-    } catch (error) {
-      console.error('Error rescheduling appointment:', error);
-      toast.error('Failed to reschedule appointment');
-    } finally {
-      setIsRescheduling(false);
-      setSelectedAppointment(null);
-      setRescheduleDate(undefined);
-      setRescheduleTime('');
-      setRescheduleReason('');
-    }
-  };
+  // Function to handle rescheduling an appointment - moved to line 1270
 
   // Function to handle consultation submission
   const handleConsultationSubmit = async () => {
