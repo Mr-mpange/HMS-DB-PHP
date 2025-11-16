@@ -1,0 +1,60 @@
+# Documentation Files Added to .gitignore
+
+The following documentation files are now ignored by git:
+
+## Production Documentation
+- PRODUCTION_*.md (all production guides)
+- FINAL_*.md (all final status reports)
+- COMPLETE_*.md (all completion reports)
+- README_PRODUCTION.md
+- PRODUCTION_INDEX.md
+
+## Migration Documentation
+- SUPABASE_*.md (all Supabase migration docs)
+- RECEPTIONIST_*.md (dashboard migration docs)
+
+## System Documentation
+- SYSTEM_*.md (system status reports)
+- TESTING_*.md (testing guides)
+- DEBUG_*.md (debug guides)
+
+## Setup Documentation
+- WINDOWS_*.md (Windows setup guides)
+- START_*.md (quick start guides)
+- LOCAL_*.md (local testing guides)
+- QUICK_*.md (quick reference guides)
+
+## Test Scripts
+- test-local.sh
+- test-local.bat
+- test-backend.bat
+- verify-production.sh
+- start-backend.bat
+- start-frontend.bat
+
+## Why These Are Ignored
+
+These files are:
+- Generated documentation for deployment
+- Temporary guides for setup
+- Test scripts for local development
+- Not needed in version control
+- Can be regenerated if needed
+
+## Files NOT Ignored (Important)
+
+These documentation files are still tracked:
+- README.md (main project documentation)
+- CONTRIBUTING.md (if exists)
+- LICENSE (if exists)
+- Any custom documentation you create
+
+## To Track a Specific File
+
+If you want to track a specific .md file that matches the pattern:
+
+```bash
+git add -f filename.md
+```
+
+The -f flag forces git to add it despite .gitignore.

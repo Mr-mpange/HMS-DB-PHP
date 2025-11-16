@@ -22,8 +22,7 @@ export default function DebugDashboard() {
   const assignRole = async (role: string) => {
     setAssigningRole(true);
     try {
-      await api.post('/users/assign-role', {
-        user_id: user.id,
+      await api.post(`/users/${user.id}/roles`, {
         role: role,
         is_primary: true
       });
@@ -33,7 +32,7 @@ export default function DebugDashboard() {
       refreshRoles(); // Refresh the auth context roles
     } catch (error: any) {
       console.error('Role assignment error:', error);
-      toast.error(`Failed to assign ${role} role: ${error.response?.data?.message || error.message}`);
+      toast.error(`Failed to assign ${role} role: ${error.response?.data?.error || error.message}`);
     } finally {
       setAssigningRole(false);
     }

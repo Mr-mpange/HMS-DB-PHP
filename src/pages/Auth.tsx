@@ -12,7 +12,7 @@ import Logo from '@/components/Logo';
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn, signUp, user } = useAuth();
+  const { signIn, signUp, user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -66,7 +66,7 @@ export default function Auth() {
   };
 
   // Show loading state while checking auth status
-  if (user !== undefined) {
+  if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

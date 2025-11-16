@@ -1494,10 +1494,17 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Role assignment not yet implemented in backend
-      toast.info('Role assignment will be available soon');
+      await api.post(`/users/${selectedUserId}/roles`, {
+        role,
+        is_primary: isPrimary
+      });
+      
+      toast.success(`Role ${role} assigned successfully`);
       setRoleDialogOpen(false);
       setSelectedUserId(null);
+      
+      // Refresh users list
+      fetchData();
     } catch (error) {
       console.error('Error assigning role:', error);
       const message = (error as { message?: string })?.message || 'Failed to assign role';

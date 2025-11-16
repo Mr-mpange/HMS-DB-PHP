@@ -106,8 +106,8 @@ export default function AdminReports() {
       const startStr = start.toISOString();
       const endStr = end.toISOString();
 
-      // Fetch all data from MySQL API
-      const [patientsRes, appointmentsRes, visitsRes, prescriptionsRes, labTestsRes] = await Promise.all([
+      // Fetch all data from MySQL API with individual error handling
+      const [patientsRes, appointmentsRes, visitsRes, prescriptionsRes, labTestsRes] = await Promise.allSettled([
         api.get(`/patients?from=${startStr}&to=${endStr}`),
         api.get(`/appointments?from=${startStr}&to=${endStr}`),
         api.get(`/patient-visits?from=${startStr}&to=${endStr}`),
@@ -115,27 +115,34 @@ export default function AdminReports() {
         api.get(`/lab-tests?from=${startStr}&to=${endStr}`)
       ]);
 
-      const patientsData = patientsRes.data.patients || [];
-      const appointmentsData = appointmentsRes.data.appointments || [];
-      const visitsData = visitsRes.data.visits || [];
-      const prescriptionsData = prescriptionsRes.data.prescriptions || [];
-      const labTestsData = labTestsRes.data.tests || [];
+      const patientsData = patientsRes.status === 'fulfilled' ? (patientsRes.value.data.patients || []) : [];
+      const appointmentsData = appointmentsRes.status === 'fulfilled' ? (appointmentsRes.value.data.appointments || []) : [];
+      const visitsData = visitsRes.status === 'fulfilled' ? (visitsRes.value.data.visits || []) : [];
+      const prescriptionsData = prescriptionsRes.status === 'fulfilled' ? (prescriptionsRes.value.data.prescriptions || []) : [];
+      const labTestsData = labTestsRes.status === 'fulfilled' ? (labTestsRes.value.data.tests || []) : [];
 
       setReportData({
-        patients: patientsData || [],
-        appointments: appointmentsData || [],
-        visits: visitsData || [],
-        prescriptions: prescriptionsData || [],
-        labTests: labTestsData || []
+        patients: patientsData,
+        appointments: appointmentsData,
+        visits: visitsData,
+        prescriptions: prescriptionsData,
+        labTests: labTestsData
       });
 
       setStats({
-        totalPatients: patientsData?.length || 0,
-        totalAppointments: appointmentsData?.length || 0,
-        totalVisits: visitsData?.length || 0,
-        totalPrescriptions: prescriptionsData?.length || 0,
-        totalLabTests: labTestsData?.length || 0
+        totalPatients: patientsData.length,
+        totalAppointments: appointmentsData.length,
+        totalVisits: visitsData.length,
+        totalPrescriptions: prescriptionsData.length,
+        totalLabTests: labTestsData.length
       });
+
+      // Log any failed requests
+      if (patientsRes.status === 'rejected') console.warn('Failed to fetch patients:', patientsRes.reason);
+      if (appointmentsRes.status === 'rejected') console.warn('Failed to fetch appointments:', appointmentsRes.reason);
+      if (visitsRes.status === 'rejected') console.warn('Failed to fetch visits:', visitsRes.reason);
+      if (prescriptionsRes.status === 'rejected') console.warn('Failed to fetch prescriptions:', prescriptionsRes.reason);
+      if (labTestsRes.status === 'rejected') console.warn('Failed to fetch lab tests:', labTestsRes.reason);
 
     } catch (error) {
       console.error('Error fetching report data:', error);

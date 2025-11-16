@@ -39,66 +39,78 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setRoles(data.user.roles as AppRole[]);
         setPrimaryRole(data.user.primaryRole as AppRole || data.user.roles[0]);
       }
-      setRolesLoaded(true);
     } catch (error) {
       console.error('Failed to fetch user roles:', error);
-      setRolesLoaded(true); // Ensure rolesLoaded is set even on error
+    } finally {
+      setRolesLoaded(true); // Always set rolesLoaded
     }
   };
 
   useEffect(() => {
     // Check for existing session on mount
     const checkSession = async () => {
-      console.log('Checking for existing session...');
-      const token = localStorage.getItem('auth_token');
-      console.log('Auth token found:', !!token);
-      
-      if (token) {
-        try {
-          console.log('Verifying token and fetching user profile...');
-          // Verify token and get user profile
-          const { data } = await api.get('/auth/me');
-          console.log('User profile data received:', data);
-          
-          if (data && data.user) {
-            const user: User = {
-              id: data.user.id,
-              email: data.user.email,
-              user_metadata: {
-                full_name: data.user.full_name,
-                role: data.user.role,
-              },
-            };
+      try {
+        console.log('Checking for existing session...');
+        const token = localStorage.getItem('auth_token');
+        console.log('Auth token found:', !!token);
+        
+        if (token) {
+          try {
+            console.log('Verifying token and fetching user profile...');
+            // Verify token and get user profile with timeout
+            const { data } = await Promise.race([
+              api.get('/auth/me'),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Request timeout')), 5000)
+              )
+            ]) as any;
             
-            const session: Session = {
-              access_token: token,
-              user: user,
-            };
+            console.log('User profile data received:', data);
             
-            setUser(user);
-            setSession(session);
-            
-            // Fetch roles
-            console.log('Fetching user roles...');
-            await fetchUserRoles(data.user.id);
-          } else {
-            // Invalid token
-            console.log('Invalid token, removing from localStorage');
+            if (data && data.user) {
+              const user: User = {
+                id: data.user.id,
+                email: data.user.email,
+                user_metadata: {
+                  full_name: data.user.full_name,
+                  role: data.user.role,
+                },
+              };
+              
+              const session: Session = {
+                access_token: token,
+                user: user,
+              };
+              
+              setUser(user);
+              setSession(session);
+              
+              // Fetch roles
+              console.log('Fetching user roles...');
+              await fetchUserRoles(data.user.id);
+            } else {
+              // Invalid token
+              console.log('Invalid token, removing from localStorage');
+              localStorage.removeItem('auth_token');
+              setRolesLoaded(true);
+            }
+          } catch (error) {
+            console.error('Session check failed:', error);
             localStorage.removeItem('auth_token');
             setRolesLoaded(true);
           }
-        } catch (error) {
-          console.error('Session check failed:', error);
-          localStorage.removeItem('auth_token');
+        } else {
+          console.log('No auth token found, setting rolesLoaded to true');
           setRolesLoaded(true);
         }
-      } else {
-        console.log('No auth token found, setting rolesLoaded to true');
+      } catch (error) {
+        console.error('Unexpected error in checkSession:', error);
         setRolesLoaded(true);
+      } finally {
+        // Always set loading to false, no matter what
+        console.log('Setting loading to false');
+        setLoading(false);
       }
-      
-      console.log('Setting loading to false');
-      setLoading(false);
     };
 
     checkSession();

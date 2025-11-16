@@ -92,3 +92,27 @@ docker-compose.override.yml
 .vercel
 .netlify
 
+# Documentation (generated/temporary)
+PRODUCTION_*.md
+FINAL_*.md
+COMPLETE_*.md
+SUPABASE_*.md
+RECEPTIONIST_*.md
+SYSTEM_*.md
+TESTING_*.md
+DEBUG_*.md
+WINDOWS_*.md
+START_*.md
+LOCAL_*.md
+QUICK_*.md
+README_PRODUCTION.md
+PRODUCTION_INDEX.md
+
+# Test scripts
+test-local.sh
+test-local.bat
+test-backend.bat
+verify-production.sh
+start-backend.bat
+start-frontend.bat
+
