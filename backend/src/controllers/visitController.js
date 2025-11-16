@@ -38,7 +38,12 @@ exports.getAllVisits = async (req, res) => {
     res.json({ visits });
   } catch (error) {
     console.error('Get visits error:', error);
-    res.status(500).json({ error: 'Failed to fetch visits' });
+    console.error('Error details:', error.message);
+    console.error('SQL State:', error.sqlState);
+    res.status(500).json({ 
+      error: 'Failed to fetch visits',
+      details: error.message 
+    });
   }
 };
 
@@ -108,7 +113,13 @@ exports.createVisit = async (req, res) => {
     });
   } catch (error) {
     console.error('Create visit error:', error);
-    res.status(500).json({ error: 'Failed to create visit' });
+    console.error('Error message:', error.message);
+    console.error('SQL State:', error.sqlState);
+    console.error('SQL Message:', error.sqlMessage);
+    res.status(500).json({ 
+      error: 'Failed to create visit',
+      details: error.message 
+    });
   }
 };
 

@@ -143,16 +143,21 @@ export default function ReceptionistDashboard() {
       // Then get doctor profiles for the appointments
       const doctorIds = [...new Set(appointmentsBasic?.map(apt => apt.doctor_id).filter(Boolean) || [])];
 
-      let appointmentsData = appointmentsBasic;
+      let appointmentsData = appointmentsBasic || [];
       if (doctorIds.length > 0) {
-        const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
-        const doctorsData = doctorsRes.data.profiles || [];
+        try {
+          const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
+          const doctorsData = doctorsRes.data.profiles || [];
 
-        // Merge doctor information into appointments
-        appointmentsData = appointmentsBasic?.map(apt => ({
-          ...apt,
-          doctor: doctorsData.find(doc => doc.id === apt.doctor_id) || null
-        }));
+          // Merge doctor information into appointments
+          appointmentsData = (appointmentsBasic || []).map(apt => ({
+            ...apt,
+            doctor: doctorsData.find(doc => doc.id === apt.doctor_id) || null
+          }));
+        } catch (error) {
+          console.warn('Could not fetch doctor profiles for appointments:', error);
+          appointmentsData = appointmentsBasic || [];
+        }
       }
 
       const patientsRes = await api.get('/patients?order=created_at.desc&limit=10');
@@ -164,46 +169,13 @@ export default function ReceptionistDashboard() {
       // Fetch doctors - get profiles that have doctor role
       let doctorsData = [];
       try {
-        // First try with correct join syntax
-        const rolesRes = await api.get('/users/roles?role=doctor');
-        const doctorRoles = rolesRes.data.roles || [];
-
-        if (doctorRoles && doctorRoles.length > 0) {
-          const doctorIds = doctorRoles.map(dr => dr.user_id);
-          const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
-          const doctorProfiles = doctorsRes.data.profiles || [];
-          doctorsData = doctorProfiles || [];
-          console.log('Found doctor profiles:', doctorsData.length);
-        } else {
-          doctorsData = [];
-          console.log('No doctor roles found');
-        }
+        // Fetch doctors using the public profiles endpoint
+        const doctorsRes = await api.get('/users/profiles?role=doctor');
+        doctorsData = doctorsRes.data.profiles || [];
+        console.log('Found doctors:', doctorsData.length);
       } catch (error) {
-        console.warn('Could not fetch doctors with roles, using fallback:', error);
-        try {
-          // Alternative approach: query user_roles first, then get profiles
-          const rolesRes = await api.get('/users/roles?role=doctor');
-          const doctorRoles = rolesRes.data.roles || [];
-
-          console.log('Doctor roles found:', doctorRoles?.length || 0);
-
-          if (doctorRoles && doctorRoles.length > 0) {
-            const doctorIds = doctorRoles.map(dr => dr.user_id);
-            const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
-            const doctorProfiles = doctorsRes.data.profiles || [];
-            doctorsData = doctorProfiles || [];
-            console.log('Found doctor profiles:', doctorsData.length);
-          } else {
-            console.log('No doctor roles found, checking all profiles...');
-          }
-        } catch (fallbackError) {
-          console.warn('Fallback also failed, using all profiles:', fallbackError);
-          // Final fallback: get all profiles (for development)
-          const profilesRes = await api.get('/users/profiles?limit=10');
-          const allProfiles = profilesRes.data.profiles || [];
-          doctorsData = allProfiles || [];
-          console.log('Using all profiles as doctors:', doctorsData.length);
-        }
+        console.warn('Could not fetch doctors:', error);
+        doctorsData = [];
       }
 
       // If still no doctors, try to create some sample doctor users
@@ -250,9 +222,12 @@ export default function ReceptionistDashboard() {
         console.error('Error fetching patient visits:', visitsError);
       }
 
-      const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
-      const pendingAppointments = appointmentsData?.filter(a => a.status === 'Scheduled').length || 0;
-      const confirmedAppointments = appointmentsData?.filter(a => a.status === 'Confirmed').length || 0;
+      // Ensure appointmentsData is an array before filtering
+      const appointmentsArray = Array.isArray(appointmentsData) ? appointmentsData : [];
+      
+      const todayAppointments = appointmentsArray.filter(a => a.appointment_date === today).length;
+      const pendingAppointments = appointmentsArray.filter(a => a.status === 'Scheduled').length;
+      const confirmedAppointments = appointmentsArray.filter(a => a.status === 'Confirmed').length;
 
       // Calculate nurse queue patients (from new registrations)
       const nurseQueuePatients = patientVisits?.filter(v =>
@@ -264,7 +239,7 @@ export default function ReceptionistDashboard() {
         v.current_stage === 'reception' && v.reception_status === 'Pending'
       ).length || 0;
 
-      setAppointments(appointmentsData || []);
+      setAppointments(appointmentsArray);
       setPatients(patientsData || []);
       setDepartments(departmentsData || []);
       setDoctors(doctorsData || []);
@@ -658,7 +633,11 @@ export default function ReceptionistDashboard() {
     const timeoutId = setTimeout(async () => {
       try {
         const searchRes = await api.get(`/patients?search=${encodeURIComponent(returningPatientSearch)}&limit=10`);
-        if (searchRes.status !== 200 || searchRes.data.error) throw new Error(searchRes.data.error || 'Failed to search patients');
+        
+        if (searchRes.data.error) {
+          throw new Error(searchRes.data.error);
+        }
+        
         setReturningPatientResults(searchRes.data.patients || []);
       } catch (error) {
         console.error('Search error:', error);
@@ -736,11 +715,19 @@ export default function ReceptionistDashboard() {
     try {
       setLoading(true);
       const searchRes = await api.get(`/patients?search=${encodeURIComponent(searchQuery)}&limit=20`);
-      if (searchRes.status !== 200 || searchRes.data.error) throw new Error(searchRes.data.error || 'Failed to search patients');
+      
+      if (searchRes.data.error) {
+        throw new Error(searchRes.data.error);
+      }
+      
       setSearchResults(searchRes.data.patients || []);
-    } catch (error) {
+      
+      if (searchRes.data.patients && searchRes.data.patients.length === 0) {
+        toast.info('No patients found matching your search');
+      }
+    } catch (error: any) {
       console.error('Search error:', error);
-      toast.error('Failed to search patients');
+      toast.error(error.response?.data?.error || 'Failed to search patients');
     } finally {
       setLoading(false);
     }
@@ -774,56 +761,82 @@ export default function ReceptionistDashboard() {
       };
       
       const patientRes = await api.post('/patients', patientData);
-      if (patientRes.status !== 200 || patientRes.data.error) {
+      
+      // Check for errors (201 is success for creation)
+      if (patientRes.data.error) {
         const patientError = new Error(patientRes.data.error || 'Failed to register patient');
         console.error('Patient registration error:', patientError);
-        
-        // Provide specific error messages
-        if (patientRes.status === 403) {
-          toast.error('Permission denied. You need receptionist role to register patients. Please contact your administrator.');
-        } else if (patientRes.status === 409) {
-          toast.error('A patient with this information already exists.');
-        } else {
-          toast.error(`Registration failed: ${patientError.message}`);
-        }
+        toast.error(`Registration failed: ${patientError.message}`);
         return;
       }
 
-      const newPatient = patientRes.data.patient;
+      // Get the patient ID from response
+      const patientId = patientRes.data.patientId;
+      if (!patientId) {
+        toast.error('Patient registered but ID not returned');
+        return;
+      }
 
-      // Success message
-      toast.success('Patient registered successfully! Adding to nurse queue...');
+      // Success - patient created
+      toast.success('Patient registered successfully!');
 
-      // Create patient visit workflow directly to nurse stage (for new registrations)
+      // Try to create patient visit workflow (non-blocking)
       const visitData = {
-        patient_id: newPatient.id,
+        patient_id: patientId,
         visit_date: new Date().toISOString().split('T')[0],
         reception_status: 'Checked In',
-        reception_completed_at: new Date().toISOString(),
         current_stage: 'nurse',
-        nurse_status: 'Pending',
         overall_status: 'Active'
       };
       
-      const visitRes = await api.post('/visits', visitData);
-      if (visitRes.status !== 200 || visitRes.data.error) {
-        const visitError = new Error(visitRes.data.error || 'Failed to create patient visit');
-        console.error('Error creating patient visit:', visitError);
-        toast.error('Patient registered but failed to add to nurse queue');
-      } else {
-        toast.success('Patient registered and added to nurse queue successfully!');
-      }
+      // Create visit in background - don't block on failure
+      api.post('/visits', visitData)
+        .then(async (visitRes) => {
+          if (visitRes.data.error) {
+            console.warn('Visit creation returned error:', visitRes.data.error);
+            return;
+          }
+          
+          // Update the visit with nurse status
+          if (visitRes.data.visitId) {
+            try {
+              await api.put(`/visits/${visitRes.data.visitId}`, {
+                nurse_status: 'Pending',
+                reception_completed_at: new Date().toISOString()
+              });
+              toast.success('Patient added to nurse queue!');
+            } catch (updateError) {
+              console.warn('Failed to update visit status:', updateError);
+            }
+          }
+        })
+        .catch((visitError) => {
+          console.error('Error creating patient visit:', visitError);
+          // Don't show error toast - patient was created successfully
+        });
 
       // Close registration dialog
       setShowRegisterDialog(false);
       
-      // Add to local state
-      setPatients(prev => [newPatient, ...prev]);
+      // Reset form
+      setRegisterForm({
+        full_name: '',
+        date_of_birth: '',
+        gender: '',
+        phone: '',
+        email: '',
+        blood_group: '',
+        address: ''
+      });
+      
+      // Refresh the dashboard data to show the new patient
+      fetchData();
 
-      logActivity('patient.register', { patient_id: newPatient.id, full_name: registerForm.full_name });
+      logActivity('patient.register', { patient_id: patientId, full_name: registerForm.full_name });
     } catch (error: any) {
       console.error('Registration error:', error);
-      toast.error(`Failed to register patient: ${error.message || 'Unknown error'}`);
+      const errorMessage = error.response?.data?.error || error.response?.data?.details || error.message || 'Unknown error';
+      toast.error(`Failed to register patient: ${errorMessage}`);
     }
   };
 

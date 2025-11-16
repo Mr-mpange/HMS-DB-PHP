@@ -992,6 +992,10 @@ export default function AdminDashboard() {
     name: '',
     description: ''
   });
+  const [showDoctorAssignDialog, setShowDoctorAssignDialog] = useState(false);
+  const [selectedDepartment, setSelectedDepartment] = useState<any>(null);
+  const [departmentDoctors, setDepartmentDoctors] = useState<any[]>([]);
+  const [availableDoctors, setAvailableDoctors] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
@@ -1058,6 +1062,10 @@ export default function AdminDashboard() {
 
   const fetchSettings = async () => {
     try {
+      // Fetch departments from API
+      const { data } = await api.get('/departments');
+      setDepartments(data.departments || []);
+      
       // Settings endpoints not yet implemented in MySQL backend
       // For now, use default settings
       setSystemSettings({
@@ -1070,7 +1078,6 @@ export default function AdminDashboard() {
         report_header: '',
         enable_appointment_fees: 'true'
       });
-      setDepartments([]);
       setDepartmentFees({});
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -1113,12 +1120,19 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Department management not yet implemented in backend
-      toast.info('Department management will be available soon');
+      if (editingDepartment) {
+        await api.put(`/departments/${editingDepartment.id}`, departmentForm);
+        toast.success('Department updated successfully');
+      } else {
+        await api.post('/departments', departmentForm);
+        toast.success('Department created successfully');
+      }
+      
       setShowDepartmentDialog(false);
+      fetchSettings(); // Refresh departments list
     } catch (error: any) {
       console.error('Error saving department:', error);
-      toast.error(error.message || 'Failed to save department');
+      toast.error(error.response?.data?.error || 'Failed to save department');
     }
   };
 
@@ -1128,11 +1142,67 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Department management not yet implemented in backend
-      toast.info('Department management will be available soon');
+      await api.delete(`/departments/${deptId}`);
+      toast.success('Department deleted successfully');
+      fetchSettings(); // Refresh departments list
     } catch (error: any) {
       console.error('Error deleting department:', error);
-      toast.error(error.message || 'Failed to delete department');
+      toast.error(error.response?.data?.error || 'Failed to delete department');
+    }
+  };
+
+  const handleManageDoctors = async (dept: any) => {
+    setSelectedDepartment(dept);
+    setShowDoctorAssignDialog(true);
+    
+    try {
+      // Fetch all doctors
+      const { data: usersData } = await api.get('/users');
+      const doctors = usersData.users.filter((u: any) => u.roles?.includes('doctor'));
+      
+      // Fetch doctors assigned to this department
+      const { data: deptData } = await api.get(`/departments/${dept.id}/doctors`);
+      const assignedDoctorIds = deptData.doctors
+        .filter((d: any) => d.assignment_id)
+        .map((d: any) => d.id);
+      
+      setDepartmentDoctors(deptData.doctors.filter((d: any) => d.assignment_id));
+      setAvailableDoctors(doctors.filter((d: any) => !assignedDoctorIds.includes(d.id)));
+    } catch (error: any) {
+      console.error('Error fetching doctors:', error);
+      toast.error('Failed to load doctors');
+    }
+  };
+
+  const handleAssignDoctor = async (doctorId: string) => {
+    if (!selectedDepartment) return;
+    
+    try {
+      await api.post(`/departments/${selectedDepartment.id}/doctors`, {
+        doctor_id: doctorId
+      });
+      
+      toast.success('Doctor assigned successfully');
+      handleManageDoctors(selectedDepartment); // Refresh lists
+    } catch (error: any) {
+      console.error('Error assigning doctor:', error);
+      toast.error(error.response?.data?.error || 'Failed to assign doctor');
+    }
+  };
+
+  const handleRemoveDoctor = async (doctorId: string) => {
+    if (!selectedDepartment) return;
+    
+    try {
+      await api.delete(`/departments/${selectedDepartment.id}/doctors`, {
+        data: { doctor_id: doctorId }
+      });
+      
+      toast.success('Doctor removed successfully');
+      handleManageDoctors(selectedDepartment); // Refresh lists
+    } catch (error: any) {
+      console.error('Error removing doctor:', error);
+      toast.error(error.response?.data?.error || 'Failed to remove doctor');
     }
   };
 
@@ -2034,6 +2104,14 @@ export default function AdminDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
+                              onClick={() => handleManageDoctors(dept)}
+                            >
+                              <Users className="h-3 w-3 mr-1" />
+                              Doctors
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleEditDepartment(dept)}
                             >
                               <Edit className="h-3 w-3 mr-1" />
@@ -2099,6 +2177,75 @@ export default function AdminDashboard() {
                 <Button onClick={handleSaveDepartment}>
                   {editingDepartment ? 'Update' : 'Create'} Department
                 </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Doctor Assignment Dialog */}
+        <Dialog open={showDoctorAssignDialog} onOpenChange={setShowDoctorAssignDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Manage Doctors - {selectedDepartment?.name}</DialogTitle>
+              <DialogDescription>
+                Assign doctors to this department for appointments
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Assigned Doctors */}
+              <div>
+                <h4 className="font-semibold mb-2">Assigned Doctors ({departmentDoctors.length})</h4>
+                {departmentDoctors.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg">
+                    No doctors assigned yet
+                  </p>
+                ) : (
+                  <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+                    {departmentDoctors.map((doctor) => (
+                      <div key={doctor.id} className="flex items-center justify-between p-3">
+                        <div>
+                          <p className="font-medium">{doctor.full_name}</p>
+                          <p className="text-sm text-muted-foreground">{doctor.email}</p>
+                        </div>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleRemoveDoctor(doctor.id)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Available Doctors */}
+              <div>
+                <h4 className="font-semibold mb-2">Available Doctors ({availableDoctors.length})</h4>
+                {availableDoctors.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center border rounded-lg">
+                    All doctors are assigned
+                  </p>
+                ) : (
+                  <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+                    {availableDoctors.map((doctor) => (
+                      <div key={doctor.id} className="flex items-center justify-between p-3">
+                        <div>
+                          <p className="font-medium">{doctor.full_name}</p>
+                          <p className="text-sm text-muted-foreground">{doctor.email}</p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAssignDoctor(doctor.id)}
+                        >
+                          Assign
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </DialogContent>

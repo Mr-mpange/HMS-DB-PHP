@@ -85,8 +85,20 @@ exports.createPatient = async (req, res) => {
         id, full_name, date_of_birth, gender, phone, email, address,
         emergency_contact, emergency_phone, blood_group, allergies, medical_history
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [patientId, full_name, date_of_birth, gender, phone, email, address,
-       emergency_contact, emergency_phone, blood_group, allergies, medical_history]
+      [
+        patientId, 
+        full_name, 
+        date_of_birth || null, 
+        gender || null, 
+        phone || null, 
+        email || null, 
+        address || null,
+        emergency_contact || null, 
+        emergency_phone || null, 
+        blood_group || null, 
+        allergies || null, 
+        medical_history || null
+      ]
     );
     
     // Log activity
@@ -107,7 +119,8 @@ exports.createPatient = async (req, res) => {
     });
   } catch (error) {
     console.error('Create patient error:', error);
-    res.status(500).json({ error: 'Failed to create patient' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ error: 'Failed to create patient', details: error.message });
   }
 };
 
@@ -125,9 +138,20 @@ exports.updatePatient = async (req, res) => {
            address = ?, emergency_contact = ?, emergency_phone = ?, 
            blood_group = ?, allergies = ?, medical_history = ?
        WHERE id = ?`,
-      [full_name, date_of_birth, gender, phone, email, address,
-       emergency_contact, emergency_phone, blood_group, allergies, medical_history,
-       req.params.id]
+      [
+        full_name, 
+        date_of_birth || null, 
+        gender || null, 
+        phone || null, 
+        email || null, 
+        address || null,
+        emergency_contact || null, 
+        emergency_phone || null, 
+        blood_group || null, 
+        allergies || null, 
+        medical_history || null,
+        req.params.id
+      ]
     );
     
     // Log activity
@@ -145,7 +169,8 @@ exports.updatePatient = async (req, res) => {
     res.json({ message: 'Patient updated successfully' });
   } catch (error) {
     console.error('Update patient error:', error);
-    res.status(500).json({ error: 'Failed to update patient' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ error: 'Failed to update patient', details: error.message });
   }
 };
 

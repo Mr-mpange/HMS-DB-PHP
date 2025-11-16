@@ -118,10 +118,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
+      console.log('Attempting login with email:', email);
+      
       const { data } = await api.post('/auth/login', {
         email,
         password,
       });
+      
+      console.log('Login response:', data);
       
       if (data && data.token) {
         // Store token
@@ -150,12 +154,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setPrimaryRole(data.user.primaryRole as AppRole || data.user.roles[0]);
         setRolesLoaded(true);
         
+        console.log('Login successful, user:', user);
         return { error: null };
       }
       
+      console.log('Login failed: no token in response');
       return { error: { message: 'Login failed' } };
     } catch (error: any) {
       console.error('Sign in error:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
       setRolesLoaded(true); // Ensure rolesLoaded is set even on error
       return { 
         error: { 

@@ -112,3 +112,91 @@ exports.deleteDepartment = async (req, res) => {
     res.status(500).json({ error: 'Failed to delete department' });
   }
 };
+
+// Get doctors by department
+exports.getDepartmentDoctors = async (req, res) => {
+  try {
+    const [doctors] = await db.execute(
+      `SELECT u.id, u.email, u.full_name, p.phone, p.avatar_url, dd.id as assignment_id
+       FROM users u
+       INNER JOIN user_roles ur ON u.id = ur.user_id
+       LEFT JOIN profiles p ON u.id = p.user_id
+       LEFT JOIN department_doctors dd ON u.id = dd.doctor_id AND dd.department_id = ?
+       WHERE ur.role = 'doctor' AND u.is_active = TRUE
+       ORDER BY u.full_name`,
+      [req.params.id]
+    );
+    
+    res.json({ doctors });
+  } catch (error) {
+    console.error('Get department doctors error:', error);
+    res.status(500).json({ error: 'Failed to fetch department doctors' });
+  }
+};
+
+// Assign doctor to department
+exports.assignDoctor = async (req, res) => {
+  try {
+    const { doctor_id } = req.body;
+    const department_id = req.params.id;
+    
+    if (!doctor_id) {
+      return res.status(400).json({ error: 'Doctor ID is required' });
+    }
+    
+    // Check if already assigned
+    const [existing] = await db.execute(
+      'SELECT id FROM department_doctors WHERE department_id = ? AND doctor_id = ?',
+      [department_id, doctor_id]
+    );
+    
+    if (existing.length > 0) {
+      return res.status(400).json({ error: 'Doctor already assigned to this department' });
+    }
+    
+    const assignmentId = uuidv4();
+    await db.execute(
+      'INSERT INTO department_doctors (id, department_id, doctor_id) VALUES (?, ?, ?)',
+      [assignmentId, department_id, doctor_id]
+    );
+    
+    // Log activity
+    await db.execute(
+      `INSERT INTO activity_logs (id, user_id, action, details) 
+       VALUES (?, ?, ?, ?)`,
+      [uuidv4(), req.user.id, 'department.doctor_assigned', 
+       JSON.stringify({ department_id, doctor_id })]
+    );
+    
+    res.json({ message: 'Doctor assigned successfully', assignmentId });
+  } catch (error) {
+    console.error('Assign doctor error:', error);
+    res.status(500).json({ error: 'Failed to assign doctor' });
+  }
+};
+
+// Remove doctor from department
+exports.removeDoctor = async (req, res) => {
+  try {
+    const { doctor_id } = req.body;
+    const department_id = req.params.id;
+    
+    await db.execute(
+      'DELETE FROM department_doctors WHERE department_id = ? AND doctor_id = ?',
+      [department_id, doctor_id]
+    );
+    
+    // Log activity
+    await db.execute(
+      `INSERT INTO activity_logs (id, user_id, action, details) 
+       VALUES (?, ?, ?, ?)`,
+      [uuidv4(), req.user.id, 'department.doctor_removed', 
+       JSON.stringify({ department_id, doctor_id })]
+    );
+    
+    res.json({ message: 'Doctor removed successfully' });
+  } catch (error) {
+    console.error('Remove doctor error:', error);
+    res.status(500).json({ error: 'Failed to remove doctor' });
+  }
+};
