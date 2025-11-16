@@ -1,444 +1,495 @@
 # Production Deployment Guide
 
-## Overview
+## Pre-Deployment Checklist
 
-This guide covers deploying the Hospital Management System to production using Docker and Docker Compose.
+### 1. Environment Configuration ✅
+- [x] `.env.production` created for frontend
+- [x] `backend/.env.production` created for backend
+- [ ] Update all placeholder values with real credentials
+- [ ] Set secure JWT_SECRET and SESSION_SECRET
+- [ ] Configure database connection strings
+- [ ] Set CORS_ORIGIN to your frontend domain
+- [ ] Configure VITE_API_URL to your backend domain
 
-## Prerequisites
-
-- Docker Engine 20.10+
-- Docker Compose 2.0+
-- Domain name (for SSL/HTTPS)
-- MySQL 8.0+ (if not using Docker)
-- Node.js 18+ (if not using Docker)
-
-## Quick Start (Docker)
-
-### 1. Configure Environment
-
+### 2. Security Hardening
 ```bash
-# Copy production environment template
-cp .env.production .env
-
-# Edit .env with your production values
-nano .env
+# Generate secure secrets
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 ```
 
-**Required Configuration:**
-- `DB_ROOT_PASSWORD` - MySQL root password
-- `DB_PASSWORD` - Application database password
-- `JWT_SECRET` - Secure random string (min 32 characters)
-- `FRONTEND_URL` - Your production domain
-- `ZENOPAY_API_KEY` - Production ZenoPay API key
-- `ZENOPAY_MERCHANT_ID` - Production merchant ID
-
-### 2. Deploy with Docker
-
-**Linux/Mac:**
+### 3. Database Setup
 ```bash
-chmod +x deploy.sh
-./deploy.sh
-```
-
-**Windows:**
-```cmd
-deploy.bat
-```
-
-### 3. Verify Deployment
-
-```bash
-# Check services status
-docker-compose ps
-
-# View logs
-docker-compose logs -f
-
-# Test API
-curl http://localhost:3000/api/health
-```
-
-## Manual Deployment (Without Docker)
-
-### 1. Install Dependencies
-
-```bash
+# Run migrations
 cd backend
-npm ci --only=production
+npm run migrate
+
+# Verify database connection
+npm run db:check
 ```
 
-### 2. Configure Environment
-
+### 4. Build Applications
 ```bash
+# Build frontend
+npm run build
+
+# Test production build locally
+npm run preview
+
+# Build backend (if using TypeScript)
+cd backend
+npm run build
+```
+
+### 5. Performance Optimization
+- [ ] Enable gzip compression
+- [ ] Configure CDN for static assets
+- [ ] Set up database indexes
+- [ ] Enable Redis caching (optional)
+- [ ] Configure load balancer
+
+## Deployment Steps
+
+### Option 1: VPS Deployment (DigitalOcean, AWS EC2, etc.)
+
+#### Step 1: Server Setup
+```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Install PM2
+sudo npm install -g pm2
+
+# Install Nginx
+sudo apt install -y nginx
+
+# Install MySQL
+sudo apt install -y mysql-server
+```
+
+#### Step 2: Deploy Backend
+```bash
+# Clone repository
+git clone your-repo-url
+cd hospital-management/backend
+
+# Install dependencies
+npm ci --production
+
+# Copy production env
 cp .env.production .env
-# Edit .env with production values
-```
 
-### 3. Setup Database
-
-```bash
-# Create database and tables
-node setup-tables.js
-
-# Create admin user
-node create-admin.js
-```
-
-### 4. Start with PM2
-
-```bash
-# Install PM2 globally
-npm install -g pm2
-
-# Start application
-pm2 start ecosystem.config.js --env production
-
-# Save PM2 configuration
+# Start with PM2
+pm2 start src/server.js --name hospital-api
 pm2 save
-
-# Setup PM2 to start on boot
 pm2 startup
 ```
 
-## SSL/HTTPS Configuration
-
-### Using Let's Encrypt (Recommended)
-
-1. **Install Certbot:**
+#### Step 3: Deploy Frontend
 ```bash
-sudo apt-get update
-sudo apt-get install certbot python3-certbot-nginx
+# Build frontend
+cd ../
+npm ci
+npm run build
+
+# Copy to nginx
+sudo cp -r dist/* /var/www/hospital/
 ```
 
-2. **Obtain Certificate:**
+#### Step 4: Configure Nginx
 ```bash
-sudo certbot --nginx -d your-domain.com -d www.your-domain.com
+sudo nano /etc/nginx/sites-available/hospital
 ```
 
-3. **Auto-renewal:**
-```bash
-sudo certbot renew --dry-run
+Add configuration:
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    # Frontend
+    location / {
+        root /var/www/hospital;
+        try_files $uri $uri/ /index.html;
+        
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+    }
+
+    # Backend API
+    location /api {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml text/javascript 
+               application/x-javascript application/xml+rss 
+               application/json application/javascript;
+}
 ```
 
-### Manual SSL Certificate
-
-1. Place your SSL certificates in `nginx/ssl/`:
-   - `fullchain.pem` - Full certificate chain
-   - `privkey.pem` - Private key
-
-2. Update `nginx/nginx.conf` with your domain name
-
-3. Restart Nginx:
+Enable site:
 ```bash
-docker-compose restart nginx
+sudo ln -s /etc/nginx/sites-available/hospital /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
 ```
 
-## Environment Variables
-
-### Backend (.env)
-
-```env
-# Server
-PORT=3000
-NODE_ENV=production
-
-# Database
-DB_HOST=mysql
-DB_PORT=3306
-DB_USER=hospital_user
-DB_PASSWORD=your_secure_password
-DB_NAME=hospital_db_prod
-
-# JWT
-JWT_SECRET=your_very_secure_random_jwt_secret_key
-JWT_EXPIRES_IN=24h
-
-# CORS
-FRONTEND_URL=https://your-domain.com
-
-# ZenoPay
-ZENOPAY_API_KEY=your_production_api_key
-ZENOPAY_MERCHANT_ID=your_merchant_id
-ZENOPAY_ENV=production
-
-# Security
-HELMET_ENABLED=true
-TRUST_PROXY=true
-
-# Rate Limiting
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
-
-# File Upload
-MAX_FILE_SIZE=5242880
-UPLOAD_PATH=./uploads
+#### Step 5: SSL Certificate (Let's Encrypt)
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com
 ```
 
-## Database Backup
+### Option 2: Docker Deployment
 
-### Automated Backup Script
+#### Create Dockerfile for Frontend
+```dockerfile
+# frontend/Dockerfile
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
 
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+#### Create Dockerfile for Backend
+```dockerfile
+# backend/Dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --production
+COPY . .
+EXPOSE 3000
+CMD ["node", "src/server.js"]
+```
+
+#### Docker Compose
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: always
+
+  backend:
+    build: ./backend
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - ./backend/.env.production
+    depends_on:
+      - mysql
+    restart: always
+
+  frontend:
+    build: .
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  mysql_data:
+```
+
+Deploy:
 ```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### Option 3: Cloud Platform (Heroku, Railway, Render)
+
+#### Heroku Deployment
+```bash
+# Install Heroku CLI
+npm install -g heroku
+
+# Login
+heroku login
+
+# Create app
+heroku create hospital-management-api
+
+# Add MySQL addon
+heroku addons:create jawsdb:kitefin
+
+# Set environment variables
+heroku config:set NODE_ENV=production
+heroku config:set JWT_SECRET=your-secret
+
+# Deploy
+git push heroku main
+
+# Run migrations
+heroku run npm run migrate
+```
+
+## Post-Deployment
+
+### 1. Monitoring Setup
+```bash
+# PM2 monitoring
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 10M
+pm2 set pm2-logrotate:retain 7
+
+# Setup monitoring dashboard
+pm2 link your-pm2-key your-pm2-secret
+```
+
+### 2. Database Backup
+```bash
+# Create backup script
+cat > /usr/local/bin/backup-db.sh << 'EOF'
 #!/bin/bash
-# backup-db.sh
-
-BACKUP_DIR="/backups/mysql"
 DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="$BACKUP_DIR/hospital_db_$DATE.sql"
+mysqldump -u user -p password hospital_management > /backups/db_$DATE.sql
+find /backups -name "db_*.sql" -mtime +30 -delete
+EOF
 
-mkdir -p $BACKUP_DIR
+chmod +x /usr/local/bin/backup-db.sh
 
-docker-compose exec -T mysql mysqldump \
-  -u root \
-  -p$DB_ROOT_PASSWORD \
-  hospital_db_prod > $BACKUP_FILE
-
-gzip $BACKUP_FILE
-
-# Keep only last 7 days of backups
-find $BACKUP_DIR -name "*.sql.gz" -mtime +7 -delete
-
-echo "Backup completed: $BACKUP_FILE.gz"
-```
-
-### Setup Cron Job
-
-```bash
-# Edit crontab
+# Add to crontab (daily at 2 AM)
 crontab -e
-
-# Add daily backup at 2 AM
-0 2 * * * /path/to/backup-db.sh
+0 2 * * * /usr/local/bin/backup-db.sh
 ```
 
-## Monitoring
-
-### Health Checks
-
+### 3. Health Checks
 ```bash
-# API Health
-curl http://localhost:3000/api/health
+# Backend health check
+curl https://your-api.com/health
 
-# Database Health
-docker-compose exec mysql mysqladmin ping -h localhost
-
-# Container Status
-docker-compose ps
+# Frontend check
+curl https://your-domain.com
 ```
 
-### Logs
-
+### 4. Performance Testing
 ```bash
-# View all logs
-docker-compose logs -f
+# Install Apache Bench
+sudo apt install apache2-utils
 
-# View specific service
-docker-compose logs -f backend
+# Test API
+ab -n 1000 -c 10 https://your-api.com/api/health
 
-# View last 100 lines
-docker-compose logs --tail=100 backend
-```
-
-### PM2 Monitoring (Non-Docker)
-
-```bash
-# View status
-pm2 status
-
-# View logs
-pm2 logs
-
-# Monitor resources
-pm2 monit
-
-# Web dashboard
-pm2 web
-```
-
-## Scaling
-
-### Horizontal Scaling with PM2
-
-```javascript
-// ecosystem.config.js
-module.exports = {
-  apps: [{
-    name: 'hospital-api',
-    script: './src/server.js',
-    instances: 4, // or 'max' for all CPU cores
-    exec_mode: 'cluster',
-    // ... other config
-  }]
-};
-```
-
-### Load Balancing with Nginx
-
-```nginx
-upstream backend {
-    least_conn;
-    server backend1:3000;
-    server backend2:3000;
-    server backend3:3000;
-}
-```
-
-## Security Checklist
-
-- [ ] Change all default passwords
-- [ ] Use strong JWT secret (min 32 characters)
-- [ ] Enable HTTPS/SSL
-- [ ] Configure firewall rules
-- [ ] Enable rate limiting
-- [ ] Set up database backups
-- [ ] Configure log rotation
-- [ ] Enable security headers (Helmet)
-- [ ] Use environment variables for secrets
-- [ ] Restrict database access
-- [ ] Enable CORS only for your domain
-- [ ] Set up monitoring and alerts
-- [ ] Regular security updates
-
-## Performance Optimization
-
-### Database Optimization
-
-```sql
--- Add indexes for frequently queried columns
-CREATE INDEX idx_patient_name ON patients(full_name);
-CREATE INDEX idx_appointment_date ON appointments(appointment_date);
-CREATE INDEX idx_visit_status ON patient_visits(overall_status);
-
--- Optimize tables
-OPTIMIZE TABLE patients;
-OPTIMIZE TABLE appointments;
-OPTIMIZE TABLE prescriptions;
-```
-
-### Nginx Caching
-
-```nginx
-# Add to nginx.conf
-proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=api_cache:10m max_size=1g inactive=60m;
-
-location /api/ {
-    proxy_cache api_cache;
-    proxy_cache_valid 200 5m;
-    proxy_cache_key "$scheme$request_method$host$request_uri";
-    add_header X-Cache-Status $upstream_cache_status;
-    # ... other proxy settings
-}
-```
-
-## Troubleshooting
-
-### Container Won't Start
-
-```bash
-# Check logs
-docker-compose logs backend
-
-# Check container status
-docker-compose ps
-
-# Restart specific service
-docker-compose restart backend
-```
-
-### Database Connection Issues
-
-```bash
-# Check MySQL is running
-docker-compose exec mysql mysqladmin ping
-
-# Check connection from backend
-docker-compose exec backend node -e "require('./src/config/database').execute('SELECT 1').then(() => console.log('Connected')).catch(console.error)"
-```
-
-### Port Already in Use
-
-```bash
-# Find process using port 3000
-lsof -i :3000  # Linux/Mac
-netstat -ano | findstr :3000  # Windows
-
-# Kill process or change port in .env
+# Test frontend
+ab -n 1000 -c 10 https://your-domain.com/
 ```
 
 ## Maintenance
 
-### Update Application
+### Daily Tasks
+- [ ] Check application logs
+- [ ] Monitor error rates
+- [ ] Review database performance
+- [ ] Check disk space
 
+### Weekly Tasks
+- [ ] Review security logs
+- [ ] Update dependencies
+- [ ] Database optimization
+- [ ] Backup verification
+
+### Monthly Tasks
+- [ ] Security audit
+- [ ] Performance review
+- [ ] Cost optimization
+- [ ] Update documentation
+
+## Rollback Plan
+
+### Quick Rollback
 ```bash
-# Pull latest code
-git pull origin main
+# PM2 rollback
+pm2 reload hospital-api --update-env
 
-# Rebuild and restart
-docker-compose build
-docker-compose up -d
+# Git rollback
+git revert HEAD
+git push origin main
 
-# Or without downtime
-docker-compose up -d --no-deps --build backend
+# Database rollback
+mysql -u user -p hospital_management < /backups/db_latest.sql
 ```
 
-### Database Migration
+## Troubleshooting
 
+### Application Won't Start
 ```bash
-# Backup first!
-./backup-db.sh
+# Check logs
+pm2 logs hospital-api
 
-# Run migration
-docker-compose exec backend node migrations/001_add_new_column.js
-```
-
-## Support
-
-For issues or questions:
-- Check logs: `docker-compose logs -f`
-- Review documentation
-- Contact system administrator
-
-## Production Checklist
-
-Before going live:
-
-- [ ] All environment variables configured
-- [ ] SSL certificates installed
-- [ ] Database backups configured
-- [ ] Monitoring set up
-- [ ] Security headers enabled
-- [ ] Rate limiting configured
-- [ ] Admin user created
-- [ ] Test all API endpoints
-- [ ] Load testing completed
-- [ ] Disaster recovery plan documented
-- [ ] Team trained on deployment process
-
-## Useful Commands
-
-```bash
-# Start services
-docker-compose up -d
-
-# Stop services
-docker-compose down
+# Check port
+sudo netstat -tulpn | grep :3000
 
 # Restart services
-docker-compose restart
-
-# View logs
-docker-compose logs -f
-
-# Execute command in container
-docker-compose exec backend node create-admin.js
-
-# Scale service
-docker-compose up -d --scale backend=3
-
-# Update single service
-docker-compose up -d --no-deps --build backend
-
-# Clean up
-docker-compose down -v  # Remove volumes
-docker system prune -a  # Clean all unused resources
+pm2 restart hospital-api
+sudo systemctl restart nginx
 ```
+
+### Database Connection Issues
+```bash
+# Test connection
+mysql -h host -u user -p
+
+# Check MySQL status
+sudo systemctl status mysql
+
+# Review logs
+sudo tail -f /var/log/mysql/error.log
+```
+
+### High Memory Usage
+```bash
+# Check memory
+free -h
+pm2 monit
+
+# Restart if needed
+pm2 restart hospital-api
+```
+
+## Security Checklist
+
+- [ ] All secrets in environment variables
+- [ ] HTTPS enabled with valid certificate
+- [ ] CORS properly configured
+- [ ] Rate limiting enabled
+- [ ] SQL injection protection
+- [ ] XSS protection headers
+- [ ] CSRF protection
+- [ ] Input validation
+- [ ] File upload restrictions
+- [ ] Database user has minimal permissions
+- [ ] Regular security updates
+- [ ] Firewall configured
+- [ ] SSH key authentication only
+- [ ] Fail2ban installed
+
+## Performance Optimization
+
+### Database Indexes
+```sql
+-- Add indexes for frequently queried columns
+CREATE INDEX idx_appointments_date ON appointments(appointment_date);
+CREATE INDEX idx_patients_phone ON patients(phone);
+CREATE INDEX idx_visits_status ON patient_visits(overall_status);
+CREATE INDEX idx_prescriptions_status ON prescriptions(status);
+```
+
+### Nginx Caching
+```nginx
+# Add to nginx config
+proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=api_cache:10m max_size=1g inactive=60m;
+
+location /api {
+    proxy_cache api_cache;
+    proxy_cache_valid 200 5m;
+    proxy_cache_use_stale error timeout http_500 http_502 http_503 http_504;
+}
+```
+
+### Redis Caching (Optional)
+```bash
+# Install Redis
+sudo apt install redis-server
+
+# Configure in backend
+npm install redis
+```
+
+## Monitoring & Alerts
+
+### Setup Uptime Monitoring
+- UptimeRobot (free)
+- Pingdom
+- StatusCake
+
+### Error Tracking
+- Sentry.io
+- Rollbar
+- Bugsnag
+
+### Performance Monitoring
+- New Relic
+- DataDog
+- AppDynamics
+
+## Cost Optimization
+
+### Estimated Monthly Costs
+
+**Small Scale (100-500 users):**
+- VPS: $10-20/month
+- Database: $10/month
+- Domain: $12/year
+- SSL: Free (Let's Encrypt)
+- **Total: ~$25/month**
+
+**Medium Scale (500-2000 users):**
+- VPS: $40-80/month
+- Database: $25/month
+- CDN: $10/month
+- Monitoring: $10/month
+- **Total: ~$85/month**
+
+**Large Scale (2000+ users):**
+- Load Balancer: $10/month
+- Multiple VPS: $150/month
+- Database Cluster: $100/month
+- CDN: $30/month
+- Monitoring: $30/month
+- **Total: ~$320/month**
+
+## Support & Documentation
+
+### Created Files
+- ✅ `.env.production` - Frontend environment
+- ✅ `backend/.env.production` - Backend environment
+- ✅ `PRODUCTION_DEPLOYMENT.md` - This guide
+
+### Next Steps
+1. Update environment variables with real values
+2. Choose deployment method
+3. Follow deployment steps
+4. Configure monitoring
+5. Test thoroughly
+6. Go live!
+
+---
+
+**Status:** 🚀 Ready for Production Deployment
