@@ -293,8 +293,8 @@ export default function AdminReports() {
         additionalInfo={`Period: ${getFilterLabel()}`}
       />
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-5 print:grid-cols-5">
+      {/* Stats Cards - Hidden on print */}
+      <div className="grid gap-4 md:grid-cols-5 print:hidden">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Patients</CardTitle>
@@ -337,9 +337,122 @@ export default function AdminReports() {
         </Card>
       </div>
 
-      {/* Patients Table */}
+      {/* Print-Only Professional Summary */}
+      <div className="hidden print:block print:mt-8">
+        <div className="p-8 max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold mb-8 pb-4 border-b-2 border-gray-800">
+            SUMMARY REPORT
+          </h2>
+          
+          <div className="space-y-8">
+            {/* Patient Statistics */}
+            <div>
+              <h3 className="text-lg font-bold mb-3 text-gray-800">PATIENT STATISTICS</h3>
+              <div className="space-y-2 ml-4">
+                <div className="flex justify-between py-1">
+                  <span>Total Patients:</span>
+                  <span className="font-bold">{stats.totalPatients}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Appointment Statistics */}
+            <div>
+              <h3 className="text-lg font-bold mb-3 text-gray-800">APPOINTMENT STATISTICS</h3>
+              <div className="space-y-2 ml-4">
+                <div className="flex justify-between py-1">
+                  <span>Total Appointments:</span>
+                  <span className="font-bold">{stats.totalAppointments}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Visit Statistics */}
+            <div>
+              <h3 className="text-lg font-bold mb-3 text-gray-800">VISIT STATISTICS</h3>
+              <div className="space-y-2 ml-4">
+                <div className="flex justify-between py-1">
+                  <span>Total Visits:</span>
+                  <span className="font-bold">{stats.totalVisits}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Prescription Statistics */}
+            <div>
+              <h3 className="text-lg font-bold mb-3 text-gray-800">PRESCRIPTION STATISTICS</h3>
+              <div className="space-y-2 ml-4">
+                <div className="flex justify-between py-1">
+                  <span>Total Prescriptions:</span>
+                  <span className="font-bold">{stats.totalPrescriptions}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Lab Test Statistics */}
+            <div>
+              <h3 className="text-lg font-bold mb-3 text-gray-800">LAB TEST STATISTICS</h3>
+              <div className="space-y-2 ml-4">
+                <div className="flex justify-between py-1">
+                  <span>Total Lab Tests:</span>
+                  <span className="font-bold">{stats.totalLabTests}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Billing Statistics */}
+            {reportData.invoices.length > 0 && (
+              <div>
+                <h3 className="text-lg font-bold mb-3 text-gray-800">BILLING STATISTICS</h3>
+                <div className="space-y-2 ml-4">
+                  <div className="flex justify-between py-1">
+                    <span>Total Invoices:</span>
+                    <span className="font-bold">{reportData.invoices.length}</span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span>Paid Invoices:</span>
+                    <span className="font-bold">
+                      {reportData.invoices.filter((inv: any) => inv.status === 'Paid').length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span>Pending Invoices:</span>
+                    <span className="font-bold">
+                      {reportData.invoices.filter((inv: any) => inv.status !== 'Paid').length}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 mt-4 pt-4 border-t border-gray-300">
+                    <span className="font-semibold">Total Revenue:</span>
+                    <span className="font-bold text-lg">
+                      TSh {reportData.invoices
+                        .filter((inv: any) => inv.status === 'Paid')
+                        .reduce((sum: number, inv: any) => sum + Number(inv.total_amount || 0), 0)
+                        .toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span>Outstanding Amount:</span>
+                    <span className="font-bold">
+                      TSh {reportData.invoices
+                        .filter((inv: any) => inv.status !== 'Paid')
+                        .reduce((sum: number, inv: any) => sum + (Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)), 0)
+                        .toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="mt-12 pt-6 border-t-2 border-gray-800 text-center text-sm text-gray-600">
+            Generated by Hospital Management System
+          </div>
+        </div>
+      </div>
+
+      {/* Patients Table - Hidden on print */}
       {settings.includePatientDetails && reportData.patients.length > 0 && (
-        <Card>
+        <Card className="print:hidden">
           <CardHeader>
             <CardTitle>Patients ({stats.totalPatients})</CardTitle>
             <CardDescription>Patient registrations for {getFilterLabel().toLowerCase()}</CardDescription>
@@ -377,9 +490,9 @@ export default function AdminReports() {
         </Card>
       )}
 
-      {/* Appointments Table */}
+      {/* Appointments Table - Hidden on print */}
       {settings.includeAppointments && reportData.appointments.length > 0 && (
-        <Card className="print:break-inside-avoid">
+        <Card className="print:hidden">
           <CardHeader>
             <CardTitle>Appointments ({stats.totalAppointments})</CardTitle>
             <CardDescription>Scheduled appointments for {getFilterLabel().toLowerCase()}</CardDescription>
@@ -421,9 +534,9 @@ export default function AdminReports() {
         </Card>
       )}
 
-      {/* Visits Table */}
+      {/* Visits Table - Hidden on print */}
       {settings.includeVisits && reportData.visits.length > 0 && (
-        <Card className="print:break-inside-avoid">
+        <Card className="print:hidden">
           <CardHeader>
             <CardTitle>Patient Visits ({stats.totalVisits})</CardTitle>
             <CardDescription>Patient visits for {getFilterLabel().toLowerCase()}</CardDescription>
@@ -457,9 +570,9 @@ export default function AdminReports() {
         </Card>
       )}
 
-      {/* Lab Tests Table */}
+      {/* Lab Tests Table - Hidden on print */}
       {settings.includeLabTests && reportData.labTests.length > 0 && (
-        <Card className="print:break-inside-avoid">
+        <Card className="print:hidden">
           <CardHeader>
             <CardTitle>Lab Tests ({stats.totalLabTests})</CardTitle>
             <CardDescription>Laboratory tests for {getFilterLabel().toLowerCase()}</CardDescription>
@@ -505,9 +618,9 @@ export default function AdminReports() {
         </Card>
       )}
 
-      {/* Billing/Invoices Table */}
+      {/* Billing/Invoices Table - Hidden on print */}
       {settings.includeInvoices && reportData.invoices.length > 0 && (
-        <Card className="print:break-inside-avoid">
+        <Card className="print:hidden">
           <CardHeader>
             <CardTitle>Billing & Invoices ({reportData.invoices.length})</CardTitle>
             <CardDescription>Financial transactions for {getFilterLabel().toLowerCase()}</CardDescription>
