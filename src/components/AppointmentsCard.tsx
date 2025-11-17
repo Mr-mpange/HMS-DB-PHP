@@ -10,15 +10,29 @@ interface AppointmentsCardProps {
 }
 
 export function AppointmentsCard({ appointments, onCheckIn, onCancel }: AppointmentsCardProps) {
-  const today = new Date().toISOString().split('T')[0];
+  // Get today's date in local timezone (not UTC)
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const today = `${year}-${month}-${day}`;
+  
+  console.log('Today (local):', today, 'UTC:', new Date().toISOString().split('T')[0]);
   
   // Debug: Log all appointment dates
-  console.log('All appointments dates:', appointments.map(a => ({
-    patient: a.patient?.full_name,
-    date: a.appointment_date,
-    extracted: a.appointment_date ? (typeof a.appointment_date === 'string' ? a.appointment_date.split('T')[0] : new Date(a.appointment_date).toISOString().split('T')[0]) : 'null',
-    status: a.status
-  })));
+  console.log('All appointments dates:', appointments.map(a => {
+    const dateStr = typeof a.appointment_date === 'string' ? a.appointment_date : '';
+    // Simply extract date part from string like "2025-11-17T20:06:00"
+    const parts = dateStr.split('T');
+    const extracted = parts[0];
+    console.log('DEBUG Split:', { dateStr, parts, extracted });
+    return {
+      patient: a.patient?.full_name,
+      date: a.appointment_date,
+      extracted,
+      status: a.status
+    };
+  }));
   
   // Filter for today's appointments that need action (Scheduled or Confirmed status)
   const todayAppointments = appointments.filter(
@@ -32,27 +46,31 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
           ? a.appointment_date_only.split('T')[0]
           : new Date(a.appointment_date_only).toISOString().split('T')[0];
       } else if (a.appointment_date) {
-        // Parse the datetime in LOCAL timezone, not UTC
-        const date = new Date(a.appointment_date);
-        // Get local date components
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        appointmentDate = `${year}-${month}-${day}`;
+        // Parse the datetime string
+        const dateStr = typeof a.appointment_date === 'string' 
+          ? a.appointment_date 
+          : '';
+        
+        // Simply extract the date part (YYYY-MM-DD) from strings like "2025-11-17T20:06:00"
+        // Backend now sends dates without timezone, so they're already in local time
+        appointmentDate = dateStr.split('T')[0];
       }
       
       const isToday = appointmentDate === today;
       const needsAction = a.status === 'Scheduled' || a.status === 'Confirmed';
       
       // Debug logging
-      if (isToday) {
-        console.log('✓ Today appointment:', {
-          patient: a.patient?.full_name,
-          date: appointmentDate,
-          status: a.status,
-          needsAction
-        });
-      }
+      console.log('Checking appointment:', {
+        patient: a.patient?.full_name,
+        rawDate: a.appointment_date,
+        hasDateOnly: !!a.appointment_date_only,
+        dateOnlyValue: a.appointment_date_only,
+        extractedDate: appointmentDate,
+        today: today,
+        isToday,
+        status: a.status,
+        needsAction
+      });
       
       return isToday && needsAction;
     }

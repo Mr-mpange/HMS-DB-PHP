@@ -8,7 +8,6 @@ exports.getAllAppointments = async (req, res) => {
     
     let query = `
       SELECT a.*, 
-             DATE(a.appointment_date) as appointment_date_only,
              TIME_FORMAT(a.appointment_date, '%H:%i') as appointment_time,
              p.full_name as patient_name, p.phone as patient_phone,
              u.full_name as doctor_name,
@@ -48,21 +47,37 @@ exports.getAllAppointments = async (req, res) => {
     
     // Format the response to include both full datetime and separate date/time
     // Also create patient and doctor objects for frontend compatibility
-    const formattedAppointments = appointments.map(appt => ({
-      ...appt,
-      appointment_date: appt.appointment_date_only || appt.appointment_date,
-      patient: {
-        full_name: appt.patient_name,
-        phone: appt.patient_phone
-      },
-      doctor: {
-        full_name: appt.doctor_name
-      },
-      department: {
-        id: appt.department_id,
-        name: appt.department_name
+    const formattedAppointments = appointments.map(appt => {
+      // Convert MySQL datetime to ISO string without timezone conversion
+      // Keep the datetime as-is (local time) and format it properly
+      let appointmentDate = appt.appointment_date;
+      if (appointmentDate instanceof Date) {
+        // Format as YYYY-MM-DDTHH:mm:ss (no Z suffix to avoid UTC conversion)
+        const year = appointmentDate.getFullYear();
+        const month = String(appointmentDate.getMonth() + 1).padStart(2, '0');
+        const day = String(appointmentDate.getDate()).padStart(2, '0');
+        const hours = String(appointmentDate.getHours()).padStart(2, '0');
+        const minutes = String(appointmentDate.getMinutes()).padStart(2, '0');
+        const seconds = String(appointmentDate.getSeconds()).padStart(2, '0');
+        appointmentDate = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
       }
-    }));
+      
+      return {
+        ...appt,
+        appointment_date: appointmentDate,
+        patient: {
+          full_name: appt.patient_name,
+          phone: appt.patient_phone
+        },
+        doctor: {
+          full_name: appt.doctor_name
+        },
+        department: {
+          id: appt.department_id,
+          name: appt.department_name
+        }
+      };
+    });
     
     res.json({ appointments: formattedAppointments });
   } catch (error) {
@@ -76,7 +91,6 @@ exports.getAppointment = async (req, res) => {
   try {
     const [appointments] = await db.execute(
       `SELECT a.*, 
-              DATE(a.appointment_date) as appointment_date_only,
               TIME_FORMAT(a.appointment_date, '%H:%i') as appointment_time,
               p.full_name as patient_name, p.phone as patient_phone, p.email as patient_email,
               u.full_name as doctor_name
@@ -91,9 +105,21 @@ exports.getAppointment = async (req, res) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
     
+    // Convert MySQL datetime to ISO string without timezone conversion
+    let appointmentDate = appointments[0].appointment_date;
+    if (appointmentDate instanceof Date) {
+      const year = appointmentDate.getFullYear();
+      const month = String(appointmentDate.getMonth() + 1).padStart(2, '0');
+      const day = String(appointmentDate.getDate()).padStart(2, '0');
+      const hours = String(appointmentDate.getHours()).padStart(2, '0');
+      const minutes = String(appointmentDate.getMinutes()).padStart(2, '0');
+      const seconds = String(appointmentDate.getSeconds()).padStart(2, '0');
+      appointmentDate = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+    }
+    
     const appointment = {
       ...appointments[0],
-      appointment_date: appointments[0].appointment_date_only || appointments[0].appointment_date
+      appointment_date: appointmentDate
     };
     
     res.json({ appointment });
