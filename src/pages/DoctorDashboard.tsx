@@ -171,6 +171,7 @@ export default function DoctorDashboard() {
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [appointmentToComplete, setAppointmentToComplete] = useState<any>(null);
   const [completionNotes, setCompletionNotes] = useState('');
+  const [nextAction, setNextAction] = useState<'discharge' | 'lab' | 'pharmacy'>('discharge');
 
   const handleCompleteAppointment = async (appointment: any) => {
     // Show dialog to collect notes
@@ -189,6 +190,7 @@ export default function DoctorDashboard() {
 
     try {
       setLoading(true);
+      
       // Update appointment status to 'Completed' with notes
       const response = await api.put(`/appointments/${appointmentToComplete.id}`, { 
         status: 'Completed',
@@ -197,6 +199,47 @@ export default function DoctorDashboard() {
       });
 
       if (response.status !== 200) throw new Error('Failed to update appointment');
+
+      // Find the visit associated with this appointment
+      const visitsRes = await api.get(`/visits?appointment_id=${appointmentToComplete.id}`);
+      const visits = visitsRes.data.visits || [];
+      
+      if (visits.length > 0) {
+        const visit = visits[0];
+        
+        if (nextAction === 'discharge') {
+          // Discharge patient - mark visit as completed
+          await api.put(`/visits/${visit.id}`, {
+            doctor_status: 'Completed',
+            doctor_completed_at: new Date().toISOString(),
+            overall_status: 'Completed',
+            current_stage: 'completed',
+            discharge_notes: completionNotes
+          });
+          toast.success('Appointment completed. Patient discharged.');
+        } else if (nextAction === 'lab') {
+          // Send to lab
+          await api.put(`/visits/${visit.id}`, {
+            doctor_status: 'Completed',
+            doctor_completed_at: new Date().toISOString(),
+            current_stage: 'lab',
+            lab_status: 'Pending'
+          });
+          toast.success('Appointment completed. Patient sent to lab.');
+        } else if (nextAction === 'pharmacy') {
+          // Send to pharmacy
+          await api.put(`/visits/${visit.id}`, {
+            doctor_status: 'Completed',
+            doctor_completed_at: new Date().toISOString(),
+            current_stage: 'pharmacy',
+            pharmacy_status: 'Pending'
+          });
+          toast.success('Appointment completed. Patient sent to pharmacy.');
+        }
+      } else {
+        // No visit found - just complete the appointment
+        toast.success('Appointment completed successfully');
+      }
 
       // Update local state
       setAppointments(prev => 
@@ -210,7 +253,10 @@ export default function DoctorDashboard() {
       setShowCompleteDialog(false);
       setAppointmentToComplete(null);
       setCompletionNotes('');
-      toast.success('Appointment completed successfully');
+      setNextAction('discharge');
+      
+      // Refresh data
+      fetchData();
     } catch (error: any) {
       console.error('Error completing appointment:', error);
       toast.error(error.response?.data?.error || 'Failed to complete appointment');
