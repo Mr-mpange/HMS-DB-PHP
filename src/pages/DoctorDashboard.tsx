@@ -1436,12 +1436,13 @@ export default function DoctorDashboard() {
     setLoading(true);
 
     try {
-      // Fetch visits waiting for THIS doctor (including those from lab workflow)
-      // Only show patients who are actually at doctor stage and haven't been completed
+      // Fetch visits waiting for doctor (including those from lab workflow)
+      // Show ALL patients at doctor stage, not just assigned to this specific doctor
       // This includes:
-      // 1. New patients (doctor_status = 'Pending' or 'In Consultation')
+      // 1. New patients from nurse (doctor_status = 'Pending' or 'In Consultation')
       // 2. Patients returning from lab ONLY if consultation is NOT complete
-      const visitsResponse = await api.get(`/visits?doctor_id=${user.id}&current_stage=doctor&overall_status=Active&doctor_status_neq=Completed`);
+      // Note: We show all doctor-stage patients because doctor_id might not be set initially
+      const visitsResponse = await api.get(`/visits?current_stage=doctor&overall_status=Active&doctor_status_neq=Completed`);
       
       if (visitsResponse.status !== 200) {
         console.error('Error fetching visits:', visitsResponse.statusText);
@@ -1450,38 +1451,21 @@ export default function DoctorDashboard() {
       
       const visitsData = visitsResponse.data.visits || [];
       
-      console.log('Doctor Dashboard Debug:', {
-        visitsQuery: {
-          current_stage_doctor: visitsData?.length || 0,
-          total_visits: 'N/A'
-        },
-        labWorkflowCheck: 'Check if visits are created when lab tests are completed',
-        samplePatients: visitsData?.map(v => ({
+      console.log('Doctor Dashboard - Patients waiting:', {
+        total_patients: visitsData?.length || 0,
+        patients: visitsData?.map(v => ({
           id: v.id,
           patient: v.patient?.full_name,
           current_stage: v.current_stage,
           doctor_status: v.doctor_status,
+          doctor_id: v.doctor_id,
+          nurse_completed: v.nurse_completed_at ? 'Yes' : 'No',
           lab_status: v.lab_status,
-          lab_completed_at: v.lab_completed_at,
           created_at: v.created_at
         })) || []
       });
 
-      // Also check all patient visits to see what's in the database
-      const allVisitsResponse = await api.get('/visits?current_stage=doctor&limit=20');
-      
-      if (allVisitsResponse.status === 200) {
-        const allVisits = allVisitsResponse.data.visits || [];
-        console.log('All doctor-stage patient visits in DB:', allVisits?.map(v => ({
-          id: v.id,
-          patient_id: v.patient_id,
-          current_stage: v.current_stage,
-          doctor_status: v.doctor_status,
-          lab_status: v.lab_status,
-          lab_completed_at: v.lab_completed_at,
-          created_at: v.created_at
-        })));
-      }
+
 
       // Fetch doctor's appointments
       const appointmentsResponse = await api.get(`/appointments?doctor_id=${user.id}`);
