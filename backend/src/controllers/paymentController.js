@@ -58,8 +58,8 @@ exports.getPayment = async (req, res) => {
 exports.createPayment = async (req, res) => {
   try {
     const { 
-      invoice_id, amount, payment_method,
-      payment_date, transaction_id, reference_number, notes
+      patient_id, invoice_id, amount, payment_method,
+      payment_type, status, payment_date, transaction_id, reference_number, notes
     } = req.body;
     
     if (!amount || !payment_method) {
@@ -70,18 +70,18 @@ exports.createPayment = async (req, res) => {
     
     await db.execute(
       `INSERT INTO payments (
-        id, invoice_id, amount, payment_method,
-        payment_date, reference_number, notes, received_by
+        id, patient_id, invoice_id, amount, payment_method,
+        payment_type, status, payment_date
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        paymentId, 
+        paymentId,
+        patient_id || null,
         invoice_id || null, 
         amount, 
         payment_method,
-        payment_date || new Date().toISOString(),
-        transaction_id || reference_number || null, 
-        notes || null, 
-        req.user.id
+        payment_type || 'General',
+        status || 'Completed',
+        payment_date || new Date().toISOString()
       ]
     );
     

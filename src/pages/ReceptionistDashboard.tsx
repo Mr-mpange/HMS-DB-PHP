@@ -67,6 +67,7 @@ export default function ReceptionistDashboard() {
   const [returningPatientResults, setReturningPatientResults] = useState<any[]>([]);
   const [roleUpdateIndicator, setRoleUpdateIndicator] = useState<string | null>(null);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [showRegistrationPaymentDialog, setShowRegistrationPaymentDialog] = useState(false);
   const [selectedAppointmentForPayment, setSelectedAppointmentForPayment] = useState<any>(null);
   const [consultationFee, setConsultationFee] = useState(2000);
   const [departmentFees, setDepartmentFees] = useState<Record<string, number>>({});
@@ -430,7 +431,7 @@ export default function ReceptionistDashboard() {
       }
 
       // Fetch department-specific fees
-      const deptFeesRes = await api.get('/department-fees');
+      const deptFeesRes = await api.get('/departments/fees');
       const deptFeesData = deptFeesRes.data.fees || [];
 
       if (deptFeesData && deptFeesData.length > 0) {
@@ -465,8 +466,9 @@ export default function ReceptionistDashboard() {
     if (!selectedAppointmentForPayment) return;
 
     const amountPaid = Number(paymentForm.amount_paid);
-    if (isNaN(amountPaid) || amountPaid < consultationFee) {
-      toast.error(`Payment must be at least TSh ${consultationFee}`);
+    const requiredFee = getDepartmentFee(selectedAppointmentForPayment.department_id);
+    if (isNaN(amountPaid) || amountPaid < requiredFee) {
+      toast.error(`Payment must be at least TSh ${requiredFee.toLocaleString()}`);
       return;
     }
 
@@ -764,6 +766,22 @@ export default function ReceptionistDashboard() {
       return;
     }
 
+    // Close registration dialog and show payment dialog
+    setShowRegisterDialog(false);
+    setPaymentForm({
+      amount_paid: consultationFee.toString(),
+      payment_method: 'Cash'
+    });
+    setShowRegistrationPaymentDialog(true);
+  };
+
+  const completePatientRegistration = async () => {
+    const amountPaid = Number(paymentForm.amount_paid);
+    if (isNaN(amountPaid) || amountPaid < consultationFee) {
+      toast.error(`Payment must be at least TSh ${consultationFee.toLocaleString()}`);
+      return;
+    }
+
     try {
       // Insert patient
       const patientData = {
@@ -794,10 +812,22 @@ export default function ReceptionistDashboard() {
         return;
       }
 
-      // Success - patient created
-      toast.success('Patient registered successfully!');
+      // Create payment record
+      const paymentData = {
+        patient_id: patientId,
+        amount: amountPaid,
+        payment_method: paymentForm.payment_method,
+        payment_type: 'Consultation Fee',
+        status: 'Completed',
+        payment_date: new Date().toISOString()
+      };
+      
+      await api.post('/payments', paymentData);
 
-      // Try to create patient visit workflow (non-blocking)
+      // Success - patient created
+      toast.success('Patient registered and payment received!');
+
+      // Create patient visit workflow
       const visitData = {
         patient_id: patientId,
         visit_date: new Date().toISOString().split('T')[0],
@@ -806,34 +836,18 @@ export default function ReceptionistDashboard() {
         overall_status: 'Active'
       };
       
-      // Create visit in background - don't block on failure
-      api.post('/visits', visitData)
-        .then(async (visitRes) => {
-          if (visitRes.data.error) {
-            console.warn('Visit creation returned error:', visitRes.data.error);
-            return;
-          }
-          
-          // Update the visit with nurse status
-          if (visitRes.data.visitId) {
-            try {
-              await api.put(`/visits/${visitRes.data.visitId}`, {
-                nurse_status: 'Pending',
-                reception_completed_at: new Date().toISOString()
-              });
-              toast.success('Patient added to nurse queue!');
-            } catch (updateError) {
-              console.warn('Failed to update visit status:', updateError);
-            }
-          }
-        })
-        .catch((visitError) => {
-          console.error('Error creating patient visit:', visitError);
-          // Don't show error toast - patient was created successfully
+      // Create visit
+      const visitRes = await api.post('/visits', visitData);
+      if (!visitRes.data.error && visitRes.data.visitId) {
+        await api.put(`/visits/${visitRes.data.visitId}`, {
+          nurse_status: 'Pending',
+          reception_completed_at: new Date().toISOString()
         });
+        toast.success('Patient added to nurse queue!');
+      }
 
-      // Close registration dialog
-      setShowRegisterDialog(false);
+      // Close payment dialog
+      setShowRegistrationPaymentDialog(false);
       
       // Reset form
       setRegisterForm({
@@ -849,7 +863,7 @@ export default function ReceptionistDashboard() {
       // Refresh the dashboard data to show the new patient
       fetchData(false);
 
-      logActivity('patient.register', { patient_id: patientId, full_name: registerForm.full_name });
+      logActivity('patient.register', { patient_id: patientId, full_name: registerForm.full_name, amount_paid: amountPaid });
     } catch (error: any) {
       console.error('Registration error:', error);
       const errorMessage = error.response?.data?.error || error.response?.data?.details || error.message || 'Unknown error';
@@ -1544,6 +1558,83 @@ export default function ReceptionistDashboard() {
                 disabled={Number(paymentForm.amount_paid) < consultationFee}
               >
                 Confirm Payment & Check In
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Registration Payment Dialog */}
+      <Dialog open={showRegistrationPaymentDialog} onOpenChange={setShowRegistrationPaymentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Collect Consultation Fee</DialogTitle>
+            <DialogDescription>
+              New Patient: {registerForm.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Consultation Fee:</span>
+                <span className="text-2xl font-bold text-blue-600">TSh {consultationFee.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reg_payment_method">Payment Method</Label>
+              <select
+                id="reg_payment_method"
+                className="w-full p-2 border rounded-md"
+                value={paymentForm.payment_method}
+                onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+              >
+                <option value="Cash">Cash</option>
+                <option value="Mobile Money">Mobile Money</option>
+                <option value="Card">Card</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reg_amount_paid">Amount Paid</Label>
+              <Input
+                id="reg_amount_paid"
+                type="number"
+                value={paymentForm.amount_paid}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount_paid: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+
+            {Number(paymentForm.amount_paid) > consultationFee && (
+              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-green-800">Change to Return:</span>
+                  <span className="text-xl font-bold text-green-600">
+                    TSh {(Number(paymentForm.amount_paid) - consultationFee).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {Number(paymentForm.amount_paid) < consultationFee && paymentForm.amount_paid !== '' && (
+              <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                <span className="text-sm text-red-600">Insufficient payment amount</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => {
+                setShowRegistrationPaymentDialog(false);
+                setShowRegisterDialog(true);
+              }}>
+                Back
+              </Button>
+              <Button 
+                onClick={completePatientRegistration}
+                disabled={Number(paymentForm.amount_paid) < consultationFee}
+              >
+                Confirm Payment & Register
               </Button>
             </div>
           </div>
