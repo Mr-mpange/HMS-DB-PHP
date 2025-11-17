@@ -2920,12 +2920,24 @@ export default function DoctorDashboard() {
                       className="mt-1"
                     />
                     <label htmlFor={`med-${med.id}`} className="flex-1 cursor-pointer">
-                      <div className="font-medium">{med.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{med.name}</span>
+                        {med.stock_quantity === 0 && (
+                          <Badge variant="destructive" className="text-xs">Out of Stock</Badge>
+                        )}
+                        {med.stock_quantity > 0 && med.stock_quantity < 10 && (
+                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">Low Stock</Badge>
+                        )}
+                      </div>
                       <div className="text-sm text-muted-foreground">
                         {med.strength && `${med.strength} `}
                         {med.dosage_form && `(${med.dosage_form})`}
+                        {med.stock_quantity !== undefined && ` • Stock: ${med.stock_quantity}`}
                         {med.quantity_in_stock !== undefined && ` • Stock: ${med.quantity_in_stock}`}
                       </div>
+                      {med.stock_quantity === 0 && (
+                        <p className="text-xs text-red-600 mt-1">⚠ Pharmacy will need to substitute this medication</p>
+                      )}
                     </label>
                   </div>
                 ))}

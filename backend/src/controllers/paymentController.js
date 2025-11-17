@@ -29,7 +29,8 @@ exports.getAllPayments = async (req, res) => {
     }
     
     if (date) {
-      query += ' AND DATE(p.payment_date) = ?';
+      // Use DATE_FORMAT to compare dates properly, avoiding timezone issues
+      query += ' AND DATE_FORMAT(p.created_at, "%Y-%m-%d") = ?';
       params.push(date);
     }
     

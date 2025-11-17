@@ -34,7 +34,7 @@ export default function BillingDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
   const [insuranceCompanies, setInsuranceCompanies] = useState<any[]>([]);
   const [insuranceClaims, setInsuranceClaims] = useState<any[]>([]);
-  const [stats, setStats] = useState({ unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0 });
+  const [stats, setStats] = useState({ unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0, todayRevenue: 0 });
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -120,7 +120,7 @@ export default function BillingDashboard() {
 
   const calculatedStats = useMemo(() => {
     if (!processedPatients.length) {
-      return { unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0 };
+      return { unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0, todayRevenue: 0 };
     }
 
     const unpaid = processedPatients.filter((p: any) => p.status === 'Unpaid').length;
@@ -129,31 +129,64 @@ export default function BillingDashboard() {
     // Calculate today's revenue from rawPaymentsData
     const today = new Date().toISOString().split('T')[0];
     let totalRevenue = 0;
+    let todayPaymentsDebug: any[] = [];
     
     if (rawPaymentsData && rawPaymentsData.length > 0) {
       rawPaymentsData.forEach((payment: any) => {
-        const paymentDate = payment.created_at?.split('T')[0];
+        // Handle both Date objects and string dates
+        let paymentDate = '';
+        if (payment.created_at) {
+          if (payment.created_at instanceof Date) {
+            paymentDate = payment.created_at.toISOString().split('T')[0];
+          } else if (typeof payment.created_at === 'string') {
+            paymentDate = payment.created_at.split('T')[0];
+          } else {
+            // Handle timestamp objects from MySQL
+            paymentDate = new Date(payment.created_at).toISOString().split('T')[0];
+          }
+        }
+        
         // Payments table doesn't have status column - all payments are completed when recorded
         if (paymentDate === today) {
           totalRevenue += Number(payment.amount || 0);
+          todayPaymentsDebug.push({
+            amount: payment.amount,
+            date: paymentDate,
+            method: payment.payment_method
+          });
         }
       });
     }
+    
+    console.log('Today Revenue Calculation:', {
+      today,
+      totalPayments: rawPaymentsData?.length || 0,
+      todayPayments: todayPaymentsDebug.length,
+      todayRevenue: totalRevenue,
+      sampleTodayPayments: todayPaymentsDebug.slice(0, 5)
+    });
 
     const pendingClaims: number = rawClaimsData?.filter(c => c.status === 'Pending').length || 0;
 
-    console.log('Billing Stats (Today):', {
-      today,
-      processedPatients: processedPatients.length,
-      unpaid,
-      partiallyPaid,
-      totalRevenue,
+    const todayPaymentsCount = rawPaymentsData?.filter((p: any) => {
+      if (!p.created_at) return false;
+      const pDate = p.created_at instanceof Date 
+        ? p.created_at.toISOString().split('T')[0]
+        : new Date(p.created_at).toISOString().split('T')[0];
+      return pDate === today;
+    }).length || 0;
+    
+    console.log('Billing Stats:', {
+      date: today,
+      todayRevenue: totalRevenue,
+      todayPayments: todayPaymentsCount,
+      unpaidInvoices: unpaid,
+      partiallyPaidInvoices: partiallyPaid,
       pendingClaims,
-      totalPayments: rawPaymentsData?.length || 0,
-      todayPayments: rawPaymentsData?.filter((p: any) => p.created_at?.split('T')[0] === today).length || 0
+      totalPatients: processedPatients.length
     });
 
-    return { unpaid, partiallyPaid, totalRevenue, pendingClaims };
+    return { unpaid, partiallyPaid, totalRevenue, pendingClaims, todayRevenue: totalRevenue };
   }, [processedPatients, rawClaimsData, rawPaymentsData]);
 
   // Update state when memoized values change
@@ -167,6 +200,9 @@ export default function BillingDashboard() {
       setLoading(true);
 
       // Fetch all data from MySQL API endpoints (only existing endpoints)
+      // Get today's date for filtering payments
+      const today = new Date().toISOString().split('T')[0];
+      
       const [
         billingVisitsRes,
         invoicesRes,
@@ -180,7 +216,7 @@ export default function BillingDashboard() {
         api.get('/patients?status=Active').catch(() => ({ data: { patients: [] } })),
         api.get('/insurance/companies').catch(() => ({ data: { companies: [] } })),
         api.get('/insurance/claims').catch(() => ({ data: { claims: [] } })),
-        api.get('/payments').catch(() => ({ data: { payments: [] } }))
+        api.get(`/payments?date=${today}`).catch(() => ({ data: { payments: [] } })) // Filter by today's date
       ]);
 
       const billingVisitsData = billingVisitsRes.data.visits || [];
@@ -765,13 +801,16 @@ export default function BillingDashboard() {
 
           <Card className="border-green-200 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+              <CardTitle className="text-sm font-medium">Today's Revenue</CardTitle>
               <DollarSign className="h-4 w-4 text-green-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                TSh{stats.totalRevenue.toFixed(2)}
+                TSh {stats.totalRevenue.toLocaleString()}
               </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </p>
             </CardContent>
           </Card>
         </div>
