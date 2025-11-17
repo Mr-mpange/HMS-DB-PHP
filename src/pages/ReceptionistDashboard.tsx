@@ -155,8 +155,21 @@ export default function ReceptionistDashboard() {
       const appointmentsBasic = appointmentsRes.data.appointments || [];
 
       // Fetch departments first
-      const departmentsRes = await api.get('/departments?order=name');
-      const departmentsData = departmentsRes.data.departments || [];
+      let departmentsData = [];
+      try {
+        const departmentsRes = await api.get('/departments?order=name');
+        departmentsData = departmentsRes.data.departments || [];
+        console.log('Fetched departments:', departmentsData.length);
+        
+        if (departmentsData.length === 0) {
+          console.warn('No departments found in database');
+          toast.warning('No departments found. Please contact admin to set up departments.');
+        }
+      } catch (deptError) {
+        console.error('Error fetching departments:', deptError);
+        console.error('Department error details:', deptError.response?.data || deptError.message);
+        toast.error('Failed to load departments. Please check backend connection.');
+      }
 
       // Then get doctor profiles for the appointments
       const doctorIds = [...new Set(appointmentsBasic?.map(apt => apt.doctor_id).filter(Boolean) || [])];
@@ -189,8 +202,15 @@ export default function ReceptionistDashboard() {
         const doctorsRes = await api.get('/users/profiles?role=doctor');
         doctorsData = doctorsRes.data.profiles || [];
         console.log('Found doctors:', doctorsData.length);
+        
+        if (doctorsData.length === 0) {
+          console.warn('No doctors found in database');
+          toast.warning('No doctors found. Please contact admin to assign doctor roles.');
+        }
       } catch (error) {
-        console.warn('Could not fetch doctors:', error);
+        console.error('Error fetching doctors:', error);
+        console.error('Doctor error details:', error.response?.data || error.message);
+        toast.error('Failed to load doctors. Please check backend connection.');
         doctorsData = [];
       }
 

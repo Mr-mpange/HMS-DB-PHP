@@ -310,8 +310,25 @@ export default function DoctorDashboard() {
     // Show loading state for the specific appointment being processed
     const isProcessing = loading && selectedAppointment?.id === appointment.id;
 
+    // Check if appointment time has arrived (allow starting 5 minutes before scheduled time)
+    const canStartAppointment = () => {
+      if (!appointment.appointment_date || !appointment.appointment_time) return false;
+      
+      try {
+        const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+        const now = new Date();
+        const fiveMinutesBefore = new Date(appointmentDateTime.getTime() - 5 * 60 * 1000);
+        
+        return now >= fiveMinutesBefore;
+      } catch (error) {
+        console.error('Error checking appointment time:', error);
+        return false;
+      }
+    };
+
     switch (status) {
       case 'Scheduled':
+        const canStart = canStartAppointment();
         return (
           <div className="flex flex-wrap gap-2">
             <Button 
@@ -322,8 +339,9 @@ export default function DoctorDashboard() {
                 setSelectedAppointment(appointment);
                 handleStartAppointment(appointment);
               }}
-              disabled={isProcessing}
+              disabled={isProcessing || !canStart}
               className="min-w-[80px]"
+              title={!canStart ? 'Appointment time has not arrived yet' : 'Start appointment'}
             >
               {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Start'}
             </Button>

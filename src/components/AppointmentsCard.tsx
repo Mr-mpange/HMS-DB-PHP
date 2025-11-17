@@ -12,17 +12,14 @@ interface AppointmentsCardProps {
 export function AppointmentsCard({ appointments, onCheckIn, onCancel }: AppointmentsCardProps) {
   const today = new Date().toISOString().split('T')[0];
   
-  // console.log('Filtering appointments. Today:', today, 'Total appointments:', appointments.length);
-  // Filter for today's appointments that need action (Scheduled status only)
+  // Filter for today's appointments that need action (Scheduled or Confirmed status)
   const todayAppointments = appointments.filter(
     a => {
       const isToday = a.appointment_date === today;
-      const isScheduled = a.status === 'Scheduled';
-      // console.log('Appointment check:', a.id, 'Date match:', isToday, 'Status match:', isScheduled, 'Appointment:', a);
-      return isToday && isScheduled;
+      const needsAction = a.status === 'Scheduled' || a.status === 'Confirmed';
+      return isToday && needsAction;
     }
   );
-  // console.log('Today appointments count:', todayAppointments.length);
 
   // Sort by appointment time
   const sortedAppointments = todayAppointments.sort((a, b) => {
@@ -53,8 +50,8 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
         {sortedAppointments.length === 0 ? (
           <div className="text-center py-12">
             <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground font-medium">No pending appointments for today</p>
-            <p className="text-sm text-muted-foreground mt-1">All appointments have been checked in or there are no scheduled visits</p>
+            <p className="text-muted-foreground font-medium">No appointments for today</p>
+            <p className="text-sm text-muted-foreground mt-1">All appointments have been completed or there are no scheduled visits</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -115,6 +112,11 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
                         <XCircle className="h-4 w-4" />
                       </Button>
                     </>
+                  )}
+                  {appointment.status === 'Confirmed' && (
+                    <Badge variant="default" className="bg-blue-600">
+                      In Progress
+                    </Badge>
                   )}
                 </div>
               </div>
