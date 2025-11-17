@@ -168,30 +168,52 @@ export default function DoctorDashboard() {
     }
   };
 
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [appointmentToComplete, setAppointmentToComplete] = useState<any>(null);
+  const [completionNotes, setCompletionNotes] = useState('');
+
   const handleCompleteAppointment = async (appointment: any) => {
+    // Show dialog to collect notes
+    setAppointmentToComplete(appointment);
+    setCompletionNotes('');
+    setShowCompleteDialog(true);
+  };
+
+  const confirmCompleteAppointment = async () => {
+    if (!appointmentToComplete) return;
+    
+    if (!completionNotes.trim()) {
+      toast.error('Please enter consultation notes before completing');
+      return;
+    }
+
     try {
       setLoading(true);
-      // Update appointment status to 'completed' to match database enum
-      const response = await api.put(`/appointments/${appointment.id}`, { 
-        status: 'completed',
+      // Update appointment status to 'Completed' with notes
+      const response = await api.put(`/appointments/${appointmentToComplete.id}`, { 
+        status: 'Completed',
+        notes: completionNotes,
         completed_at: new Date().toISOString()
       });
 
       if (response.status !== 200) throw new Error('Failed to update appointment');
 
-      // Update local state with the correct status value
+      // Update local state
       setAppointments(prev => 
         prev.map(a => 
-          a.id === appointment.id 
-            ? { ...a, status: 'completed' } 
+          a.id === appointmentToComplete.id 
+            ? { ...a, status: 'Completed', notes: completionNotes } 
             : a
         )
       );
       
-      toast.success('Appointment marked as completed');
-    } catch (error) {
+      setShowCompleteDialog(false);
+      setAppointmentToComplete(null);
+      setCompletionNotes('');
+      toast.success('Appointment completed successfully');
+    } catch (error: any) {
       console.error('Error completing appointment:', error);
-      toast.error('Failed to complete appointment');
+      toast.error(error.response?.data?.error || 'Failed to complete appointment');
     } finally {
       setLoading(false);
     }
@@ -2916,6 +2938,67 @@ export default function DoctorDashboard() {
                 disabled={selectedMedications.length === 0}
               >
                 Write {selectedMedications.length} Prescription{selectedMedications.length !== 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete Appointment Dialog */}
+      <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Complete Appointment</DialogTitle>
+            <DialogDescription>
+              Patient: {appointmentToComplete?.patient?.full_name || 'Unknown'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800">
+                <strong>Important:</strong> Please enter consultation notes before completing this appointment. 
+                These notes are required for medical records.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="completion_notes">Consultation Notes *</Label>
+              <Textarea
+                id="completion_notes"
+                value={completionNotes}
+                onChange={(e) => setCompletionNotes(e.target.value)}
+                placeholder="Enter diagnosis, treatment plan, prescriptions given, follow-up instructions, etc."
+                rows={8}
+                className="resize-none"
+              />
+              <p className="text-xs text-muted-foreground">
+                Minimum 10 characters required
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCompleteDialog(false);
+                  setAppointmentToComplete(null);
+                  setCompletionNotes('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={confirmCompleteAppointment}
+                disabled={loading || completionNotes.trim().length < 10}
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  'Complete Appointment'
+                )}
               </Button>
             </div>
           </div>

@@ -1202,12 +1202,11 @@ export default function ReceptionistDashboard() {
             <CardContent>
               {(() => {
                 const today = new Date().toISOString().split('T')[0];
-                const todayAppointments = appointments.filter(apt => apt.appointment_date === today && apt.status === 'Scheduled');
-                
-                console.log('Debug - Today:', today);
-                console.log('Debug - All appointments:', appointments.length);
-                console.log('Debug - Today appointments:', todayAppointments.length);
-                console.log('Debug - Sample appointment:', appointments[0]);
+                const todayAppointments = appointments.filter(apt => {
+                  // Extract date from appointment_date (might be datetime or date string)
+                  const aptDate = apt.appointment_date ? apt.appointment_date.split('T')[0] : '';
+                  return aptDate === today && apt.status === 'Scheduled';
+                });
                 
                 // Group by doctor
                 type DoctorGroup = {

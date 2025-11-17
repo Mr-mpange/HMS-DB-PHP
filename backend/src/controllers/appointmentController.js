@@ -163,6 +163,13 @@ exports.updateAppointment = async (req, res) => {
       reason, notes, status
     } = req.body;
     
+    // Validate: If completing appointment, notes are required
+    if (status === 'Completed' && (!notes || notes.trim() === '')) {
+      return res.status(400).json({ 
+        error: 'Consultation notes are required to complete an appointment' 
+      });
+    }
+    
     // Combine date and time if both provided
     let appointmentDateTime = appointment_date;
     if (appointment_date && appointment_time) {
