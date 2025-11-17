@@ -1149,7 +1149,20 @@ export default function AdminDashboard() {
         });
       }
       
-      setDepartmentFees({});
+      // Load department fees
+      try {
+        const feesResponse = await api.get('/departments/fees');
+        const fees = feesResponse.data.fees || [];
+        const feesObj: Record<string, string> = {};
+        fees.forEach((fee: any) => {
+          feesObj[fee.department_id] = fee.fee_amount.toString();
+        });
+        setDepartmentFees(feesObj);
+        console.log('✓ Department fees loaded:', feesObj);
+      } catch (error) {
+        console.warn('No department fees found');
+        setDepartmentFees({});
+      }
     } catch (error) {
       console.error('Error fetching settings:', error);
       toast.error('Failed to load settings');
@@ -1188,9 +1201,31 @@ export default function AdminDashboard() {
       }
 
       console.log(`✅ Settings saved: ${updated} updated, ${created} created`);
-      toast.success(`Settings saved successfully (${updated} updated, ${created} created)`);
+      
+      // Save department fees if any are set
+      let feesSaved = 0;
+      for (const [deptId, fee] of Object.entries(departmentFees)) {
+        if (fee && fee.trim() !== '') {
+          try {
+            console.log(`Saving department fee for ${deptId}:`, fee);
+            await api.post('/departments/fees', {
+              department_id: deptId,
+              fee_amount: parseFloat(fee)
+            });
+            feesSaved++;
+          } catch (error: any) {
+            console.error(`Error saving department fee for ${deptId}:`, error);
+          }
+        }
+      }
+      
+      if (feesSaved > 0) {
+        console.log(`✅ Department fees saved: ${feesSaved}`);
+      }
+      
+      toast.success(`Settings saved successfully (${updated} updated, ${created} created, ${feesSaved} dept fees)`);
       setShowSettingsDialog(false);
-      await logActivity('settings.update', { settings: systemSettings });
+      await logActivity('settings.update', { settings: systemSettings, departmentFees });
       fetchSettings(); // Reload settings
     } catch (error) {
       console.error('Error saving settings:', error);

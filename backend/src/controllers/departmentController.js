@@ -218,3 +218,60 @@ exports.getAllDepartmentFees = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch department fees' });
   }
 };
+
+
+// Set department fee
+exports.setDepartmentFee = async (req, res) => {
+  try {
+    const { department_id, fee_amount } = req.body;
+    
+    if (!department_id || fee_amount === undefined) {
+      return res.status(400).json({ error: 'Department ID and fee amount are required' });
+    }
+    
+    // Check if fee already exists
+    const [existing] = await db.execute(
+      'SELECT id FROM department_fees WHERE department_id = ?',
+      [department_id]
+    );
+    
+    if (existing.length > 0) {
+      // Update existing fee
+      await db.execute(
+        'UPDATE department_fees SET fee_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE department_id = ?',
+        [fee_amount, department_id]
+      );
+    } else {
+      // Create new fee
+      const feeId = require('uuid').v4();
+      await db.execute(
+        'INSERT INTO department_fees (id, department_id, fee_amount) VALUES (?, ?, ?)',
+        [feeId, department_id, fee_amount]
+      );
+    }
+    
+    res.json({ message: 'Department fee saved successfully' });
+  } catch (error) {
+    console.error('Set department fee error:', error);
+    res.status(500).json({ error: 'Failed to set department fee' });
+  }
+};
+
+// Get department fee
+exports.getDepartmentFee = async (req, res) => {
+  try {
+    const [fees] = await db.execute(
+      'SELECT * FROM department_fees WHERE department_id = ?',
+      [req.params.id]
+    );
+    
+    if (fees.length === 0) {
+      return res.status(404).json({ error: 'Department fee not found' });
+    }
+    
+    res.json({ fee: fees[0] });
+  } catch (error) {
+    console.error('Get department fee error:', error);
+    res.status(500).json({ error: 'Failed to fetch department fee' });
+  }
+};
