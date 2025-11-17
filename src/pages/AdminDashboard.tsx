@@ -1165,20 +1165,30 @@ export default function AdminDashboard() {
         value: systemSettings[key]
       }));
 
+      console.log('💾 Saving settings:', settingsToSave);
+      let created = 0;
+      let updated = 0;
+
       for (const setting of settingsToSave) {
         try {
+          console.log(`Updating ${setting.key}:`, setting.value);
           await api.put(`/settings/${setting.key}`, { value: setting.value });
+          updated++;
         } catch (error: any) {
           // If setting doesn't exist, create it
           if (error.response?.status === 404) {
+            console.log(`Creating ${setting.key}:`, setting.value);
             await api.post('/settings', { key: setting.key, value: setting.value });
+            created++;
           } else {
+            console.error(`Error saving ${setting.key}:`, error);
             throw error;
           }
         }
       }
 
-      toast.success('Settings saved successfully');
+      console.log(`✅ Settings saved: ${updated} updated, ${created} created`);
+      toast.success(`Settings saved successfully (${updated} updated, ${created} created)`);
       setShowSettingsDialog(false);
       await logActivity('settings.update', { settings: systemSettings });
       fetchSettings(); // Reload settings

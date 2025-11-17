@@ -59,7 +59,26 @@ export default function PatientReports() {
   const fetchSystemSettings = async () => {
     try {
       const { data } = await api.get('/settings');
-      const settings = data.settings || {};
+      console.log('📋 Settings API Response:', data);
+      
+      // Handle both formats: settings object or settingsArray
+      let settings: any = {};
+      if (data.settingsArray && Array.isArray(data.settingsArray)) {
+        // Convert array to object
+        data.settingsArray.forEach((setting: any) => {
+          settings[setting.key] = setting.value;
+        });
+      } else if (data.settings) {
+        settings = data.settings;
+      }
+      
+      console.log('🏥 Hospital Settings:', {
+        name: settings.hospital_name,
+        address: settings.hospital_address,
+        phone: settings.hospital_phone,
+        email: settings.hospital_email
+      });
+      
       setSystemSettings({
         hospital_name: settings.hospital_name || 'HASET Medical Center',
         hospital_address: settings.hospital_address || 'Dar es Salaam, Tanzania',
