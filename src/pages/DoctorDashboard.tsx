@@ -313,24 +313,41 @@ export default function DoctorDashboard() {
     // Check if appointment time has arrived (allow starting 5 minutes before scheduled time)
     // Use currentTime state to ensure re-render when time changes
     const canStartAppointment = () => {
-      if (!appointment.appointment_date || !appointment.appointment_time) return false;
+      if (!appointment.appointment_date) {
+        console.log('Missing appointment date');
+        return false;
+      }
       
       try {
-        const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
-        const now = currentTime; // Use currentTime state instead of new Date()
+        // The appointment_date from backend is already a full datetime
+        // Check if it's already an ISO string with time, or if we need to append time
+        let appointmentDateTime;
+        
+        if (appointment.appointment_date.includes('T') && appointment.appointment_date.length > 10) {
+          // It's already a full datetime string (e.g., '2025-11-16T21:00:00.000Z')
+          appointmentDateTime = new Date(appointment.appointment_date);
+        } else if (appointment.appointment_time) {
+          // It's just a date, append the time
+          appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+        } else {
+          console.log('Cannot determine appointment time');
+          return false;
+        }
+        
+        const now = currentTime;
         const fiveMinutesBefore = new Date(appointmentDateTime.getTime() - 5 * 60 * 1000);
         
         const canStart = now >= fiveMinutesBefore;
         
-        // Debug logging
+        // Debug logging (only when button is disabled)
         if (!canStart) {
           const minutesUntil = Math.ceil((fiveMinutesBefore.getTime() - now.getTime()) / (1000 * 60));
-          console.log(`Appointment ${appointment.id}: Cannot start yet. ${minutesUntil} minutes until start time.`);
+          console.log(`${appointment.patient?.full_name}: Cannot start yet. ${minutesUntil} minutes until start time.`);
         }
         
         return canStart;
       } catch (error) {
-        console.error('Error checking appointment time:', error);
+        console.error('Error checking appointment time:', error, appointment);
         return false;
       }
     };
