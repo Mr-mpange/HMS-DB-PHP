@@ -54,6 +54,7 @@ import { toast } from 'sonner';
 import { logActivity } from '@/lib/utils';
 import AdminReports from '@/components/AdminReports';
 import ActivityLogsView from '@/components/ActivityLogsView';
+import PatientReports from '@/components/PatientReports';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
 
@@ -2420,6 +2421,9 @@ export default function AdminDashboard() {
             <AdminReports />
           </CardContent>
         </Card>
+
+        {/* Patient Reports Section */}
+        <PatientReports />
 
         {/* Medical services management moved to Medical Services page */}
         <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
