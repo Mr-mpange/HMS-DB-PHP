@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Printer, Download } from 'lucide-react';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
+import Logo from '@/components/Logo';
 
 
 type DateFilter = 'today' | 'week' | 'month' | 'all';
@@ -291,15 +292,20 @@ export default function AdminReports() {
       <div className="hidden print:block" style={{ padding: '20px', fontFamily: 'monospace' }}>
         {/* Header with Logo */}
         <div style={{ textAlign: 'center', borderTop: '3px double #000', borderBottom: '3px double #000', padding: '20px 0', marginBottom: '30px' }}>
-          {/* Logo/Icon */}
-          <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏥</div>
+          {/* Logo - Centered */}
+          <div style={{ width: '120px', height: '120px', margin: '0 auto 15px auto' }}>
+            <Logo size="xl" showText={false} />
+          </div>
           
-          <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 5px 0', letterSpacing: '2px' }}>
-            {settings.hospitalName || 'HOSPITAL MANAGEMENT SYSTEM'}
+          <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: '10px 0', letterSpacing: '3px', color: '#1A5A42' }}>
+            HASET
           </h1>
-          <h2 style={{ fontSize: '16px', margin: '5px 0', fontWeight: 'normal' }}>
-            {settings.reportHeader || 'Healthcare Management System Report'}
+          <h2 style={{ fontSize: '18px', margin: '5px 0', fontWeight: '600', color: '#2D7A5F' }}>
+            Hospital Management System
           </h2>
+          <h3 style={{ fontSize: '16px', margin: '5px 0', fontWeight: 'normal', color: '#666' }}>
+            Healthcare Management System Report
+          </h3>
           
           <div style={{ marginTop: '15px', fontSize: '14px', color: '#333' }}>
             <p style={{ margin: '5px 0' }}>
