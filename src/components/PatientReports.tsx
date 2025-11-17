@@ -613,9 +613,19 @@ export default function PatientReports() {
             {/* Header with Logo */}
             <div style={{ marginBottom: '40px', borderBottom: '3px solid #2563eb', paddingBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
-                {/* Logo placeholder */}
-                <div style={{ width: '80px', height: '80px', backgroundColor: '#2563eb', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: 'white', fontSize: '32px', fontWeight: 'bold' }}>H</span>
+                {/* HASET Logo */}
+                <div style={{ width: '80px', height: '80px', flexShrink: 0 }}>
+                  <svg viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+                    <circle cx="512" cy="512" r="450" stroke="#2D7A5F" strokeWidth="40" fill="none"/>
+                    <path d="M314 226H490V402H666V578H490V754H314V578H138V402H314V226Z" fill="#1A5A42"/>
+                    <path d="M320 240C320 240 380 340 420 440C460 540 480 640 520 740" 
+                          stroke="#EF4444" strokeWidth="30" strokeLinecap="round" fill="none"/>
+                    <path d="M612 440L662 340L712 540L762 240L812 440L862 440" 
+                          stroke="#EF4444" strokeWidth="35" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    <rect x="180" y="700" width="664" height="140" rx="70" fill="#EF4444"/>
+                    <text x="512" y="800" fontFamily="Arial, sans-serif" fontSize="120" fontWeight="bold" 
+                          fill="white" textAnchor="middle" dominantBaseline="middle">HASET</text>
+                  </svg>
                 </div>
                 
                 {/* Hospital Info */}
