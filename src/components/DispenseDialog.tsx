@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,18 +27,11 @@ export function DispenseDialog({
 }: DispenseDialogProps) {
   
   // Initialize editable medications with prescribed values
-  const [editableMedications, setEditableMedications] = useState<any[]>(
-    prescription?.medications?.map((med: any) => ({
-      ...med,
-      dispensed_quantity: med.quantity,
-      dispensed_dosage: med.dosage
-    })) || []
-  );
-  
+  const [editableMedications, setEditableMedications] = useState<any[]>([]);
   const [notes, setNotes] = useState('');
 
   // Update when prescription changes
-  useState(() => {
+  useEffect(() => {
     if (prescription?.medications) {
       setEditableMedications(
         prescription.medications.map((med: any) => ({
@@ -47,8 +40,9 @@ export function DispenseDialog({
           dispensed_dosage: med.dosage
         }))
       );
+      setNotes(''); // Reset notes when prescription changes
     }
-  });
+  }, [prescription]);
 
   // Calculate total cost based on edited quantities
   const totalCost = editableMedications.reduce((sum: number, med: any) => {
@@ -114,15 +108,20 @@ export function DispenseDialog({
                       <Select
                         value={med.medication_id}
                         onValueChange={(value) => {
+                          console.log('Medication selected:', value);
                           const selectedMed = medications.find(m => m.id === value);
+                          console.log('Found medication:', selectedMed);
                           if (selectedMed) {
                             updateMedication(index, 'medication_id', value);
                             updateMedication(index, 'medication_name', selectedMed.name);
+                            console.log('Updated medication at index', index, 'to', selectedMed.name);
                           }
                         }}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Select medication" />
+                          <SelectValue placeholder="Select medication">
+                            {medications.find(m => m.id === med.medication_id)?.name || med.medication_name || 'Select medication'}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {medications
@@ -138,11 +137,16 @@ export function DispenseDialog({
                             ))}
                         </SelectContent>
                       </Select>
-                      <p className="text-xs text-muted-foreground">
-                        Prescribed: {med.medication_name}
-                        {med.medication_id !== medications.find(m => m.name === med.medication_name)?.id && 
-                          ' (Substituted)'}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          Prescribed: {med.medication_name}
+                        </p>
+                        {med.medication_id !== medications.find(m => m.name === med.medication_name)?.id && (
+                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
+                            Substituted
+                          </Badge>
+                        )}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">

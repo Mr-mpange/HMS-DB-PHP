@@ -311,15 +311,24 @@ export default function DoctorDashboard() {
     const isProcessing = loading && selectedAppointment?.id === appointment.id;
 
     // Check if appointment time has arrived (allow starting 5 minutes before scheduled time)
+    // Use currentTime state to ensure re-render when time changes
     const canStartAppointment = () => {
       if (!appointment.appointment_date || !appointment.appointment_time) return false;
       
       try {
         const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
-        const now = new Date();
+        const now = currentTime; // Use currentTime state instead of new Date()
         const fiveMinutesBefore = new Date(appointmentDateTime.getTime() - 5 * 60 * 1000);
         
-        return now >= fiveMinutesBefore;
+        const canStart = now >= fiveMinutesBefore;
+        
+        // Debug logging
+        if (!canStart) {
+          const minutesUntil = Math.ceil((fiveMinutesBefore.getTime() - now.getTime()) / (1000 * 60));
+          console.log(`Appointment ${appointment.id}: Cannot start yet. ${minutesUntil} minutes until start time.`);
+        }
+        
+        return canStart;
       } catch (error) {
         console.error('Error checking appointment time:', error);
         return false;
@@ -495,10 +504,12 @@ export default function DoctorDashboard() {
     }
   };
 
-  // Update current time every minute
+  // Update current time every 30 seconds to enable Start button when time arrives
   useEffect(() => {
     const timer = setInterval(() => {
-      setCurrentTime(new Date());
+      const now = new Date();
+      setCurrentTime(now);
+      console.log('Time updated:', now.toLocaleTimeString());
       
       // Check if any appointment time has been reached
       appointments.forEach(appointment => {
@@ -514,8 +525,8 @@ export default function DoctorDashboard() {
           
           // If current time is within the appointment window and status is not 'Completed' or 'Confirmed'
           if (
-            isAfter(currentTime, appointmentDateTime) && 
-            isBefore(currentTime, appointmentEndTime) &&
+            isAfter(now, appointmentDateTime) && 
+            isBefore(now, appointmentEndTime) &&
             !['Completed', 'Confirmed'].includes(appointment.status)
           ) {
             // We'll use the full updateAppointmentStatus function instead of the incomplete one
@@ -524,10 +535,10 @@ export default function DoctorDashboard() {
           console.error('Error processing appointment time:', error, appointment);
         }
       });
-    }, 60000); // Check every minute
+    }, 30000); // Check every 30 seconds for better responsiveness
     
     return () => clearInterval(timer);
-  }, [appointments, currentTime]);
+  }, [appointments]);
 
   // Remove duplicate functions
   // The complete versions are defined later in the file
