@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Printer, Download } from 'lucide-react';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
-import { PrintHeader } from '@/components/PrintHeader';
+
 
 type DateFilter = 'today' | 'week' | 'month' | 'all';
 
@@ -285,13 +285,145 @@ export default function AdminReports() {
         </div>
       </div>
 
-      {/* Print Header - Only visible on print */}
-      <PrintHeader
-        title={settings.reportHeader}
-        hospitalName={settings.hospitalName}
-        showDate={true}
-        additionalInfo={`Period: ${getFilterLabel()}`}
-      />
+
+
+      {/* Professional Print Report - Only visible on print */}
+      <div className="hidden print:block" style={{ padding: '20px', fontFamily: 'monospace' }}>
+        {/* Header with Logo */}
+        <div style={{ textAlign: 'center', borderTop: '3px double #000', borderBottom: '3px double #000', padding: '20px 0', marginBottom: '30px' }}>
+          {/* Logo/Icon */}
+          <div style={{ fontSize: '48px', marginBottom: '10px' }}>🏥</div>
+          
+          <h1 style={{ fontSize: '24px', fontWeight: 'bold', margin: '0 0 5px 0', letterSpacing: '2px' }}>
+            {settings.hospitalName || 'HOSPITAL MANAGEMENT SYSTEM'}
+          </h1>
+          <h2 style={{ fontSize: '16px', margin: '5px 0', fontWeight: 'normal' }}>
+            {settings.reportHeader || 'Healthcare Management System Report'}
+          </h2>
+          
+          <div style={{ marginTop: '15px', fontSize: '14px', color: '#333' }}>
+            <p style={{ margin: '5px 0' }}>
+              <strong>Generated:</strong> {format(new Date(), 'MMMM dd, yyyy - HH:mm')}
+            </p>
+            <p style={{ margin: '5px 0' }}>
+              <strong>Period:</strong> {getFilterLabel()}
+            </p>
+          </div>
+        </div>
+
+        {/* Summary Report */}
+        <h3 style={{ fontSize: '18px', fontWeight: 'bold', textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '30px' }}>
+          SUMMARY REPORT
+        </h3>
+
+        <div style={{ lineHeight: '1.8', maxWidth: '700px', margin: '0 auto' }}>
+          {/* Patient Statistics */}
+          <div style={{ marginBottom: '25px' }}>
+            <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>PATIENT STATISTICS</h4>
+            <div style={{ paddingLeft: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Patients:</span>
+                <span style={{ fontWeight: 'bold', minWidth: '100px', textAlign: 'right' }}>{stats.totalPatients}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Appointment Statistics */}
+          <div style={{ marginBottom: '25px' }}>
+            <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>APPOINTMENT STATISTICS</h4>
+            <div style={{ paddingLeft: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Appointments:</span>
+                <span style={{ fontWeight: 'bold', minWidth: '100px', textAlign: 'right' }}>{stats.totalAppointments}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Visit Statistics */}
+          <div style={{ marginBottom: '25px' }}>
+            <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>VISIT STATISTICS</h4>
+            <div style={{ paddingLeft: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Visits:</span>
+                <span style={{ fontWeight: 'bold', minWidth: '100px', textAlign: 'right' }}>{stats.totalVisits}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Prescription Statistics */}
+          <div style={{ marginBottom: '25px' }}>
+            <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>PRESCRIPTION STATISTICS</h4>
+            <div style={{ paddingLeft: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Prescriptions:</span>
+                <span style={{ fontWeight: 'bold', minWidth: '100px', textAlign: 'right' }}>{stats.totalPrescriptions}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Lab Test Statistics */}
+          <div style={{ marginBottom: '25px' }}>
+            <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>LAB TEST STATISTICS</h4>
+            <div style={{ paddingLeft: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Lab Tests:</span>
+                <span style={{ fontWeight: 'bold', minWidth: '100px', textAlign: 'right' }}>{stats.totalLabTests}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Billing Statistics */}
+          {reportData.invoices.length > 0 && (
+            <div style={{ marginBottom: '25px' }}>
+              <h4 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px' }}>BILLING STATISTICS</h4>
+              <div style={{ paddingLeft: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <span>Total Invoices:</span>
+                  <span style={{ fontWeight: 'bold', minWidth: '150px', textAlign: 'right' }}>{reportData.invoices.length}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <span>Paid Invoices:</span>
+                  <span style={{ fontWeight: 'bold', minWidth: '150px', textAlign: 'right' }}>
+                    {reportData.invoices.filter((inv: any) => inv.status === 'Paid').length}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px' }}>
+                  <span>Pending Invoices:</span>
+                  <span style={{ fontWeight: 'bold', minWidth: '150px', textAlign: 'right' }}>
+                    {reportData.invoices.filter((inv: any) => inv.status !== 'Paid').length}
+                  </span>
+                </div>
+                <div style={{ borderTop: '1px solid #000', paddingTop: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span style={{ fontWeight: 'bold' }}>Total Revenue:</span>
+                    <span style={{ fontWeight: 'bold', minWidth: '150px', textAlign: 'right' }}>
+                      TSh {reportData.invoices
+                        .filter((inv: any) => inv.status === 'Paid')
+                        .reduce((sum: number, inv: any) => sum + Number(inv.total_amount || 0), 0)
+                        .toLocaleString()}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Outstanding Amount:</span>
+                    <span style={{ fontWeight: 'bold', minWidth: '150px', textAlign: 'right' }}>
+                      TSh {reportData.invoices
+                        .filter((inv: any) => inv.status !== 'Paid')
+                        .reduce((sum: number, inv: any) => sum + (Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)), 0)
+                        .toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ textAlign: 'center', borderTop: '3px double #000', borderBottom: '3px double #000', padding: '15px 0', marginTop: '50px' }}>
+          <p style={{ margin: '5px 0', fontWeight: 'bold' }}>End of Report</p>
+          <p style={{ margin: '5px 0', fontSize: '12px' }}>Generated by Hospital Management System</p>
+        </div>
+      </div>
 
       {/* Stats Cards - Hidden on print */}
       <div className="grid gap-4 md:grid-cols-5 print:hidden">
@@ -335,119 +467,6 @@ export default function AdminReports() {
             <div className="text-2xl font-bold">{stats.totalLabTests}</div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Print-Only Professional Summary */}
-      <div className="hidden print:block print:mt-8">
-        <div className="p-8 max-w-4xl mx-auto">
-          <h2 className="text-2xl font-bold mb-8 pb-4 border-b-2 border-gray-800">
-            SUMMARY REPORT
-          </h2>
-          
-          <div className="space-y-8">
-            {/* Patient Statistics */}
-            <div>
-              <h3 className="text-lg font-bold mb-3 text-gray-800">PATIENT STATISTICS</h3>
-              <div className="space-y-2 ml-4">
-                <div className="flex justify-between py-1">
-                  <span>Total Patients:</span>
-                  <span className="font-bold">{stats.totalPatients}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Appointment Statistics */}
-            <div>
-              <h3 className="text-lg font-bold mb-3 text-gray-800">APPOINTMENT STATISTICS</h3>
-              <div className="space-y-2 ml-4">
-                <div className="flex justify-between py-1">
-                  <span>Total Appointments:</span>
-                  <span className="font-bold">{stats.totalAppointments}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Visit Statistics */}
-            <div>
-              <h3 className="text-lg font-bold mb-3 text-gray-800">VISIT STATISTICS</h3>
-              <div className="space-y-2 ml-4">
-                <div className="flex justify-between py-1">
-                  <span>Total Visits:</span>
-                  <span className="font-bold">{stats.totalVisits}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Prescription Statistics */}
-            <div>
-              <h3 className="text-lg font-bold mb-3 text-gray-800">PRESCRIPTION STATISTICS</h3>
-              <div className="space-y-2 ml-4">
-                <div className="flex justify-between py-1">
-                  <span>Total Prescriptions:</span>
-                  <span className="font-bold">{stats.totalPrescriptions}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Lab Test Statistics */}
-            <div>
-              <h3 className="text-lg font-bold mb-3 text-gray-800">LAB TEST STATISTICS</h3>
-              <div className="space-y-2 ml-4">
-                <div className="flex justify-between py-1">
-                  <span>Total Lab Tests:</span>
-                  <span className="font-bold">{stats.totalLabTests}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Billing Statistics */}
-            {reportData.invoices.length > 0 && (
-              <div>
-                <h3 className="text-lg font-bold mb-3 text-gray-800">BILLING STATISTICS</h3>
-                <div className="space-y-2 ml-4">
-                  <div className="flex justify-between py-1">
-                    <span>Total Invoices:</span>
-                    <span className="font-bold">{reportData.invoices.length}</span>
-                  </div>
-                  <div className="flex justify-between py-1">
-                    <span>Paid Invoices:</span>
-                    <span className="font-bold">
-                      {reportData.invoices.filter((inv: any) => inv.status === 'Paid').length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-1">
-                    <span>Pending Invoices:</span>
-                    <span className="font-bold">
-                      {reportData.invoices.filter((inv: any) => inv.status !== 'Paid').length}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-1 mt-4 pt-4 border-t border-gray-300">
-                    <span className="font-semibold">Total Revenue:</span>
-                    <span className="font-bold text-lg">
-                      TSh {reportData.invoices
-                        .filter((inv: any) => inv.status === 'Paid')
-                        .reduce((sum: number, inv: any) => sum + Number(inv.total_amount || 0), 0)
-                        .toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between py-1">
-                    <span>Outstanding Amount:</span>
-                    <span className="font-bold">
-                      TSh {reportData.invoices
-                        .filter((inv: any) => inv.status !== 'Paid')
-                        .reduce((sum: number, inv: any) => sum + (Number(inv.total_amount || 0) - Number(inv.paid_amount || 0)), 0)
-                        .toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          <div className="mt-12 pt-6 border-t-2 border-gray-800 text-center text-sm text-gray-600">
-            Generated by Hospital Management System
-          </div>
-        </div>
       </div>
 
       {/* Patients Table - Hidden on print */}
@@ -670,39 +689,39 @@ export default function AdminReports() {
         </Card>
       )}
 
-      {/* Print Styles - Only print report content */}
+
+      {/* Print Styles */}
       <style>{`
         @media print {
-          @page {
-            margin: 1cm;
-          }
-          
-          /* Hide everything by default */
+          /* Hide everything first */
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
           
-          /* Only show the report container and its children */
-          .space-y-8, .space-y-8 * {
-            visibility: visible;
-          }
-          
-          /* Make sure print header is visible */
-          .print-header, .print-header * {
+          /* Show only the print report */
+          .hidden.print\\:block,
+          .hidden.print\\:block * {
             visibility: visible !important;
+            display: block !important;
           }
           
-          /* Position the report at top of page */
-          .space-y-8 {
+          /* Position print report at top */
+          .hidden.print\\:block {
             position: absolute;
             left: 0;
             top: 0;
             width: 100%;
           }
           
-          /* Hide sidebar, navbar, and other dashboard elements */
-          nav, aside, header, footer {
+          /* Ensure tables are hidden */
+          .print\\:hidden,
+          .print\\:hidden * {
             display: none !important;
+            visibility: hidden !important;
+          }
+          
+          @page {
+            margin: 1cm;
           }
         }
       `}</style>
