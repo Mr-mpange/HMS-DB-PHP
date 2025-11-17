@@ -1329,8 +1329,21 @@ export default function ReceptionistDashboard() {
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 {departments.map((dept) => {
                   const deptAppointments = appointments.filter(a => a.department?.id === dept.id);
-                  const today = new Date().toISOString().split('T')[0];
-                  const todayDeptAppts = deptAppointments.filter(a => a.appointment_date === today);
+                  // Use local date to avoid timezone issues
+                  const now = new Date();
+                  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                  const todayDeptAppts = deptAppointments.filter(a => {
+                    if (a.appointment_date instanceof Date) {
+                      const d = a.appointment_date;
+                      const aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                      return aptDate === today;
+                    } else if (typeof a.appointment_date === 'string') {
+                      const d = new Date(a.appointment_date);
+                      const aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                      return aptDate === today;
+                    }
+                    return false;
+                  });
 
                   return (
                     <div key={dept.id} className="p-4 border rounded-lg hover:bg-gray-50 transition-colors">
@@ -1356,10 +1369,20 @@ export default function ReceptionistDashboard() {
                   </div>
                   <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
                     {doctors.slice(0, 6).map((doctor) => {
-                      const today = new Date().toISOString().split('T')[0];
-                      const doctorAppts = appointments.filter(a =>
-                        a.appointment_date === today && a.doctor?.id === doctor.id
-                      );
+                      // Use local date to avoid timezone issues
+                      const now = new Date();
+                      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                      const doctorAppts = appointments.filter(a => {
+                        let aptDate = '';
+                        if (a.appointment_date instanceof Date) {
+                          const d = a.appointment_date;
+                          aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                        } else if (typeof a.appointment_date === 'string') {
+                          const d = new Date(a.appointment_date);
+                          aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                        }
+                        return aptDate === today && a.doctor?.id === doctor.id;
+                      });
                       const isAvailable = doctorAppts.length < 8; // Assume 8 is max per day
 
                       return (
