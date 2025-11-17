@@ -2497,6 +2497,43 @@ export default function AdminDashboard() {
                     </p>
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="hospital_address">Hospital Address</Label>
+                    <Input
+                      id="hospital_address"
+                      value={systemSettings.hospital_address}
+                      onChange={(e) => setSystemSettings({...systemSettings, hospital_address: e.target.value})}
+                      placeholder="e.g., 123 Main Street, Dar es Salaam, Tanzania"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Full address displayed on patient reports and documents
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="hospital_phone">Hospital Phone</Label>
+                    <Input
+                      id="hospital_phone"
+                      value={systemSettings.hospital_phone}
+                      onChange={(e) => setSystemSettings({...systemSettings, hospital_phone: e.target.value})}
+                      placeholder="e.g., +255 712 345 678"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Contact phone number for patient inquiries
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="hospital_email">Hospital Email</Label>
+                    <Input
+                      id="hospital_email"
+                      type="email"
+                      value={systemSettings.hospital_email}
+                      onChange={(e) => setSystemSettings({...systemSettings, hospital_email: e.target.value})}
+                      placeholder="e.g., info@hasetmedical.com"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Official email address for correspondence
+                    </p>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="report_header">Report Header</Label>
                     <Input
                       id="report_header"

@@ -44,10 +44,33 @@ export default function PatientReports() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [patientHistory, setPatientHistory] = useState<PatientHistory | null>(null);
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
+  const [systemSettings, setSystemSettings] = useState({
+    hospital_name: 'HASET Medical Center',
+    hospital_address: 'Dar es Salaam, Tanzania',
+    hospital_phone: '+255 XXX XXX XXX',
+    hospital_email: 'info@hasetmedical.com'
+  });
 
   useEffect(() => {
     fetchPatients();
+    fetchSystemSettings();
   }, []);
+
+  const fetchSystemSettings = async () => {
+    try {
+      const { data } = await api.get('/settings');
+      const settings = data.settings || {};
+      setSystemSettings({
+        hospital_name: settings.hospital_name || 'HASET Medical Center',
+        hospital_address: settings.hospital_address || 'Dar es Salaam, Tanzania',
+        hospital_phone: settings.hospital_phone || '+255 XXX XXX XXX',
+        hospital_email: settings.hospital_email || 'info@hasetmedical.com'
+      });
+    } catch (error) {
+      console.error('Error fetching settings:', error);
+      // Keep default values
+    }
+  };
 
   useEffect(() => {
     if (patientHistory) {
@@ -630,7 +653,9 @@ export default function PatientReports() {
                 
                 {/* Hospital Info */}
                 <div style={{ flex: 1, textAlign: 'center', paddingLeft: '20px' }}>
-                  <h1 style={{ margin: '0 0 8px 0', fontSize: '32px', color: '#1e40af', fontWeight: 'bold', letterSpacing: '1.5px' }}>HASET MEDICAL CENTER</h1>
+                  <h1 style={{ margin: '0 0 8px 0', fontSize: '32px', color: '#1e40af', fontWeight: 'bold', letterSpacing: '1.5px' }}>
+                    {systemSettings.hospital_name.toUpperCase()}
+                  </h1>
                   <p style={{ margin: '0', fontSize: '13px', color: '#6b7280', lineHeight: '1.5' }}>
                     Excellence in Healthcare | Comprehensive Medical Services
                   </p>
@@ -919,10 +944,10 @@ export default function PatientReports() {
             <div style={{ marginTop: '50px', paddingTop: '25px', borderTop: '2px solid #cbd5e1' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', fontSize: '11px', color: '#64748b' }}>
                 <div style={{ flex: 1 }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#475569' }}>HASET Medical Center</p>
-                  <p style={{ margin: '0 0 2px 0' }}>📍 Dar es Salaam, Tanzania</p>
-                  <p style={{ margin: '0 0 2px 0' }}>📞 +255 XXX XXX XXX</p>
-                  <p style={{ margin: '0' }}>✉️ info@hasetmedical.com</p>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#475569' }}>{systemSettings.hospital_name}</p>
+                  <p style={{ margin: '0 0 2px 0' }}>📍 {systemSettings.hospital_address}</p>
+                  <p style={{ margin: '0 0 2px 0' }}>📞 {systemSettings.hospital_phone}</p>
+                  <p style={{ margin: '0' }}>✉️ {systemSettings.hospital_email}</p>
                 </div>
                 <div style={{ flex: 1, textAlign: 'right' }}>
                   <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#475569' }}>Report Information</p>
