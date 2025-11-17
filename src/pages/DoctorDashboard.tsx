@@ -298,10 +298,11 @@ export default function DoctorDashboard() {
     }
   };
 
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  
   const handleViewDetails = (appointment: any) => {
     setSelectedAppointment(appointment);
-    // You can add more logic here to show a modal or navigate to a details page
-    console.log('Viewing details for appointment:', appointment.id);
+    setShowDetailsDialog(true);
   };
 
   const handleAppointmentAction = (appointment: any) => {
@@ -3054,6 +3055,65 @@ export default function DoctorDashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* View Appointment Details Dialog */}
+      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Appointment Details</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-muted-foreground">Patient</Label>
+                <p className="font-medium">{selectedAppointment?.patient?.full_name || 'Unknown'}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Status</Label>
+                <p><Badge variant={getAppointmentBadgeVariant(selectedAppointment?.status)}>{selectedAppointment?.status}</Badge></p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Date & Time</Label>
+                <p className="font-medium">
+                  {selectedAppointment?.appointment_date && format(new Date(selectedAppointment.appointment_date), 'PPP p')}
+                </p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Doctor</Label>
+                <p className="font-medium">{selectedAppointment?.doctor?.full_name || 'Not assigned'}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Department</Label>
+                <p className="font-medium">{selectedAppointment?.department?.name || 'N/A'}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground">Type</Label>
+                <p className="font-medium">{selectedAppointment?.type || 'Consultation'}</p>
+              </div>
+            </div>
+            
+            {selectedAppointment?.reason && (
+              <div>
+                <Label className="text-muted-foreground">Reason for Visit</Label>
+                <p className="mt-1">{selectedAppointment.reason}</p>
+              </div>
+            )}
+            
+            {selectedAppointment?.notes && (
+              <div>
+                <Label className="text-muted-foreground">Notes</Label>
+                <p className="mt-1 p-3 bg-muted rounded-lg">{selectedAppointment.notes}</p>
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => setShowDetailsDialog(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Complete Appointment Dialog */}
       <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
         <DialogContent className="max-w-2xl">
@@ -3078,12 +3138,62 @@ export default function DoctorDashboard() {
                 value={completionNotes}
                 onChange={(e) => setCompletionNotes(e.target.value)}
                 placeholder="Enter diagnosis, treatment plan, prescriptions given, follow-up instructions, etc."
-                rows={8}
+                rows={6}
                 className="resize-none"
               />
               <p className="text-xs text-muted-foreground">
                 Minimum 10 characters required
               </p>
+            </div>
+
+            <div className="space-y-3">
+              <Label>What happens next?</Label>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="discharge"
+                    name="nextAction"
+                    value="discharge"
+                    checked={nextAction === 'discharge'}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'lab' | 'pharmacy')}
+                  />
+                  <Label htmlFor="discharge" className="cursor-pointer">
+                    <span className="font-medium text-green-700">Discharge Patient</span>
+                    <span className="block text-xs text-muted-foreground">Patient can go home - no further treatment needed</span>
+                  </Label>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="lab"
+                    name="nextAction"
+                    value="lab"
+                    checked={nextAction === 'lab'}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'lab' | 'pharmacy')}
+                  />
+                  <Label htmlFor="lab" className="cursor-pointer">
+                    <span className="font-medium text-blue-700">Send to Lab</span>
+                    <span className="block text-xs text-muted-foreground">Patient needs lab tests</span>
+                  </Label>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="pharmacy"
+                    name="nextAction"
+                    value="pharmacy"
+                    checked={nextAction === 'pharmacy'}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'lab' | 'pharmacy')}
+                  />
+                  <Label htmlFor="pharmacy" className="cursor-pointer">
+                    <span className="font-medium text-purple-700">Send to Pharmacy</span>
+                    <span className="block text-xs text-muted-foreground">Patient needs medications</span>
+                  </Label>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end gap-2 pt-4">
@@ -3093,6 +3203,7 @@ export default function DoctorDashboard() {
                   setShowCompleteDialog(false);
                   setAppointmentToComplete(null);
                   setCompletionNotes('');
+                  setNextAction('discharge');
                 }}
               >
                 Cancel
