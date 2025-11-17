@@ -57,6 +57,7 @@ export default function DoctorDashboard() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [pendingVisits, setPendingVisits] = useState<any[]>([]);
+  const [completedVisits, setCompletedVisits] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalAppointments: 0, todayAppointments: 0, totalPatients: 0, pendingConsultations: 0 });
   const [loading, setLoading] = useState(true);
   const [showLabResults, setShowLabResults] = useState(false);
@@ -1603,6 +1604,17 @@ export default function DoctorDashboard() {
       setPendingVisits(activeVisits);
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
+      
+      // Fetch completed visits for "Today's Patients" section
+      try {
+        const completedResponse = await api.get(`/visits?doctor_status=Completed&limit=50`);
+        if (completedResponse.status === 200) {
+          setCompletedVisits(completedResponse.data.visits || []);
+        }
+      } catch (error) {
+        console.error('Error fetching completed visits:', error);
+        setCompletedVisits([]);
+      }
       // Calculate unique patients from visits and appointments
       const uniquePatientIds = new Set([
         ...activeVisits.map(v => v.patient_id),
@@ -2469,7 +2481,7 @@ export default function DoctorDashboard() {
               </TabsList>
               
               <TabsContent value="today" className="space-y-4">
-                {pendingVisits.filter(visit => 
+                {completedVisits.filter(visit => 
                   isToday(new Date(visit.created_at))
                 ).length > 0 ? (
                   <Table>
@@ -2482,7 +2494,7 @@ export default function DoctorDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingVisits
+                      {completedVisits
                         .filter(visit => 
                           isToday(new Date(visit.created_at))
                         )
@@ -2527,7 +2539,7 @@ export default function DoctorDashboard() {
               </TabsContent>
               
               <TabsContent value="yesterday" className="space-y-4">
-                {pendingVisits.filter(visit => {
+                {completedVisits.filter(visit => {
                   const yesterday = new Date();
                   yesterday.setDate(yesterday.getDate() - 1);
                   return (
@@ -2544,7 +2556,7 @@ export default function DoctorDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingVisits
+                      {completedVisits
                         .filter(visit => {
                           const yesterday = new Date();
                           yesterday.setDate(yesterday.getDate() - 1);
@@ -2586,7 +2598,7 @@ export default function DoctorDashboard() {
               </TabsContent>
               
               <TabsContent value="week" className="space-y-4">
-                {pendingVisits.filter(visit => {
+                {completedVisits.filter(visit => {
                   const weekAgo = new Date();
                   weekAgo.setDate(weekAgo.getDate() - 7);
                   return new Date(visit.created_at) > weekAgo;
@@ -2601,7 +2613,7 @@ export default function DoctorDashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pendingVisits
+                      {completedVisits
                         .filter(visit => {
                           const weekAgo = new Date();
                           weekAgo.setDate(weekAgo.getDate() - 7);
