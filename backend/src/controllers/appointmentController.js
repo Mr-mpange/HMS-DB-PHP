@@ -47,9 +47,21 @@ exports.getAllAppointments = async (req, res) => {
     const [appointments] = await db.execute(query, params);
     
     // Format the response to include both full datetime and separate date/time
+    // Also create patient and doctor objects for frontend compatibility
     const formattedAppointments = appointments.map(appt => ({
       ...appt,
-      appointment_date: appt.appointment_date_only || appt.appointment_date
+      appointment_date: appt.appointment_date_only || appt.appointment_date,
+      patient: {
+        full_name: appt.patient_name,
+        phone: appt.patient_phone
+      },
+      doctor: {
+        full_name: appt.doctor_name
+      },
+      department: {
+        id: appt.department_id,
+        name: appt.department_name
+      }
     }));
     
     res.json({ appointments: formattedAppointments });
