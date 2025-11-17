@@ -4,7 +4,18 @@ const db = require('../config/database');
 // Get all visits
 exports.getAllVisits = async (req, res) => {
   try {
-    const { patient_id, doctor_id, status, current_stage, from, to, limit = 100, offset = 0 } = req.query;
+    const { 
+      patient_id, 
+      doctor_id, 
+      status, 
+      overall_status,
+      current_stage, 
+      doctor_status_neq,
+      from, 
+      to, 
+      limit = 100, 
+      offset = 0 
+    } = req.query;
     
     let query = `
       SELECT v.*, 
@@ -26,14 +37,26 @@ exports.getAllVisits = async (req, res) => {
       params.push(doctor_id);
     }
     
+    // Support both 'status' and 'overall_status' for backward compatibility
     if (status) {
       query += ' AND v.overall_status = ?';
       params.push(status);
     }
     
+    if (overall_status) {
+      query += ' AND v.overall_status = ?';
+      params.push(overall_status);
+    }
+    
     if (current_stage) {
       query += ' AND v.current_stage = ?';
       params.push(current_stage);
+    }
+    
+    // Support for NOT EQUAL queries (e.g., doctor_status_neq=Completed)
+    if (doctor_status_neq) {
+      query += ' AND (v.doctor_status IS NULL OR v.doctor_status != ?)';
+      params.push(doctor_status_neq);
     }
     
     // Date range filtering
