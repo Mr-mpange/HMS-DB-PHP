@@ -1215,7 +1215,8 @@ export default function ReceptionistDashboard() {
                     const d = new Date(apt.appointment_date);
                     aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                   }
-                  return aptDate === today && apt.status === 'Scheduled';
+                  // Show all appointments for today (Scheduled, Completed, etc.)
+                  return aptDate === today;
                 });
                 
                 // Group by doctor
