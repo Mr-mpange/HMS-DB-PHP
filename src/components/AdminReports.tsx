@@ -118,7 +118,7 @@ export default function AdminReports() {
         api.get(`/visits?from=${startStr}&to=${endStr}`),
         api.get(`/prescriptions?from=${startStr}&to=${endStr}`),
         api.get(`/lab-tests?from=${startStr}&to=${endStr}`),
-        api.get(`/invoices?limit=1000`)
+        api.get(`/billing/invoices?from=${startStr}&to=${endStr}&limit=1000`)
       ]);
 
       const patientsData = patientsRes.status === 'fulfilled' ? (patientsRes.value.data.patients || []) : [];
@@ -126,21 +126,25 @@ export default function AdminReports() {
       const visitsData = visitsRes.status === 'fulfilled' ? (visitsRes.value.data.visits || []) : [];
       const prescriptionsData = prescriptionsRes.status === 'fulfilled' ? (prescriptionsRes.value.data.prescriptions || []) : [];
       const labTestsData = labTestsRes.status === 'fulfilled' ? (labTestsRes.value.data.tests || []) : [];
-      const allInvoices = invoicesRes.status === 'fulfilled' ? (invoicesRes.value.data.invoices || []) : [];
+      const invoicesData = invoicesRes.status === 'fulfilled' ? (invoicesRes.value.data.invoices || []) : [];
 
+      console.log('Prescriptions Data:', prescriptionsData);
       console.log('Lab Tests Data:', labTestsData);
-      console.log('All Invoices:', allInvoices);
+      console.log('Invoices Data:', invoicesData);
 
-      // Filter invoices by date range
-      const invoicesData = dateFilter === 'all' ? allInvoices : allInvoices.filter((invoice: any) => {
-        const invoiceDate = new Date(invoice.invoice_date || invoice.created_at);
-        return invoiceDate >= start && invoiceDate <= end;
-      });
-
-      console.log('Filtered Invoices:', invoicesData);
-
-      // Calculate total revenue
+      // Calculate total revenue from invoices
       const totalRevenue = invoicesData.reduce((sum: number, inv: any) => sum + (Number(inv.total_amount) || 0), 0);
+      
+      // Calculate total invoice amounts (same as revenue but kept separate for clarity)
+      const totalInvoiceAmount = invoicesData.reduce((sum: number, inv: any) => sum + (Number(inv.total_amount) || 0), 0);
+      
+      // Calculate total lab test count (keeping as count since lab tests don't have individual prices in the table)
+      const totalLabTestCount = labTestsData.length;
+
+      console.log('Total Prescriptions:', prescriptionsData.length);
+      console.log('Total Revenue:', totalRevenue);
+      console.log('Total Invoice Amount:', totalInvoiceAmount);
+      console.log('Total Lab Tests:', totalLabTestCount);
 
       setReportData({
         patients: patientsData,
@@ -156,8 +160,8 @@ export default function AdminReports() {
         totalAppointments: appointmentsData.length,
         totalVisits: visitsData.length,
         totalPrescriptions: prescriptionsData.length,
-        totalLabTests: labTestsData.length,
-        totalInvoices: invoicesData.length,
+        totalLabTests: totalLabTestCount,
+        totalInvoices: totalInvoiceAmount,
         totalRevenue: totalRevenue
       });
 
@@ -290,7 +294,7 @@ export default function AdminReports() {
       />
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-7 print:grid-cols-7">
+      <div className="grid gap-4 md:grid-cols-5 print:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Patients</CardTitle>
@@ -329,22 +333,6 @@ export default function AdminReports() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalLabTests}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Invoices</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalInvoices}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Revenue</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">TSh {stats.totalRevenue.toLocaleString()}</div>
           </CardContent>
         </Card>
       </div>
@@ -521,7 +509,7 @@ export default function AdminReports() {
       {settings.includeInvoices && reportData.invoices.length > 0 && (
         <Card className="print:break-inside-avoid">
           <CardHeader>
-            <CardTitle>Billing & Invoices ({stats.totalInvoices})</CardTitle>
+            <CardTitle>Billing & Invoices ({reportData.invoices.length})</CardTitle>
             <CardDescription>Financial transactions for {getFilterLabel().toLowerCase()}</CardDescription>
           </CardHeader>
           <CardContent>

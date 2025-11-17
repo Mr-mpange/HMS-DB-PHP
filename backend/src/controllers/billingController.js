@@ -4,7 +4,7 @@ const db = require('../config/database');
 // Get all invoices
 exports.getAllInvoices = async (req, res) => {
   try {
-    const { patient_id, status, limit = 100, offset = 0 } = req.query;
+    const { patient_id, status, from, to, limit = 100, offset = 0 } = req.query;
     
     let query = `
       SELECT i.*, 
@@ -23,6 +23,17 @@ exports.getAllInvoices = async (req, res) => {
     if (status) {
       query += ' AND i.status = ?';
       params.push(status);
+    }
+    
+    // Add date filtering
+    if (from) {
+      query += ' AND i.invoice_date >= ?';
+      params.push(from);
+    }
+    
+    if (to) {
+      query += ' AND i.invoice_date <= ?';
+      params.push(to);
     }
     
     query += ' ORDER BY i.invoice_date DESC LIMIT ? OFFSET ?';

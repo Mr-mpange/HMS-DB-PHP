@@ -6,16 +6,31 @@ const db = require('../config/database');
 // Get activity logs (admin only)
 router.get('/', authenticate, requireRole(['admin']), async (req, res) => {
   try {
-    const { limit = 100, offset = 0 } = req.query;
+    const { limit = 100, offset = 0, from, to } = req.query;
     
-    const [logs] = await db.execute(
-      `SELECT al.*, u.email, u.full_name 
-       FROM activity_logs al
-       LEFT JOIN users u ON al.user_id = u.id
-       ORDER BY al.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [parseInt(limit), parseInt(offset)]
-    );
+    let query = `
+      SELECT al.*, u.email, u.full_name 
+      FROM activity_logs al
+      LEFT JOIN users u ON al.user_id = u.id
+      WHERE 1=1
+    `;
+    let params = [];
+    
+    // Add date filtering
+    if (from) {
+      query += ' AND al.created_at >= ?';
+      params.push(from);
+    }
+    
+    if (to) {
+      query += ' AND al.created_at <= ?';
+      params.push(to);
+    }
+    
+    query += ' ORDER BY al.created_at DESC LIMIT ? OFFSET ?';
+    params.push(parseInt(limit), parseInt(offset));
+    
+    const [logs] = await db.execute(query, params);
     
     res.json({ logs });
   } catch (error) {

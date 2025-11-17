@@ -49,7 +49,7 @@ exports.getPrescription = async (req, res) => {
 
 exports.getAllPrescriptions = async (req, res) => {
   try {
-    const { patient_id, doctor_id, status, limit = 100, offset = 0 } = req.query;
+    const { patient_id, doctor_id, status, from, to, limit = 100, offset = 0 } = req.query;
     
     let query = `
       SELECT pr.*, 
@@ -75,6 +75,17 @@ exports.getAllPrescriptions = async (req, res) => {
     if (status) {
       query += ' AND pr.status = ?';
       params.push(status);
+    }
+    
+    // Add date filtering
+    if (from) {
+      query += ' AND pr.prescription_date >= ?';
+      params.push(from);
+    }
+    
+    if (to) {
+      query += ' AND pr.prescription_date <= ?';
+      params.push(to);
     }
     
     query += ' ORDER BY pr.prescription_date DESC LIMIT ? OFFSET ?';

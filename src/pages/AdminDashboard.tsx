@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, useMemo, useCallback } from 'react';
-import { format, parseISO, isSameDay, formatDistanceToNow } from 'date-fns';
+import { format, parseISO, isSameDay, formatDistanceToNow, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { cn } from "@/lib/utils";
 import 'highlight.js/styles/github.css'; // For JSON syntax highlighting
 import { 
@@ -676,21 +676,46 @@ const BillingAnalysis = () => {
 
   const fetchBillingData = async () => {
     try {
-      // Billing data from MySQL API
-      const { data } = await api.get('/billing/invoices');
-      const invoices = data.invoices || [];
-      const allInvoices = invoices;
+      // Calculate date range based on filter
+      const now = new Date();
+      let startDate, endDate;
+      
+      switch (timeFilter) {
+        case 'day':
+          startDate = startOfDay(now);
+          endDate = endOfDay(now);
+          break;
+        case 'week':
+          startDate = startOfWeek(now);
+          endDate = endOfWeek(now);
+          break;
+        case 'month':
+          startDate = startOfMonth(now);
+          endDate = endOfMonth(now);
+          break;
+      }
 
-      if (allInvoices) {
-        const totalRevenue = allInvoices
+      // Fetch invoices with date filtering
+      const { data } = await api.get('/billing/invoices', {
+        params: {
+          from: startDate.toISOString(),
+          to: endDate.toISOString(),
+          limit: 1000
+        }
+      });
+      
+      const invoices = data.invoices || [];
+
+      if (invoices.length > 0) {
+        const totalRevenue = invoices
           .filter(inv => inv.status === 'Paid')
           .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
 
-        const unpaidAmount = allInvoices
+        const unpaidAmount = invoices
           .filter(inv => inv.status !== 'Paid')
           .reduce((sum, inv) => sum + (Number(inv.total_amount) - Number(inv.paid_amount || 0)), 0);
 
-        const paidInPeriod = allInvoices
+        const paidInPeriod = invoices
           .filter(inv => inv.status === 'Paid')
           .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
 
@@ -698,9 +723,18 @@ const BillingAnalysis = () => {
           totalRevenue,
           unpaidAmount,
           paidToday: paidInPeriod,
-          invoiceCount: allInvoices.length,
-          paidCount: allInvoices.filter(inv => inv.status === 'Paid').length,
-          unpaidCount: allInvoices.filter(inv => inv.status === 'Unpaid').length
+          invoiceCount: invoices.length,
+          paidCount: invoices.filter(inv => inv.status === 'Paid').length,
+          unpaidCount: invoices.filter(inv => inv.status === 'Unpaid' || inv.status === 'Pending').length
+        });
+      } else {
+        setBillingStats({
+          totalRevenue: 0,
+          unpaidAmount: 0,
+          paidToday: 0,
+          invoiceCount: 0,
+          paidCount: 0,
+          unpaidCount: 0
         });
       }
 
