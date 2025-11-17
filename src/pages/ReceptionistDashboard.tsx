@@ -685,63 +685,113 @@ export default function ReceptionistDashboard() {
     return () => clearTimeout(timeoutId);
   }, [returningPatientSearch, showReturningPatientDialog]);
 
-  const createVisitForReturningPatient = async (patient: any) => {
-    try {
-      setLoading(true);
-      console.log('Creating visit for returning patient:', patient);
+  const [selectedReturningPatient, setSelectedReturningPatient] = useState<any>(null);
+  const [showReturningPatientPaymentDialog, setShowReturningPatientPaymentDialog] = useState(false);
 
-      // Check if patient already has an active visit
-      const visitsRes = await api.get(`/visits?patient_id=${patient.id}&overall_status=Active&limit=1`);
+  const initiateReturningPatientVisit = async (patient: any) => {
+    try {
+      // Check if patient already has an active visit TODAY
+      const today = new Date().toISOString().split('T')[0];
+      const visitsRes = await api.get(`/visits?patient_id=${patient.id}&status=Active&from=${today}&to=${today}&limit=1`);
       if (visitsRes.status !== 200 || visitsRes.data.error) {
-        const checkError = new Error(visitsRes.data.error || 'Failed to check existing visits');
-        console.error('Error checking existing visits:', checkError);
-        throw checkError;
+        throw new Error(visitsRes.data.error || 'Failed to check existing visits');
       }
 
       const existingVisits = visitsRes.data.visits || [];
       if (existingVisits && existingVisits.length > 0) {
-        console.log('Patient already has active visit:', existingVisits[0]);
-        toast.error('This patient already has an active visit. Please complete the current visit first.');
-        setLoading(false);
+        toast.error('This patient already has an active visit today. Please complete the current visit first.');
         return;
       }
 
-      // Create new visit with all required fields (matching the registration flow)
-      const visitData = {
-        patient_id: patient.id,
-        visit_date: new Date().toISOString().split('T')[0],
-        reception_status: 'Checked In',
-        reception_completed_at: new Date().toISOString(),
-        current_stage: 'nurse',
-        nurse_status: 'Pending',
-        overall_status: 'Active'
-      };
-
-      console.log('Creating visit with data:', visitData);
-
-      const visitRes = await api.post('/visits', visitData);
-      if (visitRes.status !== 200 || visitRes.data.error) {
-        const visitError = new Error(visitRes.data.error || 'Failed to create visit');
-        console.error('Error creating visit:', visitError);
-        throw visitError;
+      // Check if patient already paid today
+      const paymentsRes = await api.get(`/payments?patient_id=${patient.id}&date=${today}`);
+      const todayPayments = paymentsRes.data.payments || [];
+      
+      if (todayPayments.length > 0) {
+        // Patient already paid today - skip payment
+        const confirmSkip = window.confirm(
+          `${patient.full_name} already paid TSh ${todayPayments[0].amount} today. Skip payment and create visit directly?`
+        );
+        
+        if (confirmSkip) {
+          await createVisitForReturningPatient(patient);
+          return;
+        }
       }
 
-      const newVisit = visitRes.data.visit;
-      console.log('Visit created successfully:', newVisit);
-      toast.success(`New visit created for ${patient.full_name}. Patient sent to Nurse.`);
+      // Show payment dialog
+      setSelectedReturningPatient(patient);
+      setPaymentForm({
+        amount_paid: consultationFee.toString(),
+        payment_method: 'Cash'
+      });
       setShowReturningPatientDialog(false);
+      setShowReturningPatientPaymentDialog(true);
+    } catch (error: any) {
+      console.error('Error initiating returning patient visit:', error);
+      toast.error(error.message || 'Failed to initiate visit');
+    }
+  };
+
+  const completeReturningPatientVisit = async () => {
+    if (!selectedReturningPatient) return;
+
+    const amountPaid = Number(paymentForm.amount_paid);
+    if (isNaN(amountPaid) || amountPaid < consultationFee) {
+      toast.error(`Payment must be at least TSh ${consultationFee.toLocaleString()}`);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // Create payment record
+      const paymentData = {
+        patient_id: selectedReturningPatient.id,
+        amount: amountPaid,
+        payment_method: paymentForm.payment_method,
+        payment_type: 'Consultation Fee',
+        status: 'Completed',
+        payment_date: new Date().toISOString()
+      };
+      
+      await api.post('/payments', paymentData);
+
+      // Create visit
+      await createVisitForReturningPatient(selectedReturningPatient);
+
+      toast.success(`Payment received. ${selectedReturningPatient.full_name} sent to Nurse.`);
+      setShowReturningPatientPaymentDialog(false);
+      setSelectedReturningPatient(null);
       setReturningPatientSearch('');
       setReturningPatientResults([]);
-      
-      // Refresh data
-      fetchData(false);
     } catch (error: any) {
-      console.error('Error creating visit for returning patient:', error);
-      const errorMessage = error?.message || 'Unknown error';
-      toast.error(`Failed to create visit: ${errorMessage}`);
+      console.error('Error completing returning patient visit:', error);
+      toast.error(error.message || 'Failed to complete visit');
     } finally {
       setLoading(false);
     }
+  };
+
+  const createVisitForReturningPatient = async (patient: any) => {
+    // Create new visit with all required fields
+    const visitData = {
+      patient_id: patient.id,
+      visit_date: new Date().toISOString().split('T')[0],
+      reception_status: 'Checked In',
+      reception_completed_at: new Date().toISOString(),
+      current_stage: 'nurse',
+      nurse_status: 'Pending',
+      overall_status: 'Active'
+    };
+
+    const visitRes = await api.post('/visits', visitData);
+    if (visitRes.status !== 200 || visitRes.data.error) {
+      throw new Error(visitRes.data.error || 'Failed to create visit');
+    }
+
+    // Refresh data
+    fetchData(false);
   };
 
   const searchPatients = async (query: string) => {
@@ -783,7 +833,7 @@ export default function ReceptionistDashboard() {
   const submitPatientRegistration = async () => {
     // Validate required fields
     if (!registerForm.full_name || !registerForm.date_of_birth ||
-        !registerForm.gender || !registerForm.phone) {
+        !registerForm.gender || !registerForm.phone || !registerForm.address) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -1246,8 +1296,8 @@ export default function ReceptionistDashboard() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="address">Address</Label>
-              <Input id="address" value={registerForm.address} onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })} placeholder="Street, City" />
+              <Label htmlFor="address">Address *</Label>
+              <Input id="address" required value={registerForm.address} onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })} placeholder="Street, City" />
             </div>
             
             {/* Option to book with appointment */}
@@ -1739,6 +1789,83 @@ export default function ReceptionistDashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* Returning Patient Payment Dialog */}
+      <Dialog open={showReturningPatientPaymentDialog} onOpenChange={setShowReturningPatientPaymentDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Collect Consultation Fee</DialogTitle>
+            <DialogDescription>
+              Returning Patient: {selectedReturningPatient?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex justify-between items-center">
+                <span className="font-medium">Consultation Fee:</span>
+                <span className="text-2xl font-bold text-blue-600">TSh {consultationFee.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ret_payment_method">Payment Method</Label>
+              <select
+                id="ret_payment_method"
+                className="w-full p-2 border rounded-md"
+                value={paymentForm.payment_method}
+                onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+              >
+                <option value="Cash">Cash</option>
+                <option value="Mobile Money">Mobile Money</option>
+                <option value="Card">Card</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ret_amount_paid">Amount Paid</Label>
+              <Input
+                id="ret_amount_paid"
+                type="number"
+                value={paymentForm.amount_paid}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount_paid: e.target.value })}
+                placeholder="Enter amount"
+              />
+            </div>
+
+            {Number(paymentForm.amount_paid) > consultationFee && (
+              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-green-800">Change to Return:</span>
+                  <span className="text-xl font-bold text-green-600">
+                    TSh {(Number(paymentForm.amount_paid) - consultationFee).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {Number(paymentForm.amount_paid) < consultationFee && paymentForm.amount_paid !== '' && (
+              <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                <span className="text-sm text-red-600">Insufficient payment amount</span>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={() => {
+                setShowReturningPatientPaymentDialog(false);
+                setShowReturningPatientDialog(true);
+              }}>
+                Back
+              </Button>
+              <Button 
+                onClick={completeReturningPatientVisit}
+                disabled={Number(paymentForm.amount_paid) < consultationFee}
+              >
+                Confirm Payment & Create Visit
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Returning Patient Dialog */}
       <Dialog open={showReturningPatientDialog} onOpenChange={setShowReturningPatientDialog}>
         <DialogContent className="max-w-2xl">
@@ -1789,7 +1916,7 @@ export default function ReceptionistDashboard() {
                           </div>
                         </div>
                         <Button
-                          onClick={() => createVisitForReturningPatient(patient)}
+                          onClick={() => initiateReturningPatientVisit(patient)}
                           disabled={loading}
                         >
                           {loading ? (
