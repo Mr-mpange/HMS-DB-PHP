@@ -498,8 +498,32 @@ export default function AdminReports() {
             width: 100%;
           }
           
+          /* Remove height from hidden elements to prevent extra pages */
+          .space-y-8 > *:not(.hidden) {
+            height: 0 !important;
+            overflow: hidden !important;
+          }
+          
+          /* Prevent page breaks */
+          .hidden.print\\:block {
+            page-break-after: avoid !important;
+          }
+          
           @page {
             margin: 1cm;
+            /* Remove browser default headers and footers */
+            size: auto;
+          }
+          
+          /* Hide browser print headers/footers */
+          @page {
+            margin-top: 0;
+            margin-bottom: 0;
+          }
+          
+          /* Ensure body doesn't create extra pages */
+          body {
+            height: auto !important;
           }
         }
       `}</style>
