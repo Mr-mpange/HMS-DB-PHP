@@ -169,11 +169,44 @@ exports.updateAppointment = async (req, res) => {
       appointmentDateTime = `${appointment_date} ${appointment_time}`;
     }
     
+    // Build dynamic update query based on provided fields
+    const updates = [];
+    const values = [];
+    
+    if (appointmentDateTime || appointment_date) {
+      updates.push('appointment_date = ?');
+      values.push(appointmentDateTime || appointment_date);
+    }
+    
+    if (appointment_type !== undefined) {
+      updates.push('type = ?');
+      values.push(appointment_type);
+    }
+    
+    if (reason !== undefined) {
+      updates.push('reason = ?');
+      values.push(reason);
+    }
+    
+    if (notes !== undefined) {
+      updates.push('notes = ?');
+      values.push(notes);
+    }
+    
+    if (status !== undefined) {
+      updates.push('status = ?');
+      values.push(status);
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+    
+    values.push(req.params.id);
+    
     await db.execute(
-      `UPDATE appointments 
-       SET appointment_date = ?, type = ?, reason = ?, notes = ?, status = ?
-       WHERE id = ?`,
-      [appointmentDateTime || appointment_date, appointment_type, reason, notes, status, req.params.id]
+      `UPDATE appointments SET ${updates.join(', ')} WHERE id = ?`,
+      values
     );
     
     // Log activity

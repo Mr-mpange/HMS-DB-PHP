@@ -4,7 +4,7 @@ const db = require('../config/database');
 // Get all visits
 exports.getAllVisits = async (req, res) => {
   try {
-    const { patient_id, status, current_stage, from, to, limit = 100, offset = 0 } = req.query;
+    const { patient_id, doctor_id, status, current_stage, from, to, limit = 100, offset = 0 } = req.query;
     
     let query = `
       SELECT v.*, 
@@ -19,6 +19,11 @@ exports.getAllVisits = async (req, res) => {
     if (patient_id) {
       query += ' AND v.patient_id = ?';
       params.push(patient_id);
+    }
+    
+    if (doctor_id) {
+      query += ' AND v.doctor_id = ?';
+      params.push(doctor_id);
     }
     
     if (status) {

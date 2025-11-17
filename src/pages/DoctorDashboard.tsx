@@ -358,40 +358,55 @@ export default function DoctorDashboard() {
   };
 
   const getAppointmentStatusBadge = (appointment: any) => {
-    const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
-    const now = new Date();
-    
-    if (appointment.status === 'Completed') return null;
-    
-    if (isBefore(now, apptTime)) {
-      const minsToAppt = Math.ceil((apptTime.getTime() - now.getTime()) / (1000 * 60));
-      if (minsToAppt <= 30) {
+    if (!appointment.appointment_date || !appointment.appointment_time) {
+      return null;
+    }
+
+    try {
+      const apptTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+      
+      // Check if date is valid
+      if (isNaN(apptTime.getTime())) {
+        return null;
+      }
+
+      const now = new Date();
+      
+      if (appointment.status === 'Completed') return null;
+      
+      if (isBefore(now, apptTime)) {
+        const minsToAppt = Math.ceil((apptTime.getTime() - now.getTime()) / (1000 * 60));
+        if (minsToAppt <= 30) {
+          return (
+            <span className="text-xs text-amber-600">
+              Starts in {minsToAppt} min
+            </span>
+          );
+        }
         return (
-          <span className="text-xs text-amber-600">
-            Starts in {minsToAppt} min
+          <span className="text-xs text-muted-foreground">
+            {format(apptTime, 'h:mm a')}
           </span>
         );
       }
+      
+      if (isBefore(now, addMinutes(apptTime, 30))) {
+        return (
+          <span className="text-xs font-medium text-green-600">
+            In progress
+          </span>
+        );
+      }
+      
       return (
         <span className="text-xs text-muted-foreground">
           {format(apptTime, 'h:mm a')}
         </span>
       );
+    } catch (error) {
+      console.error('Error formatting appointment time:', error, appointment);
+      return null;
     }
-    
-    if (isBefore(now, addMinutes(apptTime, 30))) {
-      return (
-        <span className="text-xs font-medium text-green-600">
-          In progress
-        </span>
-      );
-    }
-    
-    return (
-      <span className="text-xs text-muted-foreground">
-        {format(apptTime, 'h:mm a')}
-      </span>
-    );
   };
 
   // Update current time every minute
@@ -401,16 +416,26 @@ export default function DoctorDashboard() {
       
       // Check if any appointment time has been reached
       appointments.forEach(appointment => {
-        const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
-        const appointmentEndTime = addMinutes(appointmentDateTime, 30); // Assuming 30 min appointments
+        if (!appointment.appointment_date || !appointment.appointment_time) return;
         
-        // If current time is within the appointment window and status is not 'Completed' or 'Confirmed'
-        if (
-          isAfter(currentTime, appointmentDateTime) && 
-          isBefore(currentTime, appointmentEndTime) &&
-          !['Completed', 'Confirmed'].includes(appointment.status)
-        ) {
-          // We'll use the full updateAppointmentStatus function instead of the incomplete one
+        try {
+          const appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+          
+          // Check if date is valid
+          if (isNaN(appointmentDateTime.getTime())) return;
+          
+          const appointmentEndTime = addMinutes(appointmentDateTime, 30); // Assuming 30 min appointments
+          
+          // If current time is within the appointment window and status is not 'Completed' or 'Confirmed'
+          if (
+            isAfter(currentTime, appointmentDateTime) && 
+            isBefore(currentTime, appointmentEndTime) &&
+            !['Completed', 'Confirmed'].includes(appointment.status)
+          ) {
+            // We'll use the full updateAppointmentStatus function instead of the incomplete one
+          }
+        } catch (error) {
+          console.error('Error processing appointment time:', error, appointment);
         }
       });
     }, 60000); // Check every minute
@@ -1323,12 +1348,12 @@ export default function DoctorDashboard() {
     setLoading(true);
 
     try {
-      // Fetch visits waiting for doctor (including those from lab workflow)
+      // Fetch visits waiting for THIS doctor (including those from lab workflow)
       // Only show patients who are actually at doctor stage and haven't been completed
       // This includes:
       // 1. New patients (doctor_status = 'Pending' or 'In Consultation')
       // 2. Patients returning from lab ONLY if consultation is NOT complete
-      const visitsResponse = await api.get(`/visits?current_stage=doctor&overall_status=Active&doctor_status_neq=Completed`);
+      const visitsResponse = await api.get(`/visits?doctor_id=${user.id}&current_stage=doctor&overall_status=Active&doctor_status_neq=Completed`);
       
       if (visitsResponse.status !== 200) {
         console.error('Error fetching visits:', visitsResponse.statusText);
@@ -2175,7 +2200,18 @@ export default function DoctorDashboard() {
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col">
-                                <span>{format(new Date(`${appointment.appointment_date}T${appointment.appointment_time}`), 'h:mm a')}</span>
+                                <span>
+                                  {appointment.appointment_time 
+                                    ? (() => {
+                                        try {
+                                          return format(new Date(`${appointment.appointment_date}T${appointment.appointment_time}`), 'h:mm a');
+                                        } catch {
+                                          return appointment.appointment_time;
+                                        }
+                                      })()
+                                    : 'N/A'
+                                  }
+                                </span>
                                 {getAppointmentStatusBadge(appointment)}
                               </div>
                             </TableCell>
@@ -2235,7 +2271,18 @@ export default function DoctorDashboard() {
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col">
-                                <span>{format(new Date(`${appointment.appointment_date}T${appointment.appointment_time}`), 'MMM d, h:mm a')}</span>
+                                <span>
+                                  {appointment.appointment_time 
+                                    ? (() => {
+                                        try {
+                                          return format(new Date(`${appointment.appointment_date}T${appointment.appointment_time}`), 'MMM d, h:mm a');
+                                        } catch {
+                                          return `${appointment.appointment_date} ${appointment.appointment_time}`;
+                                        }
+                                      })()
+                                    : 'N/A'
+                                  }
+                                </span>
                                 {getAppointmentStatusBadge(appointment)}
                               </div>
                             </TableCell>

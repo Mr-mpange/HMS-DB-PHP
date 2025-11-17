@@ -29,6 +29,7 @@ import {
   Clipboard,
   HeartHandshake,
   Plus,
+  Stethoscope,
 } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
@@ -89,6 +90,11 @@ export default function ReceptionistDashboard() {
   
   const [registerWithAppointment, setRegisterWithAppointment] = useState(false);
   const [appointmentDepartmentId, setAppointmentDepartmentId] = useState<string>('');
+  const [appointmentDoctorId, setAppointmentDoctorId] = useState<string>('');
+  const [appointmentDate, setAppointmentDate] = useState<string>('');
+  const [appointmentTime, setAppointmentTime] = useState<string>('');
+  const [appointmentReason, setAppointmentReason] = useState<string>('');
+  const [departmentDoctors, setDepartmentDoctors] = useState<any[]>([]);
 
   const [appointmentForm, setAppointmentForm] = useState({
     patient_id: '',
@@ -148,6 +154,10 @@ export default function ReceptionistDashboard() {
       const appointmentsRes = await api.get('/appointments?order=appointment_time.asc');
       const appointmentsBasic = appointmentsRes.data.appointments || [];
 
+      // Fetch departments first
+      const departmentsRes = await api.get('/departments?order=name');
+      const departmentsData = departmentsRes.data.departments || [];
+
       // Then get doctor profiles for the appointments
       const doctorIds = [...new Set(appointmentsBasic?.map(apt => apt.doctor_id).filter(Boolean) || [])];
 
@@ -157,10 +167,11 @@ export default function ReceptionistDashboard() {
           const doctorsRes = await api.get(`/users/profiles?ids=${doctorIds.join(',')}`);
           const doctorsData = doctorsRes.data.profiles || [];
 
-          // Merge doctor information into appointments
+          // Merge doctor and department information into appointments
           appointmentsData = (appointmentsBasic || []).map(apt => ({
             ...apt,
-            doctor: doctorsData.find(doc => doc.id === apt.doctor_id) || null
+            doctor: doctorsData.find(doc => doc.id === apt.doctor_id) || null,
+            department: departmentsData.find(dept => dept.id === apt.department_id) || null
           }));
         } catch (error) {
           console.warn('Could not fetch doctor profiles for appointments:', error);
@@ -170,9 +181,6 @@ export default function ReceptionistDashboard() {
 
       const patientsRes = await api.get('/patients?order=created_at.desc&limit=10');
       const patientsData = patientsRes.data.patients || [];
-
-      const departmentsRes = await api.get('/departments?order=name');
-      const departmentsData = departmentsRes.data.departments || [];
 
       // Fetch doctors - get profiles that have doctor role
       let doctorsData = [];
@@ -424,6 +432,39 @@ export default function ReceptionistDashboard() {
     }
   }, [appointmentForm.department_id, doctors]);
 
+  // Fetch doctors for selected department in registration
+  useEffect(() => {
+    const fetchDepartmentDoctors = async () => {
+      if (!appointmentDepartmentId) {
+        setDepartmentDoctors([]);
+        setAppointmentDoctorId('');
+        return;
+      }
+
+      try {
+        const response = await api.get(`/departments/${appointmentDepartmentId}/doctors`);
+        const assignedDoctors = response.data.doctors || [];
+        
+        // Filter only doctors that are assigned to this department
+        const activeDoctors = assignedDoctors.filter((doc: any) => doc.assignment_id);
+        
+        setDepartmentDoctors(activeDoctors);
+        
+        // Auto-select if only one doctor
+        if (activeDoctors.length === 1) {
+          setAppointmentDoctorId(activeDoctors[0].id);
+        } else {
+          setAppointmentDoctorId('');
+        }
+      } catch (error) {
+        console.error('Error fetching department doctors:', error);
+        setDepartmentDoctors([]);
+      }
+    };
+
+    fetchDepartmentDoctors();
+  }, [appointmentDepartmentId]);
+
   // ---------------- FETCH DATA ----------------
   const fetchConsultationFee = async () => {
     try {
@@ -559,6 +600,7 @@ export default function ReceptionistDashboard() {
         const visitData = {
           patient_id: appointment.patient_id,
           appointment_id: appointmentId,
+          doctor_id: appointment.doctor_id, // Link to specific doctor
           visit_date: new Date().toISOString().split('T')[0],
           reception_status: 'Checked In',
           reception_completed_at: new Date().toISOString(),
@@ -630,6 +672,10 @@ export default function ReceptionistDashboard() {
     });
     setRegisterWithAppointment(false);
     setAppointmentDepartmentId('');
+    setAppointmentDoctorId('');
+    setAppointmentDate('');
+    setAppointmentTime('');
+    setAppointmentReason('');
     setShowRegisterDialog(true);
   };
 
@@ -910,23 +956,43 @@ export default function ReceptionistDashboard() {
       // Success - patient created
       toast.success('Patient registered and payment received!');
 
-      // Create patient visit workflow
-      const visitData = {
-        patient_id: patientId,
-        visit_date: new Date().toISOString().split('T')[0],
-        reception_status: 'Checked In',
-        current_stage: 'nurse',
-        overall_status: 'Active'
-      };
-      
-      // Create visit
-      const visitRes = await api.post('/visits', visitData);
-      if (!visitRes.data.error && visitRes.data.visitId) {
-        await api.put(`/visits/${visitRes.data.visitId}`, {
-          nurse_status: 'Pending',
-          reception_completed_at: new Date().toISOString()
-        });
-        toast.success('Patient added to nurse queue!');
+      // If registering with appointment, create appointment instead of immediate visit
+      if (registerWithAppointment && appointmentDepartmentId && appointmentDoctorId && appointmentDate && appointmentTime) {
+        // Create appointment
+        const appointmentData = {
+          patient_id: patientId,
+          doctor_id: appointmentDoctorId,
+          department_id: appointmentDepartmentId,
+          appointment_date: appointmentDate,
+          appointment_time: appointmentTime,
+          appointment_type: 'Consultation',
+          reason: appointmentReason || 'Initial consultation',
+          status: 'Scheduled'
+        };
+        
+        const appointmentRes = await api.post('/appointments', appointmentData);
+        if (!appointmentRes.data.error) {
+          toast.success(`Appointment scheduled for ${appointmentDate} at ${appointmentTime}`);
+        }
+      } else {
+        // Create immediate visit workflow (walk-in patient)
+        const visitData = {
+          patient_id: patientId,
+          visit_date: new Date().toISOString().split('T')[0],
+          reception_status: 'Checked In',
+          current_stage: 'nurse',
+          overall_status: 'Active'
+        };
+        
+        // Create visit
+        const visitRes = await api.post('/visits', visitData);
+        if (!visitRes.data.error && visitRes.data.visitId) {
+          await api.put(`/visits/${visitRes.data.visitId}`, {
+            nurse_status: 'Pending',
+            reception_completed_at: new Date().toISOString()
+          });
+          toast.success('Patient added to nurse queue!');
+        }
       }
 
       // Close payment dialog
@@ -1124,6 +1190,80 @@ export default function ReceptionistDashboard() {
             </CardContent>
           </Card>
 
+          {/* Doctor/Department Queue for Today */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Stethoscope className="h-5 w-5" />
+                Today's Doctor Appointments by Department
+              </CardTitle>
+              <CardDescription>View which doctors have appointments scheduled today</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const today = new Date().toISOString().split('T')[0];
+                const todayAppointments = appointments.filter(apt => apt.appointment_date === today && apt.status === 'Scheduled');
+                
+                console.log('Debug - Today:', today);
+                console.log('Debug - All appointments:', appointments.length);
+                console.log('Debug - Today appointments:', todayAppointments.length);
+                console.log('Debug - Sample appointment:', appointments[0]);
+                
+                // Group by doctor
+                type DoctorGroup = {
+                  doctor: any;
+                  department: any;
+                  appointments: any[];
+                };
+                
+                const byDoctor = todayAppointments.reduce((acc, apt) => {
+                  const doctorId = apt.doctor_id;
+                  if (!acc[doctorId]) {
+                    acc[doctorId] = {
+                      doctor: apt.doctor,
+                      department: apt.department,
+                      appointments: []
+                    };
+                  }
+                  acc[doctorId].appointments.push(apt);
+                  return acc;
+                }, {} as Record<string, DoctorGroup>);
+                
+                const doctorList: DoctorGroup[] = Object.values(byDoctor);
+                
+                return doctorList.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Stethoscope className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                    <p>No appointments scheduled for today</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                    {doctorList.map((item, idx) => (
+                      <div key={idx} className="p-4 border rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <p className="font-semibold text-blue-900">
+                              Dr. {item.doctor?.full_name || 'Unknown'}
+                            </p>
+                            {item.department?.name && (
+                              <p className="text-xs text-blue-600">{item.department.name}</p>
+                            )}
+                          </div>
+                          <Badge className="bg-blue-600">
+                            {item.appointments.length}
+                          </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {item.appointments.length} appointment{item.appointments.length !== 1 ? 's' : ''} today
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
+
           {/* Today's Appointments & Recent Patients */}
           <div className="grid gap-8 lg:grid-cols-2">
             <AppointmentsCard appointments={appointments} onCheckIn={handleInitiateCheckIn} onCancel={handleCancelAppointment} />
@@ -1314,24 +1454,95 @@ export default function ReceptionistDashboard() {
               </div>
               
               {registerWithAppointment && (
-                <div className="space-y-2 ml-6">
-                  <Label htmlFor="reg_department">Select Department *</Label>
-                  <select
-                    id="reg_department"
-                    className="w-full p-2 border rounded-md"
-                    value={appointmentDepartmentId}
-                    onChange={(e) => setAppointmentDepartmentId(e.target.value)}
-                    required={registerWithAppointment}
-                  >
-                    <option value="">Select Department</option>
-                    {departments.map((dept) => (
-                      <option key={dept.id} value={dept.id}>
-                        {dept.name} - TSh {getDepartmentFee(dept.id).toLocaleString()}
+                <div className="space-y-3 ml-6 p-4 border rounded-lg bg-blue-50/50">
+                  <div className="space-y-2">
+                    <Label htmlFor="reg_department">Select Department *</Label>
+                    <select
+                      id="reg_department"
+                      className="w-full p-2 border rounded-md"
+                      value={appointmentDepartmentId}
+                      onChange={(e) => setAppointmentDepartmentId(e.target.value)}
+                      required={registerWithAppointment}
+                      disabled={departments.length === 0}
+                    >
+                      <option value="">
+                        {departments.length === 0 ? 'Loading departments...' : 'Select Department'}
                       </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">
-                    Patient will be charged the department-specific fee instead of the general consultation fee
+                      {departments.map((dept) => (
+                        <option key={dept.id} value={dept.id}>
+                          {dept.name} - TSh {getDepartmentFee(dept.id).toLocaleString()}
+                        </option>
+                      ))}
+                    </select>
+                    {departments.length === 0 && (
+                      <p className="text-xs text-amber-600">No departments available. Please create departments first.</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="reg_doctor">Select Doctor *</Label>
+                    <select
+                      id="reg_doctor"
+                      className="w-full p-2 border rounded-md"
+                      value={appointmentDoctorId}
+                      onChange={(e) => setAppointmentDoctorId(e.target.value)}
+                      required={registerWithAppointment}
+                      disabled={!appointmentDepartmentId || departmentDoctors.length === 0}
+                    >
+                      <option value="">
+                        {!appointmentDepartmentId 
+                          ? 'Select department first' 
+                          : departmentDoctors.length === 0 
+                          ? 'No doctors assigned to this department' 
+                          : 'Select Doctor'}
+                      </option>
+                      {departmentDoctors.map((doc) => (
+                        <option key={doc.id} value={doc.id}>
+                          Dr. {doc.full_name}
+                        </option>
+                      ))}
+                    </select>
+                    {departmentDoctors.length === 1 && appointmentDoctorId && (
+                      <p className="text-xs text-green-600">✓ Auto-selected (only doctor in this department)</p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="reg_appt_date">Appointment Date *</Label>
+                      <Input
+                        type="date"
+                        id="reg_appt_date"
+                        value={appointmentDate}
+                        onChange={(e) => setAppointmentDate(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        required={registerWithAppointment}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reg_appt_time">Time *</Label>
+                      <Input
+                        type="time"
+                        id="reg_appt_time"
+                        value={appointmentTime}
+                        onChange={(e) => setAppointmentTime(e.target.value)}
+                        required={registerWithAppointment}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="reg_appt_reason">Reason for Visit</Label>
+                    <Input
+                      id="reg_appt_reason"
+                      value={appointmentReason}
+                      onChange={(e) => setAppointmentReason(e.target.value)}
+                      placeholder="e.g., Heart checkup, Follow-up"
+                    />
+                  </div>
+
+                  <p className="text-xs text-blue-700 bg-blue-100 p-2 rounded">
+                    <strong>Note:</strong> Patient will be charged TSh {getDepartmentFee(appointmentDepartmentId).toLocaleString()} (department fee) and appointment will be scheduled for {appointmentDate || '[date]'} at {appointmentTime || '[time]'}
                   </p>
                 </div>
               )}
@@ -1341,9 +1552,9 @@ export default function ReceptionistDashboard() {
             <Button variant="outline" onClick={() => setShowRegisterDialog(false)}>Cancel</Button>
             <Button 
               onClick={submitPatientRegistration}
-              disabled={registerWithAppointment && !appointmentDepartmentId}
+              disabled={registerWithAppointment && (!appointmentDepartmentId || !appointmentDoctorId || !appointmentDate || !appointmentTime)}
             >
-              Register Patient
+              {registerWithAppointment ? 'Register & Schedule Appointment' : 'Register Patient'}
             </Button>
           </div>
         </DialogContent>

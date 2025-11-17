@@ -5,7 +5,7 @@ async function runMigration() {
   try {
     console.log('Running migration...');
     
-    const sql = fs.readFileSync('./backend/migrations/make_address_required.sql', 'utf8');
+    const sql = fs.readFileSync('./backend/migrations/add_doctor_to_visits.sql', 'utf8');
     const statements = sql.split(';').filter(s => s.trim());
     
     for (const statement of statements) {
