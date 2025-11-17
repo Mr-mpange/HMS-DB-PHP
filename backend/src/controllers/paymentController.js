@@ -4,7 +4,7 @@ const db = require('../config/database');
 // Get all payments
 exports.getAllPayments = async (req, res) => {
   try {
-    const { invoice_id, status, limit = 100, offset = 0 } = req.query;
+    const { patient_id, invoice_id, status, date, limit = 100, offset = 0 } = req.query;
     
     let query = `
       SELECT p.*
@@ -12,6 +12,11 @@ exports.getAllPayments = async (req, res) => {
       WHERE 1=1
     `;
     let params = [];
+    
+    if (patient_id) {
+      query += ' AND p.patient_id = ?';
+      params.push(patient_id);
+    }
     
     if (invoice_id) {
       query += ' AND p.invoice_id = ?';
@@ -21,6 +26,11 @@ exports.getAllPayments = async (req, res) => {
     if (status) {
       query += ' AND p.status = ?';
       params.push(status);
+    }
+    
+    if (date) {
+      query += ' AND DATE(p.payment_date) = ?';
+      params.push(date);
     }
     
     query += ' ORDER BY p.created_at DESC LIMIT ? OFFSET ?';

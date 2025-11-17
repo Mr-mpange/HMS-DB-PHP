@@ -11,10 +11,12 @@ exports.getAllAppointments = async (req, res) => {
              DATE(a.appointment_date) as appointment_date_only,
              TIME_FORMAT(a.appointment_date, '%H:%i') as appointment_time,
              p.full_name as patient_name, p.phone as patient_phone,
-             u.full_name as doctor_name
+             u.full_name as doctor_name,
+             d.name as department_name, d.id as department_id
       FROM appointments a
       LEFT JOIN patients p ON a.patient_id = p.id
       LEFT JOIN users u ON a.doctor_id = u.id
+      LEFT JOIN departments d ON a.department_id = d.id
       WHERE 1=1
     `;
     let params = [];
@@ -95,7 +97,7 @@ exports.createAppointment = async (req, res) => {
     console.log('Creating appointment with body:', req.body);
     
     const { 
-      patient_id, doctor_id, appointment_date, appointment_time,
+      patient_id, doctor_id, department_id, appointment_date, appointment_time,
       appointment_type, reason, notes
     } = req.body;
     
@@ -116,9 +118,9 @@ exports.createAppointment = async (req, res) => {
     
     await db.execute(
       `INSERT INTO appointments (
-        id, patient_id, doctor_id, appointment_date, type, reason, notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'Scheduled')`,
-      [appointmentId, patient_id, doctor_id, appointmentDateTime,
+        id, patient_id, doctor_id, department_id, appointment_date, type, reason, notes, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled')`,
+      [appointmentId, patient_id, doctor_id, department_id || null, appointmentDateTime,
        appointment_type || 'Consultation', reason || null, notes || null]
     );
     

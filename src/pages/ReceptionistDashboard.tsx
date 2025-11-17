@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { StatCard } from '@/components/StatCard';
 import { AppointmentsCard } from '@/components/AppointmentsCard';
 import { PatientsCard } from '@/components/PatientsCard';
@@ -85,6 +86,9 @@ export default function ReceptionistDashboard() {
     blood_group: '',
     address: '',
   });
+  
+  const [registerWithAppointment, setRegisterWithAppointment] = useState(false);
+  const [appointmentDepartmentId, setAppointmentDepartmentId] = useState<string>('');
 
   const [appointmentForm, setAppointmentForm] = useState({
     patient_id: '',
@@ -453,6 +457,28 @@ export default function ReceptionistDashboard() {
   };
 
   const handleInitiateCheckIn = async (appointment: any) => {
+    // Check if patient already paid today
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const paymentsRes = await api.get(`/payments?patient_id=${appointment.patient_id}&date=${today}`);
+      const todayPayments = paymentsRes.data.payments || [];
+      
+      if (todayPayments.length > 0) {
+        // Patient already paid today - skip payment
+        const confirmSkip = window.confirm(
+          `This patient already paid TSh ${todayPayments[0].amount} today. Skip payment and check in directly?`
+        );
+        
+        if (confirmSkip) {
+          await handleCheckIn(appointment.id);
+          toast.success('Patient checked in (payment already received today)');
+          return;
+        }
+      }
+    } catch (error) {
+      console.log('Could not check existing payments, proceeding with payment collection');
+    }
+    
     setSelectedAppointmentForPayment(appointment);
     const fee = getDepartmentFee(appointment.department_id);
     setPaymentForm({
@@ -602,6 +628,8 @@ export default function ReceptionistDashboard() {
       blood_group: '',
       address: '',
     });
+    setRegisterWithAppointment(false);
+    setAppointmentDepartmentId('');
     setShowRegisterDialog(true);
   };
 
@@ -766,10 +794,15 @@ export default function ReceptionistDashboard() {
       return;
     }
 
+    // Determine the fee based on whether booking with appointment
+    const feeToCharge = registerWithAppointment && appointmentDepartmentId
+      ? getDepartmentFee(appointmentDepartmentId)
+      : consultationFee;
+
     // Close registration dialog and show payment dialog
     setShowRegisterDialog(false);
     setPaymentForm({
-      amount_paid: consultationFee.toString(),
+      amount_paid: feeToCharge.toString(),
       payment_method: 'Cash'
     });
     setShowRegistrationPaymentDialog(true);
@@ -1216,10 +1249,52 @@ export default function ReceptionistDashboard() {
               <Label htmlFor="address">Address</Label>
               <Input id="address" value={registerForm.address} onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })} placeholder="Street, City" />
             </div>
+            
+            {/* Option to book with appointment */}
+            <div className="border-t pt-4 mt-4">
+              <div className="flex items-center space-x-2 mb-3">
+                <Checkbox 
+                  id="book_with_appointment" 
+                  checked={registerWithAppointment}
+                  onCheckedChange={(checked) => setRegisterWithAppointment(checked as boolean)}
+                />
+                <Label htmlFor="book_with_appointment" className="font-medium cursor-pointer">
+                  Book appointment with specialized doctor (pay department fee instead of consultation fee)
+                </Label>
+              </div>
+              
+              {registerWithAppointment && (
+                <div className="space-y-2 ml-6">
+                  <Label htmlFor="reg_department">Select Department *</Label>
+                  <select
+                    id="reg_department"
+                    className="w-full p-2 border rounded-md"
+                    value={appointmentDepartmentId}
+                    onChange={(e) => setAppointmentDepartmentId(e.target.value)}
+                    required={registerWithAppointment}
+                  >
+                    <option value="">Select Department</option>
+                    {departments.map((dept) => (
+                      <option key={dept.id} value={dept.id}>
+                        {dept.name} - TSh {getDepartmentFee(dept.id).toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Patient will be charged the department-specific fee instead of the general consultation fee
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setShowRegisterDialog(false)}>Cancel</Button>
-            <Button onClick={submitPatientRegistration}>Register Patient</Button>
+            <Button 
+              onClick={submitPatientRegistration}
+              disabled={registerWithAppointment && !appointmentDepartmentId}
+            >
+              Register Patient
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1568,16 +1643,29 @@ export default function ReceptionistDashboard() {
       <Dialog open={showRegistrationPaymentDialog} onOpenChange={setShowRegistrationPaymentDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Collect Consultation Fee</DialogTitle>
+            <DialogTitle>Collect {registerWithAppointment && appointmentDepartmentId ? 'Department' : 'Consultation'} Fee</DialogTitle>
             <DialogDescription>
               New Patient: {registerForm.full_name}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {registerWithAppointment && appointmentDepartmentId && (
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <p className="text-sm text-purple-800">
+                  <strong>Booking with Appointment:</strong> Department-specific fee applies
+                </p>
+              </div>
+            )}
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex justify-between items-center">
-                <span className="font-medium">Consultation Fee:</span>
-                <span className="text-2xl font-bold text-blue-600">TSh {consultationFee.toLocaleString()}</span>
+                <span className="font-medium">
+                  {registerWithAppointment && appointmentDepartmentId ? 'Department Fee:' : 'Consultation Fee:'}
+                </span>
+                <span className="text-2xl font-bold text-blue-600">
+                  TSh {(registerWithAppointment && appointmentDepartmentId 
+                    ? getDepartmentFee(appointmentDepartmentId) 
+                    : consultationFee).toLocaleString()}
+                </span>
               </div>
             </div>
 
@@ -1606,37 +1694,47 @@ export default function ReceptionistDashboard() {
               />
             </div>
 
-            {Number(paymentForm.amount_paid) > consultationFee && (
-              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-green-800">Change to Return:</span>
-                  <span className="text-xl font-bold text-green-600">
-                    TSh {(Number(paymentForm.amount_paid) - consultationFee).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            )}
+            {(() => {
+              const requiredFee = registerWithAppointment && appointmentDepartmentId 
+                ? getDepartmentFee(appointmentDepartmentId) 
+                : consultationFee;
+              
+              return (
+                <>
+                  {Number(paymentForm.amount_paid) > requiredFee && (
+                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium text-green-800">Change to Return:</span>
+                        <span className="text-xl font-bold text-green-600">
+                          TSh {(Number(paymentForm.amount_paid) - requiredFee).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
-            {Number(paymentForm.amount_paid) < consultationFee && paymentForm.amount_paid !== '' && (
-              <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                <span className="text-sm text-red-600">Insufficient payment amount</span>
-              </div>
-            )}
+                  {Number(paymentForm.amount_paid) < requiredFee && paymentForm.amount_paid !== '' && (
+                    <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                      <span className="text-sm text-red-600">Insufficient payment amount</span>
+                    </div>
+                  )}
 
-            <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => {
-                setShowRegistrationPaymentDialog(false);
-                setShowRegisterDialog(true);
-              }}>
-                Back
-              </Button>
-              <Button 
-                onClick={completePatientRegistration}
-                disabled={Number(paymentForm.amount_paid) < consultationFee}
-              >
-                Confirm Payment & Register
-              </Button>
-            </div>
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" onClick={() => {
+                      setShowRegistrationPaymentDialog(false);
+                      setShowRegisterDialog(true);
+                    }}>
+                      Back
+                    </Button>
+                    <Button 
+                      onClick={completePatientRegistration}
+                      disabled={Number(paymentForm.amount_paid) < requiredFee}
+                    >
+                      Confirm Payment & Register
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
