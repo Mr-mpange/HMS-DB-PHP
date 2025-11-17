@@ -198,7 +198,7 @@ export default function PatientReports() {
 
   return (
     <>
-      <style>{`
+      <style data-print-style="patient-report">{`
         @media print {
           /* Reset page margins */
           @page {
@@ -206,25 +206,83 @@ export default function PatientReports() {
             size: A4;
           }
           
-          /* Hide everything using visibility */
-          body * { 
+          /* HIGHEST PRIORITY: Hide everything */
+          html body * { 
             visibility: hidden !important;
           }
           
-          /* Show ONLY patient report */
-          #patient-report-print,
-          #patient-report-print * { 
-            visibility: visible !important;
-          }
-          
-          /* Force hide admin reports specifically */
-          .hidden.print\\:block,
-          .hidden.print\\:block *,
-          .print-report,
-          .print-report * {
+          /* FORCE HIDE admin reports */
+          html body .hidden.print\\:block,
+          html body .hidden.print\\:block *,
+          html body .print-report,
+          html body .print-report *,
+          html body [class*="admin-report"],
+          html body [class*="admin-report"] * {
             visibility: hidden !important;
+            display: none !important;
             position: absolute !important;
-            left: -9999px !important;
+            left: -99999px !important;
+            top: -99999px !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+          }
+          
+          /* Show ONLY patient report with highest specificity */
+          html body #patient-report-print {
+            visibility: visible !important;
+            display: block !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          
+          html body #patient-report-print * { 
+            visibility: visible !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          
+          /* Ensure proper display for elements */
+          html body #patient-report-print div {
+            display: block !important;
+          }
+          
+          html body #patient-report-print span,
+          html body #patient-report-print strong,
+          html body #patient-report-print em {
+            display: inline !important;
+          }
+          
+          html body #patient-report-print table {
+            display: table !important;
+          }
+          
+          html body #patient-report-print thead {
+            display: table-header-group !important;
+          }
+          
+          html body #patient-report-print tbody {
+            display: table-row-group !important;
+          }
+          
+          html body #patient-report-print tr {
+            display: table-row !important;
+          }
+          
+          html body #patient-report-print td,
+          html body #patient-report-print th {
+            display: table-cell !important;
+          }
+          
+          html body #patient-report-print p,
+          html body #patient-report-print h1,
+          html body #patient-report-print h2,
+          html body #patient-report-print h3 {
+            display: block !important;
           }
           
           /* Position and style patient report */
