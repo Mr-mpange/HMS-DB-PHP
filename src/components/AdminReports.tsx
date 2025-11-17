@@ -475,255 +475,27 @@ export default function AdminReports() {
         </Card>
       </div>
 
-      {/* Patients Table - Hidden on print */}
-      {settings.includePatientDetails && reportData.patients.length > 0 && (
-        <Card className="print:hidden">
-          <CardHeader>
-            <CardTitle>Patients ({stats.totalPatients})</CardTitle>
-            <CardDescription>Patient registrations for {getFilterLabel().toLowerCase()}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Gender</TableHead>
-                  <TableHead>Blood Group</TableHead>
-                  <TableHead>Date of Birth</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportData.patients.map((patient: any) => (
-                  <TableRow key={patient.id}>
-                    <TableCell className="font-medium">{patient.full_name}</TableCell>
-                    <TableCell>{patient.phone}</TableCell>
-                    <TableCell>{patient.gender}</TableCell>
-                    <TableCell>{patient.blood_group || 'N/A'}</TableCell>
-                    <TableCell>{format(new Date(patient.date_of_birth), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell>
-                      <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                        {patient.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Appointments Table - Hidden on print */}
-      {settings.includeAppointments && reportData.appointments.length > 0 && (
-        <Card className="print:hidden">
-          <CardHeader>
-            <CardTitle>Appointments ({stats.totalAppointments})</CardTitle>
-            <CardDescription>Scheduled appointments for {getFilterLabel().toLowerCase()}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>Doctor</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Time</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Reason</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportData.appointments.map((appointment: any) => (
-                  <TableRow key={appointment.id}>
-                    <TableCell>{appointment.patient?.full_name || 'N/A'}</TableCell>
-                    <TableCell>{appointment.doctor?.full_name || 'N/A'}</TableCell>
-                    <TableCell>{format(new Date(appointment.appointment_date), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell>{appointment.appointment_time}</TableCell>
-                    <TableCell>
-                      <Badge variant={
-                        appointment.status === 'Completed' ? 'default' :
-                        appointment.status === 'Scheduled' ? 'secondary' :
-                        'outline'
-                      }>
-                        {appointment.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{appointment.reason || 'N/A'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Visits Table - Hidden on print */}
-      {settings.includeVisits && reportData.visits.length > 0 && (
-        <Card className="print:hidden">
-          <CardHeader>
-            <CardTitle>Patient Visits ({stats.totalVisits})</CardTitle>
-            <CardDescription>Patient visits for {getFilterLabel().toLowerCase()}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>Visit Date</TableHead>
-                  <TableHead>Current Stage</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportData.visits.map((visit: any) => (
-                  <TableRow key={visit.id}>
-                    <TableCell>{visit.patient?.full_name || 'N/A'}</TableCell>
-                    <TableCell>{format(new Date(visit.visit_date), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell className="capitalize">{visit.current_stage}</TableCell>
-                    <TableCell>
-                      <Badge variant={visit.overall_status === 'Active' ? 'default' : 'secondary'}>
-                        {visit.overall_status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Lab Tests Table - Hidden on print */}
-      {settings.includeLabTests && reportData.labTests.length > 0 && (
-        <Card className="print:hidden">
-          <CardHeader>
-            <CardTitle>Lab Tests ({stats.totalLabTests})</CardTitle>
-            <CardDescription>Laboratory tests for {getFilterLabel().toLowerCase()}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>Test Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Ordered Date</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportData.labTests.map((test: any) => (
-                  <TableRow key={test.id}>
-                    <TableCell>{test.patient?.full_name || 'N/A'}</TableCell>
-                    <TableCell>{test.test_name}</TableCell>
-                    <TableCell>{test.test_type}</TableCell>
-                    <TableCell>
-                      <Badge variant={
-                        test.priority === 'STAT' ? 'destructive' :
-                        test.priority === 'Urgent' ? 'default' :
-                        'secondary'
-                      }>
-                        {test.priority}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{format(new Date(test.ordered_date), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell>
-                      <Badge variant={test.status === 'Completed' ? 'default' : 'secondary'}>
-                        {test.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Billing/Invoices Table - Hidden on print */}
-      {settings.includeInvoices && reportData.invoices.length > 0 && (
-        <Card className="print:hidden">
-          <CardHeader>
-            <CardTitle>Billing & Invoices ({reportData.invoices.length})</CardTitle>
-            <CardDescription>Financial transactions for {getFilterLabel().toLowerCase()}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Patient</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Payment Status</TableHead>
-                  <TableHead>Payment Method</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportData.invoices.map((invoice: any) => (
-                  <TableRow key={invoice.id}>
-                    <TableCell className="font-medium">{invoice.invoice_number}</TableCell>
-                    <TableCell>{invoice.patient?.full_name || 'N/A'}</TableCell>
-                    <TableCell>{format(new Date(invoice.created_at), 'MMM dd, yyyy')}</TableCell>
-                    <TableCell className="font-semibold">TSh {Number(invoice.total_amount).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Badge variant={
-                        invoice.payment_status === 'Paid' ? 'default' :
-                        invoice.payment_status === 'Pending' ? 'secondary' :
-                        'destructive'
-                      }>
-                        {invoice.payment_status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{invoice.payment_method || 'N/A'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            <div className="mt-4 pt-4 border-t">
-              <div className="flex justify-end">
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">Total Revenue</p>
-                  <p className="text-2xl font-bold">TSh {stats.totalRevenue.toLocaleString()}</p>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
 
       {/* Print Styles */}
       <style>{`
         @media print {
-          /* Hide everything first */
-          body * {
-            visibility: hidden !important;
+          /* Hide ALL elements first */
+          * {
+            visibility: hidden;
           }
           
-          /* Show only the print report */
+          /* Show ONLY the print report */
           .hidden.print\\:block,
           .hidden.print\\:block * {
             visibility: visible !important;
-            display: block !important;
           }
           
-          /* Position print report at top */
+          /* Position print report at top of page */
           .hidden.print\\:block {
             position: absolute;
             left: 0;
             top: 0;
             width: 100%;
-          }
-          
-          /* Ensure tables are hidden */
-          .print\\:hidden,
-          .print\\:hidden * {
-            display: none !important;
-            visibility: hidden !important;
           }
           
           @page {
