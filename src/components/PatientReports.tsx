@@ -198,97 +198,92 @@ export default function PatientReports() {
 
   return (
     <>
-      <style data-print-style="patient-report">{`
-        @media print {
-          /* Reset page margins */
-          @page {
-            margin: 1cm;
-            size: A4;
-          }
-          
-          /* HIGHEST PRIORITY: Hide everything */
-          html body * { 
-            visibility: hidden !important;
-          }
-          
-          /* FORCE HIDE admin reports */
-          html body .hidden.print\\:block,
-          html body .hidden.print\\:block *,
-          html body .print-report,
-          html body .print-report *,
-          html body [class*="admin-report"],
-          html body [class*="admin-report"] * {
-            visibility: hidden !important;
-            display: none !important;
-            position: absolute !important;
-            left: -99999px !important;
-            top: -99999px !important;
-            width: 0 !important;
-            height: 0 !important;
-            overflow: hidden !important;
-          }
-          
-          /* Show ONLY patient report with highest specificity */
-          html body #patient-report-print {
-            visibility: visible !important;
-            display: block !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            overflow: visible !important;
-          }
-          
-          html body #patient-report-print * { 
-            visibility: visible !important;
-            height: auto !important;
-            overflow: visible !important;
-          }
+      {selectedPatient && patientHistory && (
+        <style data-print-style="patient-report">{`
+          @media print {
+            /* When patient report exists, hide everything else */
+            body * { 
+              visibility: hidden;
+            }
+            
+            /* FORCE HIDE admin reports specifically */
+            .hidden.print\\:block,
+            .hidden.print\\:block *,
+            .print-report,
+            .print-report * {
+              visibility: hidden !important;
+              display: none !important;
+              position: absolute !important;
+              left: -99999px !important;
+            }
+            
+            /* Show ONLY patient report */
+            #patient-report-print {
+              visibility: visible !important;
+              display: block !important;
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              height: auto !important;
+              overflow: visible !important;
+            }
+            
+            #patient-report-print * { 
+              visibility: visible !important;
+              height: auto !important;
+              overflow: visible !important;
+            }
           
           /* Ensure proper display for elements */
-          html body #patient-report-print div {
+          #patient-report-print div {
             display: block !important;
           }
           
-          html body #patient-report-print span,
-          html body #patient-report-print strong,
-          html body #patient-report-print em {
+          #patient-report-print span,
+          #patient-report-print strong,
+          #patient-report-print em {
             display: inline !important;
           }
           
-          html body #patient-report-print table {
+          #patient-report-print table {
             display: table !important;
           }
           
-          html body #patient-report-print thead {
+          #patient-report-print thead {
             display: table-header-group !important;
           }
           
-          html body #patient-report-print tbody {
+          #patient-report-print tbody {
             display: table-row-group !important;
           }
           
-          html body #patient-report-print tr {
+          #patient-report-print tr {
             display: table-row !important;
           }
           
-          html body #patient-report-print td,
-          html body #patient-report-print th {
+          #patient-report-print td,
+          #patient-report-print th {
             display: table-cell !important;
           }
           
-          html body #patient-report-print p,
-          html body #patient-report-print h1,
-          html body #patient-report-print h2,
-          html body #patient-report-print h3 {
+          #patient-report-print p,
+          #patient-report-print h1,
+          #patient-report-print h2,
+          #patient-report-print h3 {
             display: block !important;
           }
           
           /* Support flex layouts */
-          html body #patient-report-print div[style*="display: flex"],
-          html body #patient-report-print div[style*="display:flex"] {
+          #patient-report-print div[style*="display: flex"],
+          #patient-report-print div[style*="display:flex"] {
             display: flex !important;
+          }
+          
+          /* Page settings */
+          @page {
+            margin: 1cm;
+            size: A4;
           }
           
           /* Position and style patient report */
@@ -416,6 +411,7 @@ export default function PatientReports() {
           }
         }
       `}</style>
+      )}
 
       <Card className="no-print">
         <CardHeader>
