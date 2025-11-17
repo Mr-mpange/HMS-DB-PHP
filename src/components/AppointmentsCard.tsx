@@ -12,14 +12,63 @@ interface AppointmentsCardProps {
 export function AppointmentsCard({ appointments, onCheckIn, onCancel }: AppointmentsCardProps) {
   const today = new Date().toISOString().split('T')[0];
   
+  // Debug: Log all appointment dates
+  console.log('All appointments dates:', appointments.map(a => ({
+    patient: a.patient?.full_name,
+    date: a.appointment_date,
+    extracted: a.appointment_date ? (typeof a.appointment_date === 'string' ? a.appointment_date.split('T')[0] : new Date(a.appointment_date).toISOString().split('T')[0]) : 'null',
+    status: a.status
+  })));
+  
   // Filter for today's appointments that need action (Scheduled or Confirmed status)
   const todayAppointments = appointments.filter(
     a => {
-      const isToday = a.appointment_date === today;
+      // Use appointment_date_only if available (from backend), otherwise extract from datetime
+      let appointmentDate = '';
+      
+      if (a.appointment_date_only) {
+        // Backend provides date-only field
+        appointmentDate = typeof a.appointment_date_only === 'string' 
+          ? a.appointment_date_only.split('T')[0]
+          : new Date(a.appointment_date_only).toISOString().split('T')[0];
+      } else if (a.appointment_date) {
+        // Parse the datetime in LOCAL timezone, not UTC
+        const date = new Date(a.appointment_date);
+        // Get local date components
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        appointmentDate = `${year}-${month}-${day}`;
+      }
+      
+      const isToday = appointmentDate === today;
       const needsAction = a.status === 'Scheduled' || a.status === 'Confirmed';
+      
+      // Debug logging
+      if (isToday) {
+        console.log('✓ Today appointment:', {
+          patient: a.patient?.full_name,
+          date: appointmentDate,
+          status: a.status,
+          needsAction
+        });
+      }
+      
       return isToday && needsAction;
     }
   );
+  
+  console.log('AppointmentsCard:', {
+    today,
+    totalAppointments: appointments.length,
+    todayAppointments: todayAppointments.length,
+    sampleAppointment: appointments[0] ? {
+      date: appointments[0].appointment_date,
+      dateType: typeof appointments[0].appointment_date,
+      status: appointments[0].status,
+      patient: appointments[0].patient?.full_name
+    } : null
+  });
 
   // Sort by appointment time
   const sortedAppointments = todayAppointments.sort((a, b) => {

@@ -628,14 +628,25 @@ export default function DoctorDashboard() {
     }
   }, [user?.id]);
 
-  // Fetch available lab tests
+  // Fetch available lab tests from medical services catalog
   const fetchAvailableLabTests = useCallback(async () => {
     try {
-      const response = await api.get('/labs');
+      const response = await api.get('/labs/services');
       if (response.data.error) throw new Error(response.data.error);
-      setAvailableLabTests(response.data.labTests || []);
+      // Map services to lab test format for compatibility
+      const services = (response.data.services || []).map((service: any) => ({
+        id: service.id,
+        service_id: service.id,
+        test_name: service.service_name,
+        test_type: service.service_type,
+        description: service.description,
+        price: service.price,
+        currency: service.currency
+      }));
+      setAvailableLabTests(services);
+      console.log('Loaded lab services from medical_services:', services.length);
     } catch (error: any) {
-      console.error('Error fetching lab tests:', error);
+      console.error('Error fetching lab services:', error);
       // Don't show error toast - just log it
     }
   }, []);
@@ -1190,6 +1201,7 @@ export default function DoctorDashboard() {
         const test = availableLabTests.find(t => t.id === testId);
         return {
           patient_id: selectedVisit.patient_id,
+          service_id: test?.service_id || test?.id, // Link to medical service
           test_name: test?.test_name || '',
           test_type: test?.test_type || '',
           status: 'Pending',

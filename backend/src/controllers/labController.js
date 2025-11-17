@@ -1,6 +1,35 @@
 const { v4: uuidv4 } = require('uuid');
 const db = require('../config/database');
 
+// Get available lab services from medical_services catalog
+exports.getAvailableLabServices = async (req, res) => {
+  try {
+    const [services] = await db.execute(`
+      SELECT 
+        id,
+        service_code,
+        service_name,
+        service_type,
+        description,
+        base_price as price,
+        currency
+      FROM medical_services
+      WHERE is_active = TRUE
+        AND (service_type LIKE '%lab%' 
+          OR service_type LIKE '%test%'
+          OR service_type LIKE '%diagnostic%'
+          OR service_type LIKE '%xray%'
+          OR service_type LIKE '%scan%')
+      ORDER BY service_name
+    `);
+    
+    res.json({ services });
+  } catch (error) {
+    console.error('Get lab services error:', error);
+    res.status(500).json({ error: 'Failed to fetch lab services' });
+  }
+};
+
 // Get all lab tests
 exports.getAllLabTests = async (req, res) => {
   try {
@@ -106,7 +135,7 @@ exports.createLabTest = async (req, res) => {
     console.log('Creating lab test with body:', req.body);
     
     const { 
-      patient_id, doctor_id, visit_id, test_name, test_type,
+      patient_id, doctor_id, visit_id, test_name, test_type, service_id,
       priority, instructions, notes, ordered_date, status
     } = req.body;
     
@@ -127,17 +156,18 @@ exports.createLabTest = async (req, res) => {
       doctor_id,
       test_name,
       test_type,
+      service_id,
       testPriority,
       testStatus
     });
     
     await db.execute(
       `INSERT INTO lab_tests (
-        id, patient_id, doctor_id, visit_id, test_name, test_type,
+        id, patient_id, doctor_id, visit_id, test_name, test_type, service_id,
         ordered_date, priority, instructions, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [labTestId, patient_id, doctor_id || null, visit_id || null, 
-       test_name, test_type || null, orderDate, testPriority, instructionsText, testStatus]
+       test_name, test_type || null, service_id || null, orderDate, testPriority, instructionsText, testStatus]
     );
     
     console.log('Lab test created successfully:', labTestId);

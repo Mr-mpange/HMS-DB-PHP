@@ -5,6 +5,9 @@ const labController = require('../controllers/labController');
 
 router.use(authenticate);
 
+// Get available lab services from medical_services catalog
+router.get('/services', labController.getAvailableLabServices);
+
 router.get('/', labController.getAllLabTests);
 router.get('/:id', labController.getLabTest);
 router.post('/', requireRole(['doctor']), labController.createLabTest);

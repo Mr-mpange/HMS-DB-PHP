@@ -68,6 +68,9 @@ export default function MedicalServicesDashboard() {
     currency: 'TSh'
   });
 
+  const [editingService, setEditingService] = useState<MedicalService | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+
   const serviceTypes = [
     'Consultation',
     'Procedure',
@@ -109,25 +112,50 @@ export default function MedicalServicesDashboard() {
   };
 
   const downloadServicesTemplate = () => {
-    const headers = ['service_code','service_name','service_type','description','base_price','currency','is_active'];
+    const headers = ['service_code','service_name','service_type','description','base_price','currency'];
     const sample = [
-      'CONS-0001,General Consultation,Consultation,Initial consultation,50000,TSh,true',
-      'LAB-0001,Complete Blood Count (CBC),Test,Full blood analysis,25000,TSh,true',
-      'LAB-0002,Malaria Test,Test,Rapid diagnostic test for malaria,15000,TSh,true',
-      'LAB-0003,HIV Test,Test,HIV screening test,20000,TSh,true',
-      'LAB-0004,Urinalysis,Test,Complete urine analysis,10000,TSh,true',
-      'LAB-0005,Blood Sugar Test,Test,Fasting blood glucose,8000,TSh,true',
-      'PROC-0001,ECG,Procedure,Electrocardiogram,30000,TSh,true',
-      'PROC-0002,X-Ray Chest,Procedure,Chest X-ray imaging,40000,TSh,true'
+      // Laboratory Tests (from HASET DISPENSARY lab services)
+      'LAB001,MALARIA (MRDT),Laboratory,Malaria Rapid Diagnostic Test - 20 min turnaround,5000,TSH',
+      'LAB002,MALARIA (BS),Laboratory,Malaria Blood Smear - 1 hour turnaround,8000,TSH',
+      'LAB003,HEPATITIS B,Laboratory,Hepatitis B Test - 20 min turnaround,15000,TSH',
+      'LAB004,H. PYLORI,Laboratory,H. Pylori Test - 20 min turnaround,12000,TSH',
+      'LAB005,HIV,Laboratory,HIV Test - 20 min turnaround,10000,TSH',
+      'LAB006,VDRL,Laboratory,VDRL Test - 15 min turnaround,8000,TSH',
+      'LAB007,BLOOD GLUCOSE TEST,Laboratory,Blood Glucose Test - 5 min turnaround,3000,TSH',
+      'LAB008,HAEMOGLOBIN TEST,Laboratory,Haemoglobin Test - 5 min turnaround,3000,TSH',
+      'LAB009,ABO BLOOD GROUPING,Laboratory,ABO Blood Grouping - 10 min turnaround,5000,TSH',
+      'LAB010,URINALYSIS,Laboratory,Urinalysis - 20 min turnaround,5000,TSH',
+      'LAB011,URINE SEDIMENT,Laboratory,Urine Sediment - 20 min turnaround,6000,TSH',
+      'LAB012,URINE PREGNANCY TEST,Laboratory,Urine Pregnancy Test - 5 min turnaround,3000,TSH',
+      'LAB013,STOOL ANALYSIS,Laboratory,Stool Analysis - 20 min turnaround,5000,TSH',
+      // Radiology Services
+      'RAD001,X-RAY CHEST,Radiology,Chest X-Ray,25000,TSH',
+      'RAD002,X-RAY ABDOMEN,Radiology,Abdominal X-Ray,25000,TSH',
+      'RAD003,ULTRASOUND,Radiology,Ultrasound Scan,35000,TSH',
+      // Consultations
+      'CONS001,GENERAL CONSULTATION,Consultation,General Medical Consultation,20000,TSH',
+      'CONS002,SPECIALIST CONSULTATION,Consultation,Specialist Doctor Consultation,50000,TSH',
+      // Procedures
+      'PROC001,WOUND DRESSING,Procedure,Wound Dressing and Care,10000,TSH',
+      'PROC002,INJECTION,Procedure,Injection Administration,5000,TSH',
+      'PROC003,IV CANNULATION,Procedure,IV Cannula Insertion,8000,TSH',
+      // Surgery
+      'SURG001,MINOR SURGERY,Surgery,Minor Surgical Procedure,100000,TSH',
+      // Emergency
+      'EMRG001,EMERGENCY CARE,Emergency,Emergency Room Care,30000,TSH',
+      // Ward Stay
+      'WARD001,GENERAL WARD,Ward Stay,General Ward Per Day,50000,TSH',
+      'WARD002,PRIVATE WARD,Ward Stay,Private Ward Per Day,100000,TSH'
     ];
     const csv = [headers.join(','), ...sample].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'medical_services_lab_tests_template.csv';
+    a.download = 'medical_services_template.csv';
     a.click();
     URL.revokeObjectURL(url);
+    toast.success('Template downloaded! Includes all lab tests from your image.');
   };
 
   useEffect(() => {
@@ -195,6 +223,66 @@ export default function MedicalServicesDashboard() {
     } catch (error) {
       console.error('Error adding service:', error);
       toast.error('Failed to add medical service');
+    }
+  };
+
+  const handleEditService = (service: MedicalService) => {
+    setEditingService(service);
+    setShowEditDialog(true);
+  };
+
+  const handleUpdateService = async () => {
+    if (!editingService) return;
+
+    if (!editingService.service_code || !editingService.service_name || !editingService.service_type || !editingService.base_price) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const { error } = await updateMedicalService(editingService.id!, {
+        service_code: editingService.service_code,
+        service_name: editingService.service_name,
+        service_type: editingService.service_type,
+        description: editingService.description,
+        base_price: editingService.base_price,
+        currency: editingService.currency,
+        is_active: editingService.is_active
+      }, user!.id);
+
+      if (error) {
+        console.error('Error updating service:', error);
+        toast.error('Failed to update medical service');
+      } else {
+        toast.success('Medical service updated successfully');
+        setShowEditDialog(false);
+        setEditingService(null);
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error updating service:', error);
+      toast.error('Failed to update medical service');
+    }
+  };
+
+  const handleDeleteService = async (serviceId: string) => {
+    if (!confirm('Are you sure you want to delete this service? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const { error } = await deleteMedicalService(serviceId, user!.id);
+
+      if (error) {
+        console.error('Error deleting service:', error);
+        toast.error('Failed to delete medical service');
+      } else {
+        toast.success('Medical service deleted successfully');
+        fetchData();
+      }
+    } catch (error) {
+      console.error('Error deleting service:', error);
+      toast.error('Failed to delete medical service');
     }
   };
 
@@ -323,6 +411,7 @@ export default function MedicalServicesDashboard() {
                     <TableHead>Description</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -343,6 +432,26 @@ export default function MedicalServicesDashboard() {
                         <Badge variant={service.is_active ? 'default' : 'secondary'}>
                           {service.is_active ? 'Active' : 'Inactive'}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditService(service)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteService(service.id)}
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -485,6 +594,111 @@ export default function MedicalServicesDashboard() {
           </DialogContent>
         </Dialog>
 
+        {/* Edit Service Dialog */}
+        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Medical Service</DialogTitle>
+              <DialogDescription>Update service details and pricing</DialogDescription>
+            </DialogHeader>
+            {editingService && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_service_type">Service Type *</Label>
+                    <Select
+                      value={editingService.service_type}
+                      onValueChange={(value) => {
+                        setEditingService(prev => prev ? { ...prev, service_type: value } : null);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {serviceTypes.map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit_service_code">Service Code *</Label>
+                    <Input
+                      id="edit_service_code"
+                      value={editingService.service_code}
+                      onChange={(e) => setEditingService(prev => prev ? { ...prev, service_code: e.target.value } : null)}
+                      placeholder="CONS-001"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_service_name">Service Name *</Label>
+                  <Input
+                    id="edit_service_name"
+                    value={editingService.service_name}
+                    onChange={(e) => setEditingService(prev => prev ? { ...prev, service_name: e.target.value } : null)}
+                    placeholder="General Consultation"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_description">Description</Label>
+                  <Textarea
+                    id="edit_description"
+                    value={editingService.description || ''}
+                    onChange={(e) => setEditingService(prev => prev ? { ...prev, description: e.target.value } : null)}
+                    placeholder="Brief description of the service"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_base_price">Base Price (TSh) *</Label>
+                  <Input
+                    id="edit_base_price"
+                    type="number"
+                    value={editingService.base_price}
+                    onChange={(e) => setEditingService(prev => prev ? { ...prev, base_price: parseFloat(e.target.value) || 0 } : null)}
+                    placeholder="50000"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit_is_active">Status</Label>
+                  <Select
+                    value={editingService.is_active ? 'active' : 'inactive'}
+                    onValueChange={(value) => {
+                      setEditingService(prev => prev ? { ...prev, is_active: value === 'active' } : null);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => {
+                    setShowEditDialog(false);
+                    setEditingService(null);
+                  }}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleUpdateService}>
+                    Update Service
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* Import Services Dialog */}
         <Dialog open={importDialogOpen} onOpenChange={(open) => {
           setImportDialogOpen(open);
@@ -499,8 +713,8 @@ export default function MedicalServicesDashboard() {
               <DialogTitle>Import Medical Services & Lab Tests (CSV)</DialogTitle>
               <DialogDescription>
                 Upload a CSV file to bulk import lab tests and medical services. 
-                Required columns: service_code, service_name, service_type, description, base_price, currency, is_active.
-                Download the template for examples of lab tests.
+                Use service_type = "Laboratory" for lab tests, "Radiology" for X-rays, "Consultation" for doctor visits, etc.
+                Download the template which includes all 13 lab tests from your dispensary.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
