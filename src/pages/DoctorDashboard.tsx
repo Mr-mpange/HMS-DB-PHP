@@ -512,8 +512,10 @@ export default function DoctorDashboard() {
       // Update stats
       const today = new Date().toISOString().split('T')[0];
       const todayApps = processedAppointments.filter(
-        (appt: any) => appt.appointment_date === today && 
-        !['Completed', 'Cancelled'].includes(appt.status)
+        (appt: any) => {
+          const aptDate = appt.appointment_date ? appt.appointment_date.split('T')[0] : '';
+          return aptDate === today && !['Completed', 'Cancelled'].includes(appt.status);
+        }
       ).length;
       
       setStats({
@@ -1483,9 +1485,23 @@ export default function DoctorDashboard() {
         })
       );
 
-      // Calculate stats
-      const today = new Date().toISOString().split('T')[0];
-      const todayAppointments = appointmentsData?.filter(a => a.appointment_date === today).length || 0;
+      // Calculate stats - use local date to avoid timezone issues
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      
+      const todayAppointments = appointmentsData?.filter(a => {
+        // Extract date from appointment_date using local time to avoid timezone shifts
+        let aptDate = '';
+        if (a.appointment_date instanceof Date) {
+          const d = a.appointment_date;
+          aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        } else if (typeof a.appointment_date === 'string') {
+          // Parse the date string in local time
+          const d = new Date(a.appointment_date);
+          aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+        return aptDate === today;
+      }).length || 0;
 
       // Filter out visits that shouldn't be in doctor queue
       // Only show visits where:
@@ -1510,10 +1526,16 @@ export default function DoctorDashboard() {
       setPendingVisits(activeVisits);
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
+      // Calculate unique patients from visits and appointments
+      const uniquePatientIds = new Set([
+        ...activeVisits.map(v => v.patient_id),
+        ...appointmentsData.map(a => a.patient_id)
+      ]);
+      
       setStats({
         totalAppointments: appointmentsData?.length || 0,
         todayAppointments,
-        totalPatients: patientsData?.length || 0,
+        totalPatients: uniquePatientIds.size,
         pendingConsultations: activeVisits.length
       });
     } catch (error) {

@@ -1201,10 +1201,20 @@ export default function ReceptionistDashboard() {
             </CardHeader>
             <CardContent>
               {(() => {
-                const today = new Date().toISOString().split('T')[0];
+                // Use local date to avoid timezone issues
+                const now = new Date();
+                const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
                 const todayAppointments = appointments.filter(apt => {
-                  // Extract date from appointment_date (might be datetime or date string)
-                  const aptDate = apt.appointment_date ? apt.appointment_date.split('T')[0] : '';
+                  // Extract date from appointment_date using local time
+                  let aptDate = '';
+                  if (apt.appointment_date instanceof Date) {
+                    const d = apt.appointment_date;
+                    aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                  } else if (typeof apt.appointment_date === 'string') {
+                    const d = new Date(apt.appointment_date);
+                    aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                  }
                   return aptDate === today && apt.status === 'Scheduled';
                 });
                 
