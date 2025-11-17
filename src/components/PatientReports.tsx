@@ -206,7 +206,7 @@ export default function PatientReports() {
             size: A4;
           }
           
-          /* Hide everything */
+          /* Hide everything using visibility */
           body * { 
             visibility: hidden !important;
           }
@@ -215,6 +215,16 @@ export default function PatientReports() {
           #patient-report-print,
           #patient-report-print * { 
             visibility: visible !important;
+          }
+          
+          /* Force hide admin reports specifically */
+          .hidden.print\\:block,
+          .hidden.print\\:block *,
+          .print-report,
+          .print-report * {
+            visibility: hidden !important;
+            position: absolute !important;
+            left: -9999px !important;
           }
           
           /* Position and style patient report */
@@ -539,57 +549,57 @@ export default function PatientReports() {
       {/* Print View */}
       {selectedPatient && patientHistory && (
         <div id="patient-report-print" style={{ display: 'none' }}>
-          <div style={{ fontFamily: 'Arial, sans-serif', padding: '20px' }}>
+          <div style={{ fontFamily: 'Arial, sans-serif', padding: '30px 40px', lineHeight: '1.6' }}>
             {/* Header */}
-            <div style={{ textAlign: 'center', marginBottom: '25px', borderBottom: '3px solid #2563eb', paddingBottom: '15px' }}>
-              <h1 style={{ margin: '0', fontSize: '28px', color: '#1e40af', fontWeight: 'bold', letterSpacing: '1px' }}>HASET MEDICAL CENTER</h1>
-              <p style={{ margin: '8px 0 4px 0', fontSize: '16px', color: '#374151', fontWeight: '500' }}>Patient Medical History Report</p>
-              <p style={{ margin: '0', fontSize: '11px', color: '#6b7280' }}>
+            <div style={{ textAlign: 'center', marginBottom: '40px', borderBottom: '3px solid #2563eb', paddingBottom: '20px' }}>
+              <h1 style={{ margin: '0 0 12px 0', fontSize: '32px', color: '#1e40af', fontWeight: 'bold', letterSpacing: '1.5px' }}>HASET MEDICAL CENTER</h1>
+              <p style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#374151', fontWeight: '500' }}>Patient Medical History Report</p>
+              <p style={{ margin: '0', fontSize: '12px', color: '#6b7280' }}>
                 Generated on {format(new Date(), 'PPP')} at {format(new Date(), 'p')}
               </p>
             </div>
 
             {/* Patient Demographics */}
-            <div style={{ marginBottom: '25px', backgroundColor: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ fontSize: '16px', color: '#1e40af', fontWeight: 'bold', marginBottom: '15px', marginTop: '0' }}>
+            <div style={{ marginBottom: '35px', backgroundColor: '#f8fafc', padding: '25px 30px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ fontSize: '18px', color: '#1e40af', fontWeight: 'bold', marginBottom: '20px', marginTop: '0' }}>
                 PATIENT INFORMATION
               </h2>
-              <table style={{ width: '100%', fontSize: '13px', lineHeight: '1.8' }}>
+              <table style={{ width: '100%', fontSize: '14px', lineHeight: '2' }}>
                 <tbody>
                   <tr>
-                    <td style={{ padding: '6px 0', fontWeight: '600', width: '35%', color: '#475569' }}>Name:</td>
-                    <td style={{ padding: '6px 0', color: '#1e293b' }}>
+                    <td style={{ padding: '8px 0', fontWeight: '600', width: '35%', color: '#475569' }}>Name:</td>
+                    <td style={{ padding: '8px 0', color: '#1e293b', fontSize: '15px' }}>
                       {selectedPatient.full_name || `${selectedPatient.first_name} ${selectedPatient.last_name}`}
                     </td>
                   </tr>
                   <tr>
-                    <td style={{ padding: '6px 0', fontWeight: '600', color: '#475569' }}>Patient ID:</td>
-                    <td style={{ padding: '6px 0', color: '#1e293b', fontFamily: 'monospace' }}>{selectedPatient.id}</td>
+                    <td style={{ padding: '8px 0', fontWeight: '600', color: '#475569' }}>Patient ID:</td>
+                    <td style={{ padding: '8px 0', color: '#1e293b', fontFamily: 'monospace', fontSize: '13px' }}>{selectedPatient.id}</td>
                   </tr>
                   <tr>
-                    <td style={{ padding: '6px 0', fontWeight: '600', color: '#475569' }}>Date of Birth:</td>
-                    <td style={{ padding: '6px 0', color: '#1e293b' }}>
+                    <td style={{ padding: '8px 0', fontWeight: '600', color: '#475569' }}>Date of Birth:</td>
+                    <td style={{ padding: '8px 0', color: '#1e293b' }}>
                       {format(new Date(selectedPatient.date_of_birth), 'PPP')} ({calculateAge(selectedPatient.date_of_birth)} years old)
                     </td>
                   </tr>
                   <tr>
-                    <td style={{ padding: '6px 0', fontWeight: '600', color: '#475569' }}>Gender:</td>
-                    <td style={{ padding: '6px 0', color: '#1e293b' }}>{selectedPatient.gender}</td>
+                    <td style={{ padding: '8px 0', fontWeight: '600', color: '#475569' }}>Gender:</td>
+                    <td style={{ padding: '8px 0', color: '#1e293b' }}>{selectedPatient.gender}</td>
                   </tr>
                   <tr>
-                    <td style={{ padding: '6px 0', fontWeight: '600', color: '#475569' }}>Phone:</td>
-                    <td style={{ padding: '6px 0', color: '#1e293b' }}>{selectedPatient.phone}</td>
+                    <td style={{ padding: '8px 0', fontWeight: '600', color: '#475569' }}>Phone:</td>
+                    <td style={{ padding: '8px 0', color: '#1e293b' }}>{selectedPatient.phone}</td>
                   </tr>
                   {selectedPatient.email && (
                     <tr>
-                      <td style={{ padding: '6px 0', fontWeight: '600', color: '#475569' }}>Email:</td>
-                      <td style={{ padding: '6px 0', color: '#1e293b' }}>{selectedPatient.email}</td>
+                      <td style={{ padding: '8px 0', fontWeight: '600', color: '#475569' }}>Email:</td>
+                      <td style={{ padding: '8px 0', color: '#1e293b' }}>{selectedPatient.email}</td>
                     </tr>
                   )}
                   {selectedPatient.blood_group && (
                     <tr>
-                      <td style={{ padding: '6px 0', fontWeight: '600', color: '#475569' }}>Blood Group:</td>
-                      <td style={{ padding: '6px 0', color: '#dc2626', fontWeight: 'bold', fontSize: '14px' }}>{selectedPatient.blood_group}</td>
+                      <td style={{ padding: '8px 0', fontWeight: '600', color: '#475569' }}>Blood Group:</td>
+                      <td style={{ padding: '8px 0', color: '#dc2626', fontWeight: 'bold', fontSize: '16px' }}>{selectedPatient.blood_group}</td>
                     </tr>
                   )}
                 </tbody>
@@ -598,8 +608,8 @@ export default function PatientReports() {
 
             {/* Appointment History */}
             {patientHistory.appointments.length > 0 && (
-              <div style={{ marginBottom: '25px', pageBreakInside: 'avoid' }}>
-                <h2 style={{ fontSize: '16px', color: '#1e40af', fontWeight: 'bold', marginBottom: '12px', marginTop: '0', paddingBottom: '8px', borderBottom: '2px solid #3b82f6' }}>
+              <div style={{ marginBottom: '35px', pageBreakInside: 'avoid' }}>
+                <h2 style={{ fontSize: '18px', color: '#1e40af', fontWeight: 'bold', marginBottom: '18px', marginTop: '0', paddingBottom: '10px', borderBottom: '2px solid #3b82f6' }}>
                   APPOINTMENT HISTORY
                 </h2>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -630,8 +640,8 @@ export default function PatientReports() {
             )}
 
             {/* Prescriptions & Medications Provided */}
-            <div style={{ marginBottom: '25px', pageBreakInside: 'avoid' }}>
-              <h2 style={{ fontSize: '16px', color: '#1e40af', fontWeight: 'bold', marginBottom: '12px', marginTop: '0', paddingBottom: '8px', borderBottom: '2px solid #3b82f6' }}>
+            <div style={{ marginBottom: '35px', pageBreakInside: 'avoid' }}>
+              <h2 style={{ fontSize: '18px', color: '#1e40af', fontWeight: 'bold', marginBottom: '18px', marginTop: '0', paddingBottom: '10px', borderBottom: '2px solid #3b82f6' }}>
                 PRESCRIPTIONS & MEDICATIONS PROVIDED
               </h2>
               {(() => {
@@ -647,8 +657,8 @@ export default function PatientReports() {
               {patientHistory.prescriptions && patientHistory.prescriptions.length > 0 ? (
                 <>
                   {patientHistory.prescriptions.map((rx: any, rxIdx: number) => (
-                    <div key={rxIdx} style={{ marginBottom: '20px', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
-                    <div style={{ backgroundColor: '#eff6ff', padding: '12px 15px', borderBottom: '1px solid #bfdbfe' }}>
+                    <div key={rxIdx} style={{ marginBottom: '25px', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                    <div style={{ backgroundColor: '#eff6ff', padding: '15px 20px', borderBottom: '1px solid #bfdbfe' }}>
                       <strong style={{ color: '#1e40af' }}>📋 Prescription Date:</strong> <span style={{ color: '#1e293b' }}>{format(new Date(rx.prescription_date || rx.created_at), 'MMM dd, yyyy')}</span>
                       {rx.doctor?.full_name && (
                         <span style={{ marginLeft: '20px' }}>
@@ -661,30 +671,30 @@ export default function PatientReports() {
                         </span>
                       )}
                     </div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                       <thead>
                         <tr style={{ backgroundColor: '#dbeafe' }}>
-                          <th style={{ border: '1px solid #93c5fd', padding: '10px 12px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Medication</th>
-                          <th style={{ border: '1px solid #93c5fd', padding: '10px 12px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Dosage</th>
-                          <th style={{ border: '1px solid #93c5fd', padding: '10px 12px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Frequency</th>
-                          <th style={{ border: '1px solid #93c5fd', padding: '10px 12px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Duration</th>
-                          <th style={{ border: '1px solid #93c5fd', padding: '10px 12px', textAlign: 'center', color: '#1e40af', fontWeight: '600' }}>Qty</th>
+                          <th style={{ border: '1px solid #93c5fd', padding: '12px 15px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Medication</th>
+                          <th style={{ border: '1px solid #93c5fd', padding: '12px 15px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Dosage</th>
+                          <th style={{ border: '1px solid #93c5fd', padding: '12px 15px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Frequency</th>
+                          <th style={{ border: '1px solid #93c5fd', padding: '12px 15px', textAlign: 'left', color: '#1e40af', fontWeight: '600' }}>Duration</th>
+                          <th style={{ border: '1px solid #93c5fd', padding: '12px 15px', textAlign: 'center', color: '#1e40af', fontWeight: '600' }}>Qty</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(rx.medications || []).map((med: any, medIdx: number) => (
                           <tr key={medIdx} style={{ backgroundColor: medIdx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                            <td style={{ border: '1px solid #e2e8f0', padding: '10px 12px', color: '#1e293b', fontWeight: '500' }}>{med.medication_name || 'N/A'}</td>
-                            <td style={{ border: '1px solid #e2e8f0', padding: '10px 12px', color: '#475569' }}>{med.dosage || 'N/A'}</td>
-                            <td style={{ border: '1px solid #e2e8f0', padding: '10px 12px', color: '#475569' }}>{med.frequency || 'N/A'}</td>
-                            <td style={{ border: '1px solid #e2e8f0', padding: '10px 12px', color: '#475569' }}>{med.duration || 'N/A'}</td>
-                            <td style={{ border: '1px solid #e2e8f0', padding: '10px 12px', textAlign: 'center', color: '#1e293b', fontWeight: '600' }}>{med.quantity || 'N/A'}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '12px 15px', color: '#1e293b', fontWeight: '500' }}>{med.medication_name || 'N/A'}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '12px 15px', color: '#475569' }}>{med.dosage || 'N/A'}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '12px 15px', color: '#475569' }}>{med.frequency || 'N/A'}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '12px 15px', color: '#475569' }}>{med.duration || 'N/A'}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '12px 15px', textAlign: 'center', color: '#1e293b', fontWeight: '600' }}>{med.quantity || 'N/A'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                     {rx.instructions && (
-                      <div style={{ fontSize: '12px', color: '#475569', backgroundColor: '#fef3c7', padding: '10px 15px', borderTop: '1px solid #fde047' }}>
+                      <div style={{ fontSize: '13px', color: '#475569', backgroundColor: '#fef3c7', padding: '15px 20px', borderTop: '1px solid #fde047', lineHeight: '1.6' }}>
                         <strong style={{ color: '#92400e' }}>⚠️ Instructions:</strong> <span style={{ color: '#78350f' }}>{rx.instructions}</span>
                       </div>
                     )}
@@ -699,8 +709,8 @@ export default function PatientReports() {
             </div>
 
             {/* Lab Tests & Results */}
-            <div style={{ marginBottom: '25px', pageBreakInside: 'avoid' }}>
-              <h2 style={{ fontSize: '16px', color: '#1e40af', fontWeight: 'bold', marginBottom: '12px', marginTop: '0', paddingBottom: '8px', borderBottom: '2px solid #3b82f6' }}>
+            <div style={{ marginBottom: '35px', pageBreakInside: 'avoid' }}>
+              <h2 style={{ fontSize: '18px', color: '#1e40af', fontWeight: 'bold', marginBottom: '18px', marginTop: '0', paddingBottom: '10px', borderBottom: '2px solid #3b82f6' }}>
                 LABORATORY TESTS & RESULTS
               </h2>
               {(() => {
@@ -771,8 +781,8 @@ export default function PatientReports() {
 
             {/* Billing Summary */}
             {patientHistory.invoices.length > 0 && (
-              <div style={{ marginBottom: '25px', pageBreakInside: 'avoid' }}>
-                <h2 style={{ fontSize: '16px', color: '#1e40af', fontWeight: 'bold', marginBottom: '12px', marginTop: '0', paddingBottom: '8px', borderBottom: '2px solid #3b82f6' }}>
+              <div style={{ marginBottom: '35px', pageBreakInside: 'avoid' }}>
+                <h2 style={{ fontSize: '18px', color: '#1e40af', fontWeight: 'bold', marginBottom: '18px', marginTop: '0', paddingBottom: '10px', borderBottom: '2px solid #3b82f6' }}>
                   BILLING SUMMARY
                 </h2>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -812,9 +822,9 @@ export default function PatientReports() {
             )}
 
             {/* Footer */}
-            <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid #ddd', fontSize: '10px', color: '#999', textAlign: 'center' }}>
-              <p>This is a computer-generated report. For any queries, please contact HASET Medical Center.</p>
-              <p>Report generated on {format(new Date(), 'PPP p')}</p>
+            <div style={{ marginTop: '50px', paddingTop: '25px', borderTop: '2px solid #cbd5e1', fontSize: '11px', color: '#64748b', textAlign: 'center', lineHeight: '1.8' }}>
+              <p style={{ margin: '0 0 8px 0' }}>This is a computer-generated report. For any queries, please contact HASET Medical Center.</p>
+              <p style={{ margin: '0', fontWeight: '500' }}>Report generated on {format(new Date(), 'PPP')} at {format(new Date(), 'p')}</p>
             </div>
           </div>
         </div>
