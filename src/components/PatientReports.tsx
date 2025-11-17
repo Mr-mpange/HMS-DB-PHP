@@ -285,6 +285,12 @@ export default function PatientReports() {
             display: block !important;
           }
           
+          /* Support flex layouts */
+          html body #patient-report-print div[style*="display: flex"],
+          html body #patient-report-print div[style*="display:flex"] {
+            display: flex !important;
+          }
+          
           /* Position and style patient report */
           #patient-report-print { 
             display: block !important;
@@ -608,13 +614,37 @@ export default function PatientReports() {
       {selectedPatient && patientHistory && (
         <div id="patient-report-print" style={{ display: 'none' }}>
           <div style={{ fontFamily: 'Arial, sans-serif', padding: '30px 40px', lineHeight: '1.6' }}>
-            {/* Header */}
-            <div style={{ textAlign: 'center', marginBottom: '40px', borderBottom: '3px solid #2563eb', paddingBottom: '20px' }}>
-              <h1 style={{ margin: '0 0 12px 0', fontSize: '32px', color: '#1e40af', fontWeight: 'bold', letterSpacing: '1.5px' }}>HASET MEDICAL CENTER</h1>
-              <p style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#374151', fontWeight: '500' }}>Patient Medical History Report</p>
-              <p style={{ margin: '0', fontSize: '12px', color: '#6b7280' }}>
-                Generated on {format(new Date(), 'PPP')} at {format(new Date(), 'p')}
-              </p>
+            {/* Header with Logo */}
+            <div style={{ marginBottom: '40px', borderBottom: '3px solid #2563eb', paddingBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
+                {/* Logo placeholder */}
+                <div style={{ width: '80px', height: '80px', backgroundColor: '#2563eb', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: 'white', fontSize: '32px', fontWeight: 'bold' }}>H</span>
+                </div>
+                
+                {/* Hospital Info */}
+                <div style={{ flex: 1, textAlign: 'center', paddingLeft: '20px' }}>
+                  <h1 style={{ margin: '0 0 8px 0', fontSize: '32px', color: '#1e40af', fontWeight: 'bold', letterSpacing: '1.5px' }}>HASET MEDICAL CENTER</h1>
+                  <p style={{ margin: '0', fontSize: '13px', color: '#6b7280', lineHeight: '1.5' }}>
+                    Excellence in Healthcare | Comprehensive Medical Services
+                  </p>
+                </div>
+                
+                {/* Report ID */}
+                <div style={{ width: '80px', textAlign: 'right' }}>
+                  <div style={{ fontSize: '10px', color: '#6b7280', marginBottom: '4px' }}>Report ID</div>
+                  <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af', fontFamily: 'monospace' }}>
+                    {selectedPatient.id.substring(0, 8).toUpperCase()}
+                  </div>
+                </div>
+              </div>
+              
+              <div style={{ textAlign: 'center', paddingTop: '15px', borderTop: '1px solid #e2e8f0' }}>
+                <p style={{ margin: '0 0 6px 0', fontSize: '18px', color: '#374151', fontWeight: '600' }}>PATIENT MEDICAL HISTORY REPORT</p>
+                <p style={{ margin: '0', fontSize: '12px', color: '#6b7280' }}>
+                  Generated on {format(new Date(), 'PPP')} at {format(new Date(), 'p')}
+                </p>
+              </div>
             </div>
 
             {/* Patient Demographics */}
@@ -880,9 +910,24 @@ export default function PatientReports() {
             )}
 
             {/* Footer */}
-            <div style={{ marginTop: '50px', paddingTop: '25px', borderTop: '2px solid #cbd5e1', fontSize: '11px', color: '#64748b', textAlign: 'center', lineHeight: '1.8' }}>
-              <p style={{ margin: '0 0 8px 0' }}>This is a computer-generated report. For any queries, please contact HASET Medical Center.</p>
-              <p style={{ margin: '0', fontWeight: '500' }}>Report generated on {format(new Date(), 'PPP')} at {format(new Date(), 'p')}</p>
+            <div style={{ marginTop: '50px', paddingTop: '25px', borderTop: '2px solid #cbd5e1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', fontSize: '11px', color: '#64748b' }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#475569' }}>HASET Medical Center</p>
+                  <p style={{ margin: '0 0 2px 0' }}>📍 Dar es Salaam, Tanzania</p>
+                  <p style={{ margin: '0 0 2px 0' }}>📞 +255 XXX XXX XXX</p>
+                  <p style={{ margin: '0' }}>✉️ info@hasetmedical.com</p>
+                </div>
+                <div style={{ flex: 1, textAlign: 'right' }}>
+                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#475569' }}>Report Information</p>
+                  <p style={{ margin: '0 0 2px 0' }}>Patient ID: {selectedPatient.id}</p>
+                  <p style={{ margin: '0 0 2px 0' }}>Generated: {format(new Date(), 'PPP')}</p>
+                  <p style={{ margin: '0' }}>Time: {format(new Date(), 'p')}</p>
+                </div>
+              </div>
+              <div style={{ textAlign: 'center', paddingTop: '15px', borderTop: '1px solid #e2e8f0', fontSize: '10px', color: '#9ca3af' }}>
+                <p style={{ margin: '0' }}>This is a confidential computer-generated medical report. Unauthorized disclosure is prohibited.</p>
+              </div>
             </div>
           </div>
         </div>
