@@ -22,6 +22,7 @@ The Patient Reports feature allows administrators to search for patients, view t
 Displays quick statistics:
 - **Total Appointments**: Number of patient appointments
 - **Prescriptions**: Total prescriptions issued
+- **Medications Provided**: Total number of medications dispensed
 - **Lab Tests**: Number of lab tests performed
 - **Total Spent**: Sum of all paid invoices
 
@@ -35,7 +36,7 @@ Professional print layout includes:
 - Blood group (if available)
 
 #### Summary Statistics
-- Visual cards showing appointments, prescriptions, lab tests, and total spent
+- Visual cards showing appointments, prescriptions, medications provided, lab tests, and total spent
 
 #### Appointment History Table
 - Date of appointment
@@ -44,17 +45,25 @@ Professional print layout includes:
 - Reason for visit
 - Status (Scheduled, Completed, Cancelled)
 
-#### Prescriptions Table
-- Date prescribed
-- Medication name
-- Dosage instructions
-- Duration
+#### Prescriptions & Medications Provided
+Each prescription shows:
+- Prescription date and doctor name
+- Status (Active, Completed, etc.)
+- Detailed medication table:
+  - Medication name
+  - Dosage
+  - Frequency (e.g., 3 times daily)
+  - Duration (e.g., 7 days)
+  - Quantity provided
+- Special instructions
 
-#### Lab Tests & Results Table
-- Test date
-- Test name
-- Results
-- Status
+#### Laboratory Tests & Results Table
+- Date ordered
+- Test name and type
+- Result value with units
+- Reference range (normal values)
+- Status with color coding (Completed, Pending, etc.)
+- Completion date
 
 #### Billing Summary Table
 - Invoice number

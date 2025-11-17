@@ -71,10 +71,22 @@ export default function PatientReports() {
 
       // Fetch all patient data
       const [appointmentsRes, prescriptionsRes, labTestsRes, invoicesRes] = await Promise.all([
-        api.get(`/appointments`, { params: { ...params, patient_id: patientId } }).catch(() => ({ data: { appointments: [] } })),
-        api.get(`/prescriptions`, { params: { ...params, patient_id: patientId } }).catch(() => ({ data: { prescriptions: [] } })),
-        api.get(`/lab-tests`, { params: { ...params, patient_id: patientId } }).catch(() => ({ data: { labTests: [] } })),
-        api.get(`/billing/invoices`, { params: { ...params, patient_id: patientId } }).catch(() => ({ data: { invoices: [] } }))
+        api.get(`/appointments`, { params: { ...params, patient_id: patientId } }).catch((err) => {
+          console.error('Appointments fetch error:', err);
+          return { data: { appointments: [] } };
+        }),
+        api.get(`/prescriptions`, { params: { ...params, patient_id: patientId } }).catch((err) => {
+          console.error('Prescriptions fetch error:', err);
+          return { data: { prescriptions: [] } };
+        }),
+        api.get(`/labs`, { params: { ...params, patient_id: patientId } }).catch((err) => {
+          console.error('Lab tests fetch error:', err);
+          return { data: { labTests: [] } };
+        }),
+        api.get(`/billing/invoices`, { params: { ...params, patient_id: patientId } }).catch((err) => {
+          console.error('Invoices fetch error:', err);
+          return { data: { invoices: [] } };
+        })
       ]);
 
       const invoices = invoicesRes.data.invoices || [];
@@ -82,10 +94,60 @@ export default function PatientReports() {
         .filter((inv: any) => inv.status === 'Paid')
         .reduce((sum: number, inv: any) => sum + Number(inv.total_amount || 0), 0);
 
+      // Debug logging
+      console.log('=== PATIENT HISTORY DEBUG ===');
+      console.log('Appointments Response:', appointmentsRes.data);
+      console.log('Prescriptions Response:', prescriptionsRes.data);
+      console.log('Lab Tests Response:', labTestsRes.data);
+      console.log('Invoices Response:', invoicesRes.data);
+      
+      const appointments = appointmentsRes.data.appointments || [];
+      const prescriptions = prescriptionsRes.data.prescriptions || [];
+      const labTests = labTestsRes.data.labTests || [];
+      
+      console.log('Processed Data:', {
+        appointments: appointments.length,
+        prescriptions: prescriptions.length,
+        prescriptionsWithMeds: prescriptions.filter(p => p.medications?.length > 0).length,
+        totalMedications: prescriptions.reduce((sum, rx) => sum + (rx.medications?.length || 0), 0),
+        labTests: labTests.length,
+        invoices: invoices.length,
+        totalSpent
+      });
+      
+      // Log detailed prescription data
+      if (prescriptions.length > 0) {
+        console.log('📋 Prescription Details:');
+        prescriptions.forEach((rx, i) => {
+          console.log(`  Prescription ${i + 1}:`, {
+            id: rx.id,
+            date: rx.prescription_date,
+            doctor: rx.doctor?.full_name,
+            status: rx.status,
+            medicationsCount: rx.medications?.length || 0,
+            medications: rx.medications
+          });
+        });
+      }
+      
+      // Log detailed lab test data
+      if (labTests.length > 0) {
+        console.log('🔬 Lab Test Details:');
+        labTests.forEach((test, i) => {
+          console.log(`  Lab Test ${i + 1}:`, {
+            id: test.id,
+            name: test.test_name,
+            type: test.test_type,
+            result: test.result_value,
+            status: test.status
+          });
+        });
+      }
+
       setPatientHistory({
-        appointments: appointmentsRes.data.appointments || [],
-        prescriptions: prescriptionsRes.data.prescriptions || [],
-        labTests: labTestsRes.data.labTests || [],
+        appointments,
+        prescriptions,
+        labTests,
         invoices,
         totalSpent
       });
@@ -272,42 +334,62 @@ export default function PatientReports() {
                 <div className="flex justify-center py-8">
                   <Loader2 className="h-8 w-8 animate-spin" />
                 </div>
-              ) : patientHistory && (
-                <div className="grid gap-4 md:grid-cols-4">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Appointments</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{patientHistory.appointments.length}</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Prescriptions</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{patientHistory.prescriptions.length}</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Lab Tests</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">{patientHistory.labTests.length}</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold">TSh {patientHistory.totalSpent.toLocaleString()}</div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
+              ) : patientHistory ? (
+                <>
+                  {console.log('📊 Rendering summary cards with:', {
+                    appointments: patientHistory.appointments?.length || 0,
+                    prescriptions: patientHistory.prescriptions?.length || 0,
+                    medications: patientHistory.prescriptions?.reduce((sum, rx) => sum + (rx.medications?.length || 0), 0) || 0,
+                    labTests: patientHistory.labTests?.length || 0
+                  })}
+                  <div className="grid gap-4 md:grid-cols-5">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Appointments</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{patientHistory.appointments?.length || 0}</div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Prescriptions</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{patientHistory.prescriptions?.length || 0}</div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Medications</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">
+                          {patientHistory.prescriptions?.reduce((sum, rx) => 
+                            sum + (rx.medications?.length || 0), 0
+                          ) || 0}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Lab Tests</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">{patientHistory.labTests?.length || 0}</div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">Total Spent</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold">TSh {(patientHistory.totalSpent || 0).toLocaleString()}</div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              ) : null}
             </div>
           )}
         </CardContent>
@@ -378,7 +460,7 @@ export default function PatientReports() {
               <h2 style={{ fontSize: '18px', borderBottom: '1px solid #ddd', paddingBottom: '10px', marginBottom: '15px' }}>
                 Summary
               </h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '15px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '15px' }}>
                 <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '5px' }}>
                   <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Total Appointments</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{patientHistory.appointments.length}</div>
@@ -386,6 +468,14 @@ export default function PatientReports() {
                 <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '5px' }}>
                   <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Prescriptions</div>
                   <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{patientHistory.prescriptions.length}</div>
+                </div>
+                <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '5px' }}>
+                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Medications Provided</div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold' }}>
+                    {patientHistory.prescriptions.reduce((sum, rx) => 
+                      sum + (rx.medications?.length || 0), 0
+                    )}
+                  </div>
                 </div>
                 <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '5px' }}>
                   <div style={{ fontSize: '12px', color: '#666', marginBottom: '5px' }}>Lab Tests</div>
@@ -431,50 +521,82 @@ export default function PatientReports() {
               </div>
             )}
 
-            {/* Prescriptions */}
-            {patientHistory.prescriptions.length > 0 && (
-              <div style={{ marginBottom: '30px', pageBreakInside: 'avoid' }}>
-                <h2 style={{ fontSize: '18px', borderBottom: '1px solid #ddd', paddingBottom: '10px', marginBottom: '15px' }}>
-                  Prescriptions
-                </h2>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead>
-                    <tr style={{ backgroundColor: '#f5f5f5' }}>
-                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Date</th>
-                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Medication</th>
-                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Dosage</th>
-                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {patientHistory.prescriptions.map((rx: any, idx: number) => (
-                      <tr key={idx}>
-                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>
-                          {format(new Date(rx.prescription_date || rx.created_at), 'MMM dd, yyyy')}
-                        </td>
-                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{rx.medication_name || 'N/A'}</td>
-                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{rx.dosage || 'N/A'}</td>
-                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{rx.duration || 'N/A'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {/* Prescriptions & Medications Provided */}
+            <div style={{ marginBottom: '30px', pageBreakInside: 'avoid' }}>
+              <h2 style={{ fontSize: '18px', borderBottom: '1px solid #ddd', paddingBottom: '10px', marginBottom: '15px' }}>
+                Prescriptions & Medications Provided
+              </h2>
+              {patientHistory.prescriptions.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#999', padding: '20px' }}>
+                  No prescriptions found for this patient.
+                </p>
+              ) : (
+                patientHistory.prescriptions.map((rx: any, rxIdx: number) => (
+                  <div key={rxIdx} style={{ marginBottom: '20px' }}>
+                    <div style={{ backgroundColor: '#f9f9f9', padding: '10px', marginBottom: '10px', borderRadius: '5px' }}>
+                      <strong>Prescription Date:</strong> {format(new Date(rx.prescription_date || rx.created_at), 'MMM dd, yyyy')}
+                      {rx.doctor?.full_name && (
+                        <span style={{ marginLeft: '20px' }}>
+                          <strong>Doctor:</strong> {rx.doctor.full_name}
+                        </span>
+                      )}
+                      {rx.status && (
+                        <span style={{ marginLeft: '20px' }}>
+                          <strong>Status:</strong> {rx.status}
+                        </span>
+                      )}
+                    </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', marginBottom: '10px' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#f5f5f5' }}>
+                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Medication</th>
+                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Dosage</th>
+                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Frequency</th>
+                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Duration</th>
+                          <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Quantity</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(rx.medications || []).map((med: any, medIdx: number) => (
+                          <tr key={medIdx}>
+                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>{med.medication_name || 'N/A'}</td>
+                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>{med.dosage || 'N/A'}</td>
+                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>{med.frequency || 'N/A'}</td>
+                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>{med.duration || 'N/A'}</td>
+                            <td style={{ border: '1px solid #ddd', padding: '8px' }}>{med.quantity || 'N/A'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {rx.instructions && (
+                      <div style={{ fontSize: '11px', color: '#666', fontStyle: 'italic', paddingLeft: '10px' }}>
+                        <strong>Instructions:</strong> {rx.instructions}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
 
-            {/* Lab Tests */}
-            {patientHistory.labTests.length > 0 && (
-              <div style={{ marginBottom: '30px', pageBreakInside: 'avoid' }}>
-                <h2 style={{ fontSize: '18px', borderBottom: '1px solid #ddd', paddingBottom: '10px', marginBottom: '15px' }}>
-                  Lab Tests & Results
-                </h2>
+            {/* Lab Tests & Results */}
+            <div style={{ marginBottom: '30px', pageBreakInside: 'avoid' }}>
+              <h2 style={{ fontSize: '18px', borderBottom: '1px solid #ddd', paddingBottom: '10px', marginBottom: '15px' }}>
+                Laboratory Tests & Results
+              </h2>
+              {patientHistory.labTests.length === 0 ? (
+                <p style={{ textAlign: 'center', color: '#999', padding: '20px' }}>
+                  No lab tests found for this patient.
+                </p>
+              ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ backgroundColor: '#f5f5f5' }}>
-                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Date</th>
+                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Date Ordered</th>
                       <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Test Name</th>
+                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Test Type</th>
                       <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Result</th>
                       <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Status</th>
+                      <th style={{ border: '1px solid #ddd', padding: '8px', textAlign: 'left' }}>Completed</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -484,14 +606,38 @@ export default function PatientReports() {
                           {format(new Date(test.test_date || test.created_at), 'MMM dd, yyyy')}
                         </td>
                         <td style={{ border: '1px solid #ddd', padding: '8px' }}>{test.test_name || 'N/A'}</td>
-                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{test.result || 'Pending'}</td>
-                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{test.status || 'N/A'}</td>
+                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>{test.test_type || 'N/A'}</td>
+                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                          {test.result_value || test.result || 'Pending'}
+                          {test.result_unit && ` ${test.result_unit}`}
+                          {test.reference_range && (
+                            <div style={{ fontSize: '10px', color: '#666' }}>
+                              Normal: {test.reference_range}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                          <span style={{ 
+                            padding: '2px 6px', 
+                            borderRadius: '3px',
+                            backgroundColor: test.status === 'Completed' ? '#d4edda' : 
+                                           test.status === 'Pending' ? '#fff3cd' : '#f8d7da',
+                            color: test.status === 'Completed' ? '#155724' : 
+                                   test.status === 'Pending' ? '#856404' : '#721c24',
+                            fontSize: '11px'
+                          }}>
+                            {test.status || 'N/A'}
+                          </span>
+                        </td>
+                        <td style={{ border: '1px solid #ddd', padding: '8px' }}>
+                          {test.completed_at ? format(new Date(test.completed_at), 'MMM dd, yyyy') : '-'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Billing Summary */}
             {patientHistory.invoices.length > 0 && (

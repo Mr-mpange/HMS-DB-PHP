@@ -46,9 +46,10 @@ A complete **Patient Reports** feature in the Admin Dashboard that allows admini
 - Displays patient demographics (name, phone, gender, age)
 
 ### 2. Patient History Display
-Shows 4 key metrics:
+Shows 5 key metrics:
 - **Appointments**: Total number of appointments
 - **Prescriptions**: Total prescriptions issued
+- **Medications Provided**: Total number of medications dispensed to patient
 - **Lab Tests**: Number of lab tests performed
 - **Total Spent**: Sum of all paid invoices (TSh)
 
@@ -62,10 +63,10 @@ Shows 4 key metrics:
 Includes:
 - HASET Medical Center header
 - Patient demographics table
-- Summary statistics (visual cards)
-- Appointment history table
-- Prescriptions table
-- Lab tests & results table
+- Summary statistics (5 visual cards)
+- Appointment history table (date, time, doctor, reason, status)
+- Prescriptions & Medications Provided (grouped by prescription with detailed medication list)
+- Laboratory tests & results table (with test types, results, reference ranges, status)
 - Billing summary with total spent
 - Footer with generation timestamp
 
