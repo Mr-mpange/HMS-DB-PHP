@@ -12,7 +12,7 @@ import { Loader2, Stethoscope } from 'lucide-react';
 interface QuickServiceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  patient: any;
+  patient?: any; // Optional - can be null for walk-ins
   onSuccess: () => void;
 }
 
@@ -22,12 +22,22 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
   const [quantity, setQuantity] = useState<number>(1);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  
+  // Walk-in patient fields
+  const [isWalkIn, setIsWalkIn] = useState(false);
+  const [walkInData, setWalkInData] = useState({
+    full_name: '',
+    phone: '',
+    date_of_birth: '',
+    gender: 'Male'
+  });
 
   useEffect(() => {
     if (open) {
       fetchServices();
+      setIsWalkIn(!patient); // If no patient, it's a walk-in
     }
-  }, [open]);
+  }, [open, patient]);
 
   const fetchServices = async () => {
     setLoading(true);
@@ -52,7 +62,13 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       return;
     }
 
-    if (!patient?.id) {
+    // Validate walk-in data if needed
+    if (isWalkIn) {
+      if (!walkInData.full_name || !walkInData.phone || !walkInData.date_of_birth) {
+        toast.error('Please fill in all patient details');
+        return;
+      }
+    } else if (!patient?.id) {
       toast.error('No patient selected');
       return;
     }
@@ -60,9 +76,27 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
     setSubmitting(true);
     try {
       const service = services.find(s => s.id === selectedService);
+      let patientId = patient?.id;
+
+      // Register walk-in patient first if needed
+      if (isWalkIn) {
+        const registerRes = await api.post('/patients', {
+          ...walkInData,
+          status: 'Active',
+          address: 'Walk-in',
+          email: `walkin_${Date.now()}@temp.com` // Temporary email
+        });
+        
+        if (registerRes.data.error) {
+          throw new Error(registerRes.data.error);
+        }
+        
+        patientId = registerRes.data.patient?.id || registerRes.data.patientId;
+        toast.success(`Patient ${walkInData.full_name} registered`);
+      }
       
       await api.post('/patient-services', {
-        patient_id: patient.id,
+        patient_id: patientId,
         service_id: selectedService,
         quantity: quantity,
         unit_price: service.base_price,
@@ -71,7 +105,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         status: 'Pending'
       });
 
-      toast.success(`${service.service_name} assigned to ${patient.full_name}`);
+      toast.success(`${service.service_name} assigned to ${isWalkIn ? walkInData.full_name : patient.full_name}`);
       onSuccess();
       onOpenChange(false);
       setSelectedService('');
@@ -95,7 +129,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
             Quick Service Assignment
           </DialogTitle>
           <DialogDescription>
-            Assign a service directly to {patient?.full_name} without doctor consultation
+            {isWalkIn ? 'Register walk-in patient and assign service' : `Assign a service directly to ${patient?.full_name} without doctor consultation`}
           </DialogDescription>
         </DialogHeader>
 
@@ -105,13 +139,62 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Patient</Label>
-              <div className="p-3 bg-muted rounded-md">
-                <p className="font-medium">{patient?.full_name}</p>
-                <p className="text-sm text-muted-foreground">{patient?.phone}</p>
+            {isWalkIn ? (
+              <div className="space-y-3 p-3 bg-blue-50 rounded-md">
+                <p className="text-sm font-medium text-blue-900">Walk-in Patient Registration</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="full_name" className="text-xs">Full Name *</Label>
+                    <Input
+                      id="full_name"
+                      value={walkInData.full_name}
+                      onChange={(e) => setWalkInData({...walkInData, full_name: e.target.value})}
+                      placeholder="Patient name"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="phone" className="text-xs">Phone *</Label>
+                    <Input
+                      id="phone"
+                      value={walkInData.phone}
+                      onChange={(e) => setWalkInData({...walkInData, phone: e.target.value})}
+                      placeholder="+255..."
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="dob" className="text-xs">Date of Birth *</Label>
+                    <Input
+                      id="dob"
+                      type="date"
+                      max={new Date().toISOString().split('T')[0]}
+                      value={walkInData.date_of_birth}
+                      onChange={(e) => setWalkInData({...walkInData, date_of_birth: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="gender" className="text-xs">Gender *</Label>
+                    <Select value={walkInData.gender} onValueChange={(value) => setWalkInData({...walkInData, gender: value})}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Patient</Label>
+                <div className="p-3 bg-muted rounded-md">
+                  <p className="font-medium">{patient?.full_name}</p>
+                  <p className="text-sm text-muted-foreground">{patient?.phone}</p>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Select Service *</Label>

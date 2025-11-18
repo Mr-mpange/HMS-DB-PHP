@@ -856,7 +856,7 @@ export default function ReceptionistDashboard() {
     };
 
     const visitRes = await api.post('/visits', visitData);
-    if (visitRes.status !== 200 || visitRes.data.error) {
+    if ((visitRes.status !== 200 && visitRes.status !== 201) || visitRes.data.error) {
       throw new Error(visitRes.data.error || 'Failed to create visit');
     }
 
@@ -1328,7 +1328,10 @@ export default function ReceptionistDashboard() {
                   <span>Returning Patient</span>
                   <span className="text-xs">→ Create New Visit</span>
                 </Button>
-                <Button variant="outline" className="h-20 flex-col gap-2 bg-green-50 hover:bg-green-100 border-green-200" onClick={() => setShowQuickServiceDialog(true)}>
+                <Button variant="outline" className="h-20 flex-col gap-2 bg-green-50 hover:bg-green-100 border-green-200" onClick={() => {
+                  setSelectedPatientForService(null); // No patient - walk-in
+                  setShowQuickServiceDialog(true);
+                }}>
                   <Stethoscope className="h-6 w-6 text-green-600" />
                   <span className="text-green-700">Quick Service (Walk-in)</span>
                   <span className="text-xs text-green-600">→ Direct Service Only</span>
