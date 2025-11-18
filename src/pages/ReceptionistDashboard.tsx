@@ -13,6 +13,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { StatCard } from '@/components/StatCard';
 import { AppointmentsCard } from '@/components/AppointmentsCard';
 import { PatientsCard } from '@/components/PatientsCard';
+import { QuickServiceDialog } from '@/components/QuickServiceDialog';
+import { StatCardSkeleton, AppointmentsCardSkeleton, PatientsCardSkeleton } from '@/components/DashboardSkeleton';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { logActivity } from '@/lib/utils';
@@ -71,6 +73,8 @@ export default function ReceptionistDashboard() {
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [showRegistrationPaymentDialog, setShowRegistrationPaymentDialog] = useState(false);
   const [selectedAppointmentForPayment, setSelectedAppointmentForPayment] = useState<any>(null);
+  const [showQuickServiceDialog, setShowQuickServiceDialog] = useState(false);
+  const [selectedPatientForService, setSelectedPatientForService] = useState<any>(null);
   const [consultationFee, setConsultationFee] = useState(2000);
   const [departmentFees, setDepartmentFees] = useState<Record<string, number>>({});
   const [paymentForm, setPaymentForm] = useState({
@@ -1125,13 +1129,13 @@ export default function ReceptionistDashboard() {
           {/* Skeleton stats */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[1,2,3,4].map(i => (
-              <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>
+              <StatCardSkeleton key={i} />
             ))}
           </div>
           {/* Skeleton cards */}
           <div className="grid gap-8 lg:grid-cols-2">
-            <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
-            <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
+            <AppointmentsCardSkeleton />
+            <PatientsCardSkeleton />
           </div>
         </div>
       </DashboardLayout>
@@ -1297,7 +1301,13 @@ export default function ReceptionistDashboard() {
           {/* Today's Appointments & Recent Patients */}
           <div className="grid gap-8 lg:grid-cols-2">
             <AppointmentsCard appointments={appointments} onCheckIn={handleInitiateCheckIn} onCancel={handleCancelAppointment} />
-            <PatientsCard patients={patients} />
+            <PatientsCard 
+              patients={patients} 
+              onQuickService={(patient) => {
+                setSelectedPatientForService(patient);
+                setShowQuickServiceDialog(true);
+              }}
+            />
           </div>
 
           {/* Quick Actions */}
@@ -1317,6 +1327,11 @@ export default function ReceptionistDashboard() {
                   <Users className="h-6 w-6" />
                   <span>Returning Patient</span>
                   <span className="text-xs">→ Create New Visit</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col gap-2 bg-green-50 hover:bg-green-100 border-green-200" onClick={() => setShowQuickServiceDialog(true)}>
+                  <Stethoscope className="h-6 w-6 text-green-600" />
+                  <span className="text-green-700">Quick Service (Walk-in)</span>
+                  <span className="text-xs text-green-600">→ Direct Service Only</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleBookAppointment}>
                   <Calendar className="h-6 w-6" />
@@ -2179,22 +2194,36 @@ export default function ReceptionistDashboard() {
                             )}
                           </div>
                         </div>
-                        <Button
-                          onClick={() => initiateReturningPatientVisit(patient)}
-                          disabled={loading}
-                        >
-                          {loading ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                              Creating...
-                            </>
-                          ) : (
-                            <>
-                              <UserPlus className="h-4 w-4 mr-2" />
-                              Create Visit
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedPatientForService(patient);
+                              setShowQuickServiceDialog(true);
+                              setShowReturningPatientDialog(false);
+                            }}
+                            disabled={loading}
+                          >
+                            <Stethoscope className="h-4 w-4 mr-2" />
+                            Quick Service
+                          </Button>
+                          <Button
+                            onClick={() => initiateReturningPatientVisit(patient)}
+                            disabled={loading}
+                          >
+                            {loading ? (
+                              <>
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                Creating...
+                              </>
+                            ) : (
+                              <>
+                                <UserPlus className="h-4 w-4 mr-2" />
+                                Create Visit
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -2204,6 +2233,17 @@ export default function ReceptionistDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Quick Service Dialog */}
+      <QuickServiceDialog
+        open={showQuickServiceDialog}
+        onOpenChange={setShowQuickServiceDialog}
+        patient={selectedPatientForService}
+        onSuccess={() => {
+          toast.success('Service assigned successfully');
+          fetchData();
+        }}
+      />
     </>
   );
 }

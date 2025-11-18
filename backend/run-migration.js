@@ -1,31 +1,18 @@
-const mysql = require('mysql2/promise');
 const fs = require('fs');
-const path = require('path');
-require('dotenv').config();
+const db = require('./src/config/database');
 
 async function runMigration() {
   try {
-    const connection = await mysql.createConnection({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'hospital_db',
-      multipleStatements: true
-    });
-
-    console.log('Connected to database');
-
-    // Read and execute migration
-    const migrationFile = path.join(__dirname, 'migrations', 'remove_unused_patient_fields.sql');
-    const sql = fs.readFileSync(migrationFile, 'utf8');
+    const sql = fs.readFileSync('./migrations/create_patient_services_table.sql', 'utf8');
     
-    console.log('Running migration: remove_unused_patient_fields.sql');
-    await connection.query(sql);
-    console.log('✅ Migration completed successfully');
-
-    await connection.end();
+    await db.query(sql);
+    
+    console.log('✓ Migration completed successfully!');
+    console.log('✓ patient_services table created');
+    
+    process.exit(0);
   } catch (error) {
-    console.error('❌ Migration failed:', error);
+    console.error('✗ Migration failed:', error.message);
     process.exit(1);
   }
 }

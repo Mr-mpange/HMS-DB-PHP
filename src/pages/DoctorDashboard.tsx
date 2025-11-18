@@ -173,6 +173,7 @@ export default function DoctorDashboard() {
   const [appointmentToComplete, setAppointmentToComplete] = useState<any>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   const [nextAction, setNextAction] = useState<'discharge' | 'lab' | 'pharmacy'>('discharge');
+  const [isCompletingWithAction, setIsCompletingWithAction] = useState(false); // Track if completing with lab/pharmacy
 
   const handleCompleteAppointment = async (appointment: any) => {
     // Show dialog to collect notes
@@ -1258,6 +1259,19 @@ export default function DoctorDashboard() {
       toast.success(`${labTests.length} lab test(s) ordered successfully. Patient sent to lab.`);
       setShowLabTestDialog(false);
       
+      // If completing appointment with lab tests, complete it now
+      if (isCompletingWithAction && appointmentToComplete) {
+        await api.put(`/appointments/${appointmentToComplete.id}`, {
+          status: 'Completed',
+          completed_at: new Date().toISOString()
+        });
+        setAppointmentToComplete(null);
+        setCompletionNotes('');
+        setNextAction('discharge');
+        setIsCompletingWithAction(false);
+        toast.success('Appointment completed. Patient sent to lab.');
+      }
+      
       // Reset form
       setLabTestForm({
         selectedTests: [],
@@ -1362,6 +1376,19 @@ export default function DoctorDashboard() {
 
       toast.success(`${selectedMedications.length} prescription(s) written. Patient sent to pharmacy.`);
       setShowPrescriptionDialog(false);
+      
+      // If completing appointment with prescription, complete it now
+      if (isCompletingWithAction && appointmentToComplete) {
+        await api.put(`/appointments/${appointmentToComplete.id}`, {
+          status: 'Completed',
+          completed_at: new Date().toISOString()
+        });
+        setAppointmentToComplete(null);
+        setCompletionNotes('');
+        setNextAction('discharge');
+        setIsCompletingWithAction(false);
+        toast.success('Appointment completed. Patient sent to pharmacy.');
+      }
       
       // Reset form for next prescription
       setSelectedMedications([]);
@@ -2261,6 +2288,16 @@ export default function DoctorDashboard() {
                         >
                           <TestTube className="h-3 w-3" />
                           Order Lab Test
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleWritePrescription(visit)}
+                          className="flex items-center gap-1 text-green-600 hover:text-green-700"
+                          disabled={!visit.doctor_notes}
+                        >
+                          <Pill className="h-3 w-3" />
+                          Prescribe Meds
                         </Button>
                       </div>
                     </TableCell>
@@ -3233,7 +3270,46 @@ export default function DoctorDashboard() {
                 Cancel
               </Button>
               <Button 
-                onClick={confirmCompleteAppointment}
+                onClick={async () => {
+                  if (nextAction === 'lab') {
+                    // Save completion notes first, then open lab test order form
+                    setIsCompletingWithAction(true);
+                    setShowCompleteDialog(false);
+                    
+                    // Save notes to appointment
+                    await api.put(`/appointments/${appointmentToComplete.id}`, {
+                      notes: completionNotes
+                    });
+                    
+                    const visit = {
+                      id: appointmentToComplete?.id,
+                      patient_id: appointmentToComplete?.patient_id,
+                      patient: appointmentToComplete?.patient,
+                      doctor_notes: completionNotes
+                    };
+                    handleOrderLabTests(visit);
+                  } else if (nextAction === 'pharmacy') {
+                    // Save completion notes first, then open prescription form
+                    setIsCompletingWithAction(true);
+                    setShowCompleteDialog(false);
+                    
+                    // Save notes to appointment
+                    await api.put(`/appointments/${appointmentToComplete.id}`, {
+                      notes: completionNotes
+                    });
+                    
+                    const visit = {
+                      id: appointmentToComplete?.id,
+                      patient_id: appointmentToComplete?.patient_id,
+                      patient: appointmentToComplete?.patient,
+                      doctor_notes: completionNotes
+                    };
+                    handleWritePrescription(visit);
+                  } else {
+                    // Discharge - complete immediately
+                    confirmCompleteAppointment();
+                  }
+                }}
                 disabled={loading || completionNotes.trim().length < 10}
               >
                 {loading ? (
@@ -3241,8 +3317,12 @@ export default function DoctorDashboard() {
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     Completing...
                   </>
+                ) : nextAction === 'lab' ? (
+                  'Order Lab Tests'
+                ) : nextAction === 'pharmacy' ? (
+                  'Write Prescription'
                 ) : (
-                  'Complete Appointment'
+                  'Complete & Discharge'
                 )}
               </Button>
             </div>

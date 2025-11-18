@@ -81,6 +81,7 @@ const paymentRoutes = require('./routes/payments');
 const settingsRoutes = require('./routes/settings');
 const insuranceRoutes = require('./routes/insurance');
 const servicesRoutes = require('./routes/services');
+const patientServicesRoutes = require('./routes/patientServices');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/patients', patientRoutes);
@@ -99,6 +100,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/insurance', insuranceRoutes);
 app.use('/api/services', servicesRoutes);
+app.use('/api/patient-services', patientServicesRoutes);
 
 // Department fees endpoint
 const departmentController = require('./controllers/departmentController');

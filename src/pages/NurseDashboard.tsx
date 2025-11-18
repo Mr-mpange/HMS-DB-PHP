@@ -275,14 +275,23 @@ export default function NurseDashboard() {
       // Fetch recent patients
       const patientsResponse = await api.get('/patients?limit=10&sort=updated_at&order=desc');
       const patientsData = Array.isArray(patientsResponse.data.patients) ? patientsResponse.data.patients : [];
+      const totalPatientsCount = patientsResponse.data.total || patientsData.length;
 
       // Calculate stats
       setPendingVisits(visitsData);
       setAppointments(appointmentsData);
       setPatients(patientsData);
+      
+      // Count today's appointments - extract date from datetime string
+      const todayCount = appointmentsData.filter((a: any) => {
+        if (!a.appointment_date) return false;
+        const aptDate = typeof a.appointment_date === 'string' ? a.appointment_date.split('T')[0] : '';
+        return aptDate === today;
+      }).length;
+      
       setStats({
-        totalPatients: patientsData.length,
-        todayAppointments: appointmentsData.filter((a: any) => a.appointment_date === today).length,
+        totalPatients: totalPatientsCount, // Use total from API, not just fetched count
+        todayAppointments: todayCount,
         pendingVitals: visitsData.length,
         completedTasks: visitsData.filter((v: any) => v.nurse_status === 'Completed').length
       });

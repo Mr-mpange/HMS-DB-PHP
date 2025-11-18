@@ -1,13 +1,15 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Users, UserPlus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, UserPlus, Stethoscope } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface PatientsCardProps {
   patients: any[];
+  onQuickService?: (patient: any) => void;
 }
 
-export function PatientsCard({ patients }: PatientsCardProps) {
+export function PatientsCard({ patients, onQuickService }: PatientsCardProps) {
   const recentPatients = patients.slice(0, 5); // Show only the 5 most recent patients
 
   return (
@@ -25,8 +27,8 @@ export function PatientsCard({ patients }: PatientsCardProps) {
         ) : (
           <div className="space-y-3">
             {recentPatients.map((patient) => (
-              <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg">
-                <div className="flex items-center gap-3">
+              <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 transition-colors">
+                <div className="flex items-center gap-3 flex-1">
                   <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
                     <UserPlus className="h-4 w-4 text-green-600" />
                   </div>
@@ -37,9 +39,22 @@ export function PatientsCard({ patients }: PatientsCardProps) {
                     </p>
                   </div>
                 </div>
-                <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
-                  {patient.status}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
+                    {patient.status}
+                  </Badge>
+                  {onQuickService && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onQuickService(patient)}
+                      className="h-8"
+                    >
+                      <Stethoscope className="h-4 w-4 mr-1" />
+                      Quick Service
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
