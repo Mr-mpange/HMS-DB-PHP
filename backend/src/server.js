@@ -56,7 +56,18 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// More permissive rate limit for activity logging
+const activityLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 1000, // 1000 requests per minute for activity logs
+  message: 'Too many activity logs, please slow down.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use('/api/', limiter);
+app.use('/api/activity', activityLimiter); // More permissive for activity logs
 
 // Make io accessible to routes
 app.set('io', io);
