@@ -604,11 +604,13 @@ export default function PharmacyDashboard() {
   };
 
   const downloadCSVTemplate = () => {
-    const headers = ['name', 'description', 'quantity_in_stock', 'reorder_level', 'unit_price', 'manufacturer', 'dosage_form', 'strength', 'expiry_date'];
+    const headers = ['name', 'generic_name', 'strength', 'dosage_form', 'manufacturer', 'quantity_in_stock', 'reorder_level', 'unit_price', 'expiry_date'];
     const csvContent = [
       headers.join(','),
-      'Paracetamol 500mg,For pain relief,100,20,5000,ABC Pharma,Tablet,500mg,2025-12-31',
-      'Amoxicillin 500mg,Antibiotic,50,10,8000,XYZ Pharma,Capsule,500mg,2024-06-30'
+      'Paracetamol,Acetaminophen,500mg,Tablet,ABC Pharma,100,20,5000,2025-12-31',
+      'Amoxicillin,Amoxicillin,500mg,Capsule,XYZ Pharma,50,10,8000,2024-06-30',
+      'Ibuprofen,Ibuprofen,400mg,Tablet,DEF Pharma,200,30,3000,2025-08-15',
+      'Metformin,Metformin HCl,500mg,Tablet,GHI Pharma,150,25,4000,2026-01-20'
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -1225,6 +1227,49 @@ export default function PharmacyDashboard() {
           </TabsContent>
 
           <TabsContent value="inventory">
+            {/* Critical Low Stock Alert */}
+            {medications.filter(m => m.quantity_in_stock <= 5).length > 0 && (
+              <Card className="shadow-lg border-red-200 bg-red-50 mb-4">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-red-700">
+                    <AlertTriangle className="h-5 w-5" />
+                    Critical Low Stock Alert
+                  </CardTitle>
+                  <CardDescription className="text-red-600">
+                    {medications.filter(m => m.quantity_in_stock <= 5).length} medication(s) have 5 or fewer units remaining
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {medications
+                      .filter(m => m.quantity_in_stock <= 5)
+                      .sort((a, b) => a.quantity_in_stock - b.quantity_in_stock)
+                      .map(med => (
+                        <div key={med.id} className="flex items-center justify-between p-3 bg-white rounded-md border border-red-200">
+                          <div className="flex items-center gap-3">
+                            <AlertCircle className="h-5 w-5 text-red-600" />
+                            <div>
+                              <p className="font-medium text-red-900">{med.name} ({med.strength})</p>
+                              <p className="text-sm text-red-700">
+                                Only <span className="font-bold">{med.quantity_in_stock}</span> units left
+                                {med.quantity_in_stock === 0 && <span className="ml-2 text-red-800 font-bold">OUT OF STOCK!</span>}
+                              </p>
+                            </div>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            variant="destructive"
+                            onClick={() => openStockDialog(med)}
+                          >
+                            Restock Now
+                          </Button>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="shadow-lg">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
@@ -1267,12 +1312,12 @@ export default function PharmacyDashboard() {
                         return (
                           <TableRow key={med.id}>
                             <TableCell className="font-medium">{med.name}</TableCell>
-                            <TableCell>{med.generic_name}</TableCell>
+                            <TableCell className="text-muted-foreground">{med.generic_name || '-'}</TableCell>
                             <TableCell>{med.strength}</TableCell>
-                            <TableCell>{med.dosage_form}</TableCell>
-                            <TableCell>{med.quantity_in_stock}</TableCell>
+                            <TableCell className="text-muted-foreground">{med.dosage_form || 'Tablet'}</TableCell>
+                            <TableCell className="font-semibold">{med.quantity_in_stock}</TableCell>
                             <TableCell>{med.reorder_level}</TableCell>
-                            <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
+                            <TableCell className="font-medium">TSh{Number(med.unit_price).toFixed(2)}</TableCell>
                             <TableCell>
                               <Badge variant={isLowStock ? 'destructive' : 'default'}>
                                 {isLowStock ? 'Low Stock' : 'In Stock'}
