@@ -201,11 +201,19 @@ exports.updateAppointment = async (req, res) => {
       reason, notes, status
     } = req.body;
     
-    // Validate: If completing appointment, notes are required
+    // Validate: If completing appointment, notes are required (either in request or already in DB)
     if (status === 'Completed' && (!notes || notes.trim() === '')) {
-      return res.status(400).json({ 
-        error: 'Consultation notes are required to complete an appointment' 
-      });
+      // Check if appointment already has notes
+      const [existing] = await db.execute(
+        'SELECT notes FROM appointments WHERE id = ?',
+        [req.params.id]
+      );
+      
+      if (!existing[0] || !existing[0].notes || existing[0].notes.trim() === '') {
+        return res.status(400).json({ 
+          error: 'Consultation notes are required to complete an appointment' 
+        });
+      }
     }
     
     // Combine date and time if both provided

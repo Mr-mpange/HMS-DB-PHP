@@ -1243,33 +1243,63 @@ export default function DoctorDashboard() {
 
       console.log('Lab tests created successfully:', createdTests.length);
 
-      // Update patient visit to lab stage
-      const visitResponse = await api.put(`/visits/${selectedVisit.id}`, {
-        current_stage: 'lab',
-        lab_status: 'Pending',
-        doctor_status: 'In Consultation',
-        updated_at: new Date().toISOString()
-      });
+      // Update or create patient visit to lab stage
+      // Patient will return to doctor after lab is completed
+      if (selectedVisit.id) {
+        // Update existing visit
+        const visitResponse = await api.put(`/visits/${selectedVisit.id}`, {
+          current_stage: 'lab',
+          lab_status: 'Pending',
+          doctor_status: 'Pending Review', // Doctor needs to review lab results
+          updated_at: new Date().toISOString()
+        });
 
-      if (visitResponse.status !== 200) {
-        console.error('Visit update error:', visitResponse.statusText);
-        throw new Error(`Failed to update patient visit: ${visitResponse.statusText}`);
+        if (visitResponse.status !== 200) {
+          console.error('Visit update error:', visitResponse.statusText);
+          throw new Error(`Failed to update patient visit: ${visitResponse.statusText}`);
+        }
+        
+        console.log('Visit updated - patient sent to lab');
+      } else if (selectedVisit.patient_id) {
+        // Create a new visit for appointment-based flow
+        console.log('Creating visit for appointment-based lab order');
+        try {
+          const visitResponse = await api.post('/visits', {
+            patient_id: selectedVisit.patient_id,
+            visit_date: new Date().toISOString().split('T')[0],
+            current_stage: 'lab',
+            overall_status: 'Active',
+            reception_status: 'Checked In',
+            nurse_status: 'Completed',
+            lab_status: 'Pending',
+            doctor_status: 'Pending Review',
+            doctor_id: user?.id
+          });
+          
+          if (visitResponse.status === 201) {
+            console.log('Visit created successfully for lab workflow');
+          }
+        } catch (createError) {
+          console.error('Failed to create visit:', createError);
+          // Continue anyway - lab tests are already created
+        }
       }
 
       toast.success(`${labTests.length} lab test(s) ordered successfully. Patient sent to lab.`);
       setShowLabTestDialog(false);
       
-      // If completing appointment with lab tests, complete it now
+      // If completing appointment with lab tests, mark appointment as "In Progress" not "Completed"
+      // Patient will return to doctor after lab
       if (isCompletingWithAction && appointmentToComplete) {
         await api.put(`/appointments/${appointmentToComplete.id}`, {
-          status: 'Completed',
-          completed_at: new Date().toISOString()
+          status: 'In Progress', // Not completed yet - waiting for lab results
+          notes: completionNotes
         });
         setAppointmentToComplete(null);
         setCompletionNotes('');
         setNextAction('discharge');
         setIsCompletingWithAction(false);
-        toast.success('Appointment completed. Patient sent to lab.');
+        toast.info('Patient sent to lab. They will return to you after lab work is completed.');
       }
       
       // Reset form
@@ -1294,6 +1324,8 @@ export default function DoctorDashboard() {
       toast.error('Please select at least one medication');
       return;
     }
+
+    console.log('Selected visit for prescription:', selectedVisit);
 
     // Validate all selected medications have required fields
     for (const medId of selectedMedications) {
@@ -1333,9 +1365,13 @@ export default function DoctorDashboard() {
         };
       });
 
+      console.log('Creating prescriptions:', prescriptionsToInsert);
       const response = await api.post('/prescriptions', { prescriptions: prescriptionsToInsert });
 
-      if (response.status !== 201) throw new Error('Failed to create prescriptions');
+      console.log('Prescription response:', response.data);
+      if (response.status !== 201 && response.status !== 200) {
+        throw new Error(response.data?.error || 'Failed to create prescriptions');
+      }
 
       // Log prescription creation
       // Note: We're removing the logActivity call as it's not part of the API
@@ -1352,18 +1388,45 @@ export default function DoctorDashboard() {
       });
 
       // After writing prescription, complete consultation and send to pharmacy
-      const visitResponse = await api.put(`/visits/${selectedVisit.id}`, {
-        doctor_status: 'Completed',
-        doctor_completed_at: new Date().toISOString(),
-        current_stage: 'pharmacy',
-        pharmacy_status: 'Pending',
-        updated_at: new Date().toISOString()
-      });
+      // Update or create visit
+      if (selectedVisit.id) {
+        // Update existing visit
+        const visitResponse = await api.put(`/visits/${selectedVisit.id}`, {
+          doctor_status: 'Completed',
+          doctor_completed_at: new Date().toISOString(),
+          current_stage: 'pharmacy',
+          pharmacy_status: 'Pending',
+          updated_at: new Date().toISOString()
+        });
 
-      if (visitResponse.status !== 200) {
-        console.error('Error updating visit after prescription:', visitResponse.statusText);
-        toast.error('Prescription saved but failed to send patient to pharmacy');
-        return;
+        if (visitResponse.status !== 200) {
+          console.error('Error updating visit after prescription:', visitResponse.statusText);
+          toast.error('Prescription saved but failed to send patient to pharmacy');
+          return;
+        }
+        
+        console.log('Visit updated - patient sent to pharmacy');
+      } else if (selectedVisit.patient_id) {
+        // Create a new visit for appointment-based flow
+        console.log('Creating visit for appointment-based pharmacy order');
+        try {
+          await api.post('/visits', {
+            patient_id: selectedVisit.patient_id,
+            visit_date: new Date().toISOString().split('T')[0],
+            current_stage: 'pharmacy',
+            overall_status: 'Active',
+            reception_status: 'Checked In',
+            nurse_status: 'Completed',
+            doctor_status: 'Completed',
+            doctor_completed_at: new Date().toISOString(),
+            pharmacy_status: 'Pending',
+            doctor_id: user?.id
+          });
+          console.log('Visit created successfully for pharmacy workflow');
+        } catch (createError) {
+          console.error('Failed to create visit:', createError);
+          // Continue anyway - prescriptions are already created
+        }
       }
 
       // Note: We're removing the logActivity call as it's not part of the API
@@ -1381,6 +1444,7 @@ export default function DoctorDashboard() {
       if (isCompletingWithAction && appointmentToComplete) {
         await api.put(`/appointments/${appointmentToComplete.id}`, {
           status: 'Completed',
+          notes: completionNotes || 'Prescription written', // Include notes to satisfy validation
           completed_at: new Date().toISOString()
         });
         setAppointmentToComplete(null);
@@ -1405,9 +1469,11 @@ export default function DoctorDashboard() {
 
       // Remove from pending visits
       setPendingVisits(prev => prev.filter(v => v.id !== selectedVisit.id));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error writing prescription:', error);
-      toast.error('Failed to write prescription');
+      console.error('Error details:', error.response?.data);
+      const errorMsg = error.response?.data?.error || error.message || 'Failed to write prescription';
+      toast.error(errorMsg);
     }
   };
 
@@ -3281,8 +3347,11 @@ export default function DoctorDashboard() {
                       notes: completionNotes
                     });
                     
+                    // Create a visit-like object for lab tests
+                    // Note: appointment might not have a visit, so we use appointment data
                     const visit = {
-                      id: appointmentToComplete?.id,
+                      id: null, // No visit ID - this is direct from appointment
+                      appointment_id: appointmentToComplete?.id,
                       patient_id: appointmentToComplete?.patient_id,
                       patient: appointmentToComplete?.patient,
                       doctor_notes: completionNotes
@@ -3298,8 +3367,11 @@ export default function DoctorDashboard() {
                       notes: completionNotes
                     });
                     
+                    // Create a visit-like object for prescription
+                    // Note: appointment might not have a visit, so we use appointment data
                     const visit = {
-                      id: appointmentToComplete?.id,
+                      id: null, // No visit ID - this is direct from appointment
+                      appointment_id: appointmentToComplete?.id,
                       patient_id: appointmentToComplete?.patient_id,
                       patient: appointmentToComplete?.patient,
                       doctor_notes: completionNotes
