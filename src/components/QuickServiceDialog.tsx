@@ -95,6 +95,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         toast.success(`Patient ${walkInData.full_name} registered`);
       }
       
+      // Create patient service
       await api.post('/patient-services', {
         patient_id: patientId,
         service_id: selectedService,
@@ -105,11 +106,30 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         status: 'Pending'
       });
 
-      toast.success(`${service.service_name} assigned to ${isWalkIn ? walkInData.full_name : patient.full_name}`);
+      // Create a visit so patient appears in nurse queue
+      await api.post('/visits', {
+        patient_id: patientId,
+        visit_date: new Date().toISOString().split('T')[0],
+        reception_status: 'Checked In',
+        reception_completed_at: new Date().toISOString(),
+        current_stage: 'nurse',
+        nurse_status: 'Pending',
+        overall_status: 'Active',
+        visit_type: 'Quick Service'
+      });
+
+      const patientName = isWalkIn ? walkInData.full_name : patient.full_name;
+      toast.success(`${service.service_name} assigned to ${patientName}. Patient sent to nurse.`);
       onSuccess();
       onOpenChange(false);
       setSelectedService('');
       setQuantity(1);
+      setWalkInData({
+        full_name: '',
+        phone: '',
+        date_of_birth: '',
+        gender: 'Male'
+      });
     } catch (error: any) {
       console.error('Error assigning service:', error);
       toast.error(error.response?.data?.error || 'Failed to assign service');
