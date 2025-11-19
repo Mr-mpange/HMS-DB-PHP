@@ -66,7 +66,9 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
         hasDateOnly: !!a.appointment_date_only,
         dateOnlyValue: a.appointment_date_only,
         extractedDate: appointmentDate,
+        extractedType: typeof appointmentDate,
         today: today,
+        todayType: typeof today,
         isToday,
         status: a.status,
         needsAction

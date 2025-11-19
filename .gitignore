@@ -1,118 +1,38 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
 # Dependencies
-node_modules
-package-lock.json
+node_modules/
+
+# Environment variables (keep .env.example)
+.env
+backend/.env
+backend/.env.production
+
+# Production secrets (NEVER COMMIT!)
+production-secrets.txt
+*-secrets.txt
 
 # Build outputs
-dist
-dist-ssr
-*.local
+dist/
+build/
+deployment/
 
-# Environment files
-.env
-.env.local
-.env.*.local
+# Logs
+*.log
+logs/
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
 
-# Deployment artifacts
-deployment-package/
-hostinger-deployment.zip
-*.zip
-test-results/
-backups/
-
-# Database backups
-*.sql.gz
-*.sql.zip
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
 
 # Temporary files
 *.tmp
 *.temp
-*.swp
-*.swo
-*~
-
-# OS files
-Thumbs.db
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# IDE files
-*.sublime-project
-*.sublime-workspace
-.vscode/settings.json
-.vscode/launch.json
-
-# Backend specific
-backend/node_modules
-backend/dist
-backend/logs
-backend/uploads/*
-!backend/uploads/.gitkeep
-backend/.env
-backend/.env.local
-backend/.env.production.local
-
-# Test files
-coverage/
-.nyc_output/
-
-# PM2
-.pm2/
-ecosystem.config.js.backup
-
-# Docker
-.dockerignore.backup
-docker-compose.override.yml
-
-# Misc
-.cache/
-.parcel-cache/
-.next/
-.nuxt/
-.vercel
-.netlify
-
-# Documentation (generated/temporary)
-PRODUCTION_*.md
-FINAL_*.md
-COMPLETE_*.md
-SUPABASE_*.md
-RECEPTIONIST_*.md
-SYSTEM_*.md
-TESTING_*.md
-DEBUG_*.md
-WINDOWS_*.md
-START_*.md
-LOCAL_*.md
-QUICK_*.md
-README_PRODUCTION.md
-PRODUCTION_INDEX.md
-
-# Test scripts
-test-local.sh
-test-local.bat
-test-backend.bat
-verify-production.sh
-start-backend.bat
-start-frontend.bat
-

@@ -1,63 +1,85 @@
 @echo off
-REM Hospital Management System - Production Deployment Script for Windows
-
-echo ==========================================
-echo Hospital Management System Deployment
-echo ==========================================
+echo ========================================
+echo PRODUCTION DEPLOYMENT PACKAGE
+echo Domain: hasetcompany.or.tz
+echo ========================================
 echo.
 
-REM Check if .env file exists
-if not exist .env (
-    echo Error: .env file not found
-    echo Please copy .env.production to .env and configure it
-    exit /b 1
-)
+REM Clean up
+echo [1/6] Cleaning up...
+del /s /q *.test.* 2>nul
+del /s /q test-*.js 2>nul
+del /s /q check-*.js 2>nul
+if exist deployment rmdir /s /q deployment
 
-echo Step 1: Building Docker images...
-docker-compose build
-if errorlevel 1 (
-    echo Error building Docker images
-    exit /b 1
-)
+REM Build frontend
+echo [2/6] Building frontend...
+call npm install
+call npm run build
 
-echo.
-echo Step 2: Starting services...
-docker-compose up -d
-if errorlevel 1 (
-    echo Error starting services
-    exit /b 1
-)
+REM Install backend
+echo [3/6] Preparing backend...
+cd backend
+call npm install --production
+cd ..
 
-echo.
-echo Step 3: Waiting for MySQL to be ready...
-timeout /t 10 /nobreak > nul
+REM Create deployment structure
+echo [4/6] Creating deployment package...
+mkdir deployment
+mkdir deployment\frontend
+mkdir deployment\backend
+mkdir deployment\backend\src
+mkdir deployment\docs
 
-echo.
-echo Step 4: Setting up database tables...
-docker-compose exec backend node setup-tables.js
+REM Copy frontend
+echo [5/6] Copying files...
+xcopy /E /I /Y dist\* deployment\frontend\
 
-echo.
-echo Step 5: Creating admin user...
-docker-compose exec backend node create-admin.js
+REM Copy backend
+xcopy /E /I /Y backend\src deployment\backend\src\
+copy /Y backend\package.json deployment\backend\
+copy /Y backend\package-lock.json deployment\backend\
+copy /Y backend\.env.production deployment\backend\.env
+copy /Y backend\database_schema.sql deployment\backend\
 
-echo.
-echo ==========================================
-echo Deployment Complete!
-echo ==========================================
-echo.
-echo Services:
-echo   - Backend API: http://localhost:3000
-echo   - MySQL: localhost:3306
-echo   - Nginx: http://localhost:80
-echo.
-echo Default credentials:
-echo   - Admin: admin@hospital.com / admin123
-echo   - Doctor: doctor@hospital.com / doctor123
-echo.
-echo Useful commands:
-echo   - View logs: docker-compose logs -f
-echo   - Stop services: docker-compose down
-echo   - Restart: docker-compose restart
-echo.
+REM Copy configuration
+copy /Y .htaccess deployment\frontend\
+copy /Y README.md deployment\docs\
+copy /Y DEPLOY_TO_HASETCOMPANY.txt deployment\docs\
+copy /Y PRODUCTION_SETUP.md deployment\docs\
+copy /Y production-secrets.txt deployment\docs\
 
+REM Create upload instructions
+echo ========================================> deployment\UPLOAD_INSTRUCTIONS.txt
+echo UPLOAD TO HOSTINGER>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo ========================================>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo.>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo 1. Upload frontend/* to public_html/>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo 2. Upload backend/* to public_html/api/>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo 3. Follow docs/DEPLOY_TO_HASETCOMPANY.txt>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo.>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo Domain: hasetcompany.or.tz>> deployment\UPLOAD_INSTRUCTIONS.txt
+echo ========================================>> deployment\UPLOAD_INSTRUCTIONS.txt
+
+echo [6/6] Finalizing...
+echo.
+echo ========================================
+echo ✅ DEPLOYMENT PACKAGE READY!
+echo ========================================
+echo.
+echo Package location: deployment/
+echo.
+echo Contents:
+echo   - frontend/     (Upload to public_html/)
+echo   - backend/      (Upload to public_html/api/)
+echo   - docs/         (Reference documentation)
+echo.
+echo Next steps:
+echo 1. Compress 'deployment' folder to ZIP
+echo 2. Upload to Hostinger
+echo 3. Follow docs/DEPLOY_TO_HASETCOMPANY.txt
+echo.
+echo Secrets saved in: production-secrets.txt
+echo ⚠️  Keep this file secure!
+echo.
 pause

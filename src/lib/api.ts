@@ -1,9 +1,17 @@
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { io, Socket } from 'socket.io-client';
+
+// API Base URL - Production: hasetcompany.or.tz
+const getBaseURL = (): string => {
+  if (import.meta.env.PROD) {
+    return 'https://hasetcompany.or.tz/api';
+  }
+  return import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+};
 
 // Create axios instance for API calls
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000/api',
+  baseURL: getBaseURL(),
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,9 +19,9 @@ const api = axios.create({
 });
 
 // Add auth token to requests
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem('auth_token');
-  if (token) {
+  if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -22,7 +30,7 @@ api.interceptors.request.use((config) => {
 // Handle auth errors
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  (error: AxiosError) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('auth_token');
       window.location.href = '/auth';
@@ -34,9 +42,13 @@ api.interceptors.response.use(
 // Socket.io client for real-time updates
 let socket: Socket | null = null;
 
-export const getSocket = () => {
+export const getSocket = (): Socket => {
   if (!socket) {
-    socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000', {
+    const socketURL = import.meta.env.PROD 
+      ? 'https://hasetcompany.or.tz' 
+      : (import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000');
+    
+    socket = io(socketURL, {
       auth: {
         token: localStorage.getItem('auth_token')
       },
@@ -54,14 +66,14 @@ export const getSocket = () => {
       console.log('❌ Socket disconnected');
     });
 
-    socket.on('connect_error', (error) => {
+    socket.on('connect_error', (error: Error) => {
       console.error('Socket connection error:', error);
     });
   }
   return socket;
 };
 
-export const disconnectSocket = () => {
+export const disconnectSocket = (): void => {
   if (socket) {
     socket.disconnect();
     socket = null;
