@@ -1,14 +1,9 @@
 @echo off
 echo ========================================
-echo FIXING BUILD - Reinstalling Dependencies
+echo BUILDING FRONTEND
 echo ========================================
 echo.
 
-echo Reinstalling node_modules...
-rmdir /s /q node_modules 2>nul
-npm install
-
-echo.
 echo Building frontend...
 npm run build
 
