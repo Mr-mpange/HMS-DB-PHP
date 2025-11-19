@@ -1,0 +1,82 @@
+========================================
+🔒 SECURITY NOTICE - READ THIS!
+========================================
+
+⚠️  YOUR SECRETS ARE SAFE!
+
+When you run deploy.bat, it creates:
+
+deployment/
+├── frontend/        ← UPLOAD THIS
+├── backend/         ← UPLOAD THIS
+│   └── .env         ← Has PLACEHOLDERS (safe)
+└── docs/            ← DO NOT UPLOAD!
+    └── SECRETS_REFERENCE.txt ← Your real secrets
+
+========================================
+✅ WHAT'S SAFE TO UPLOAD:
+========================================
+
+1. deployment/frontend/*
+   → Upload to public_html/
+
+2. deployment/backend/*
+   → Upload to public_html/api/
+   → The .env file has PLACEHOLDERS like:
+     JWT_SECRET=REPLACE_WITH_YOUR_JWT_SECRET
+     DB_PASSWORD=REPLACE_WITH_YOUR_DB_PASSWORD
+
+========================================
+⚠️  DO NOT UPLOAD:
+========================================
+
+❌ deployment/docs/ folder
+   Contains your real secrets for reference
+
+❌ production-secrets.txt
+   Your actual secrets (already in .gitignore)
+
+❌ backend/.env.production
+   Your local production config (already in .gitignore)
+
+========================================
+✅ AFTER UPLOADING TO HOSTINGER:
+========================================
+
+1. SSH to your server or use File Manager
+
+2. Edit: public_html/api/.env
+
+3. Replace placeholders with your real secrets:
+   - Open: deployment/docs/SECRETS_REFERENCE.txt
+   - Copy your JWT_SECRET
+   - Copy your SESSION_SECRET
+   - Copy your DB_PASSWORD
+   - Paste them into the .env file on server
+
+4. Save the file
+
+5. Start backend: pm2 start src/server.js
+
+========================================
+🔒 SECURITY SUMMARY:
+========================================
+
+✓ Secrets are NOT in deployment package
+✓ Only placeholders are uploaded
+✓ You manually add secrets on server
+✓ Secrets never leave your local machine
+✓ .gitignore protects all secret files
+
+========================================
+✅ YOU ARE SAFE!
+========================================
+
+Your secrets will NEVER be:
+- Committed to git
+- Uploaded to Hostinger automatically
+- Exposed in deployment package
+
+You control when and how secrets are added!
+
+========================================

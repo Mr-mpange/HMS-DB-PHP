@@ -68,6 +68,11 @@ FINAL_CHECKLIST.txt
 ✓ Security Headers: Configured
 ✓ Database Pooling: Optimized (no crashes)
 
+⚠️  IMPORTANT: Secrets are NOT uploaded!
+   deploy.bat creates .env with PLACEHOLDERS
+   You add real secrets manually on server
+   See: SECURITY_NOTICE.txt
+
 ========================================
 🗄️ DATABASE:
 ========================================

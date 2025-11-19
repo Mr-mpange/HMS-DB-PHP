@@ -1,0 +1,43 @@
+========================================
+HOW TO DEPLOY TO HASETCOMPANY.OR.TZ
+========================================
+
+STEP 1: Fix the Build (Run Once)
+---------------------------------
+Run this command:
+    fix-build.bat
+
+This will:
+- Reinstall node_modules (fixes missing files)
+- Build the frontend successfully
+
+STEP 2: Create Deployment Package
+----------------------------------
+Run this command:
+    deploy.bat
+
+This will:
+- Create deployment/ folder
+- Package frontend and backend
+- Create .env template with placeholders
+
+STEP 3: Upload to Hostinger
+----------------------------
+1. Upload deployment/frontend/* to public_html/
+2. Upload deployment/backend/* to public_html/api/
+
+STEP 4: Configure on Server
+----------------------------
+1. Edit public_html/api/.env on the server
+2. Replace placeholders with your actual secrets
+   (from deployment/docs/SECRETS_REFERENCE.txt)
+3. Follow deployment/docs/DEPLOY_TO_HASETCOMPANY.txt
+
+========================================
+⚠️  SECURITY WARNING
+========================================
+DO NOT upload the deployment/docs/ folder!
+It contains your secrets for reference only.
+
+Keep production-secrets.txt safe locally.
+========================================
