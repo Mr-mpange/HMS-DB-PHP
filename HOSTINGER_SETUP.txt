@@ -1,0 +1,144 @@
+========================================
+HOSTINGER SETUP GUIDE
+========================================
+
+STEP 1: Get Database Credentials from Hostinger
+------------------------------------------------
+
+1. Login to Hostinger Control Panel (hpanel.hostinger.com)
+2. Go to: Databases → MySQL Databases
+3. You'll see your database info:
+
+   Database Name: u232077031_hasetcompany
+   Username: u232077031_hasetcompany
+   Password: [your password]
+   Host: localhost
+   Port: 3306
+
+4. COPY these values - you'll need them!
+
+========================================
+
+STEP 2: Deploy Your System
+---------------------------
+
+1. Run deployment script:
+   
+   deploy-complete.bat
+
+2. Upload complete-deploy/* to public_html/
+
+========================================
+
+STEP 3: Configure Database
+---------------------------
+
+1. In Hostinger File Manager, go to:
+   public_html/api/
+
+2. Rename .env.production to .env
+
+3. Edit .env file and update ONLY these lines:
+
+   DB_DATABASE=u232077031_hasetcompany
+   DB_USERNAME=u232077031_hasetcompany
+   DB_PASSWORD=paste_your_password_here
+
+4. Save the file
+
+========================================
+
+STEP 4: Initialize System
+--------------------------
+
+1. In Hostinger, go to: Advanced → Terminal (or SSH)
+
+2. Run these commands:
+
+   cd public_html/api
+   php artisan key:generate
+   php artisan migrate --force
+
+3. Done! Database tables created automatically!
+
+========================================
+
+STEP 5: Create Admin User
+--------------------------
+
+1. In Hostinger Terminal:
+
+   php artisan tinker
+
+2. Copy and paste this (press Enter):
+
+   \App\Models\User::create(['id' => \Illuminate\Support\Str::uuid(), 'name' => 'Admin', 'email' => 'admin@hasetcompany.or.tz', 'password' => bcrypt('Admin@123'), 'role' => 'admin', 'is_active' => true]);
+
+3. Type: exit
+
+========================================
+
+STEP 6: Test Your System
+-------------------------
+
+1. Visit: https://hasetcompany.or.tz
+
+2. Login with:
+   Email: admin@hasetcompany.or.tz
+   Password: Admin@123
+
+3. Change password immediately!
+
+========================================
+
+THAT'S IT! 🎉
+========================================
+
+Your system is now live on hasetcompany.or.tz!
+
+The MySQL database from Hostinger is now connected
+to your Laravel backend.
+
+All 19 tables are created automatically by Laravel
+migrations - you don't need to import any SQL files!
+
+========================================
+
+OPTIONAL: Add ZenoPay Later
+----------------------------
+
+When you're ready for mobile money payments:
+
+1. Get credentials from ZenoPay dashboard
+2. Edit public_html/api/.env
+3. Add:
+   ZENOPAY_API_KEY=your_key
+   ZENOPAY_MERCHANT_ID=your_id
+   ZENOPAY_WEBHOOK_SECRET=your_secret
+
+4. Configure webhook in ZenoPay:
+   https://hasetcompany.or.tz/api/payments/zenopay/callback
+
+========================================
+
+TROUBLESHOOTING
+---------------
+
+"Database connection failed"
+→ Double-check credentials in .env match Hostinger
+
+"500 Error"
+→ Run: php artisan config:clear
+
+"Can't login"
+→ Make sure you created admin user in Step 5
+
+========================================
+
+SUPPORT
+-------
+
+Hostinger: hpanel.hostinger.com (24/7 chat)
+Your Database: Check in Hostinger → Databases
+
+========================================

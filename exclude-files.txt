@@ -1,0 +1,14 @@
+.env
+.env.local
+.env.testing
+storage/logs/
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+bootstrap/cache/
+tests/
+.git/
+.gitignore
+.editorconfig
+phpunit.xml
+README.md

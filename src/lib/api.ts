@@ -6,7 +6,7 @@ const getBaseURL = (): string => {
   if (import.meta.env.PROD) {
     return 'https://hasetcompany.or.tz/api';
   }
-  return import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  return import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 };
 
 // Create axios instance for API calls

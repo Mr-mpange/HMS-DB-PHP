@@ -1,38 +1,57 @@
 # Dependencies
 node_modules/
+backend/vendor/
 
-# Environment variables (keep .env.example)
+# Environment files
 .env
+.env.local
+.env.*.local
 backend/.env
-backend/.env.production
 
-# Production secrets (NEVER COMMIT!)
-production-secrets.txt
-*-secrets.txt
-
-# Build outputs
+# Build output
 dist/
-build/
-deployment/
+dist-ssr/
+*.local
 
 # Logs
-*.log
 logs/
+*.log
+npm-debug.log*
+backend/storage/logs/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# OS
-.DS_Store
-Thumbs.db
+# Deployment
+complete-deploy/
+deployment/
+hostinger-deploy/
+laravel-deploy/
 
-# Uploads
-backend/uploads/*
-!backend/uploads/.gitkeep
+# Secrets (NEVER commit these!)
+production-secrets.txt
+*secrets*.txt
+
+# Database
+*.sqlite
+*.sqlite3
+backend/database/database.sqlite
 
 # Temporary files
 *.tmp
 *.temp
+.cache/
+
+# Laravel specific
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/bootstrap/cache/*
