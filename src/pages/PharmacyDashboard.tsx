@@ -122,7 +122,7 @@ export default function PharmacyDashboard() {
         patientsRes,
         doctorsRes
       ] = await Promise.allSettled([
-        api.get('/prescriptions?limit=50'),
+        api.get('/prescriptions?limit=50&visit_stage=pharmacy'),
         api.get('/pharmacy/medications'),
         api.get('/patients?fields=id,full_name,date_of_birth'),
         api.get('/users/profiles?role=doctor')
@@ -132,6 +132,18 @@ export default function PharmacyDashboard() {
       const medicationsData = medicationsRes.status === 'fulfilled' ? (medicationsRes.value.data.medications || []) : [];
       const patientsData = patientsRes.status === 'fulfilled' ? (patientsRes.value.data.patients || []) : [];
       const doctorsData = doctorsRes.status === 'fulfilled' ? (doctorsRes.value.data.profiles || []) : [];
+      
+      console.log('🏥 Pharmacy Dashboard - Prescriptions loaded:', {
+        total: prescriptionsData.length,
+        active: prescriptionsData.filter((p: any) => p.status === 'Active').length,
+        prescriptions: prescriptionsData.map((p: any) => ({
+          id: p.id,
+          patient_id: p.patient_id,
+          status: p.status,
+          visit_id: p.visit_id,
+          visit_stage: p.visit?.current_stage
+        }))
+      });
       
       // Log any failed requests
       if (prescriptionsRes.status === 'rejected') console.warn('Failed to fetch prescriptions:', prescriptionsRes.reason);
@@ -314,83 +326,36 @@ export default function PharmacyDashboard() {
         }
       }
 
-      // STEP 1: Create invoice FIRST (before any other changes)
-      const invoiceNumber = await generateInvoiceNumber();
-      
-      // Build items array for invoice
-      const invoiceItems = medicationDetails.map(medDetail => ({
-        description: `${medDetail.name} - ${medDetail.prescribed_dosage} (${medDetail.prescribed_frequency})`,
-        item_type: 'Medication',
-        medication_id: medDetail.id,
-        quantity: medDetail.prescribed_quantity,
-        unit_price: medDetail.unit_price || 0,
-        total_price: (medDetail.unit_price || 0) * medDetail.prescribed_quantity
-      }));
-      
-      // Calculate total amount
-      const totalInvoiceAmount = invoiceItems.reduce((sum, item) => sum + item.total_price, 0);
-      
-      // Get visit_id for the invoice
-      let visitId = null;
+      // STEP 1: Add medications as patient-services (for comprehensive billing)
+      // This allows billing to create ONE invoice with all services (lab tests + medications)
       try {
-        const visitsRes = await api.get(`/visits?patient_id=${patientId}&overall_status=Active&limit=1`);
-        if (visitsRes.data.visits && visitsRes.data.visits.length > 0) {
-          visitId = visitsRes.data.visits[0].id;
+        console.log('Adding medications to patient services for billing...');
+        
+        for (const medDetail of medicationDetails) {
+          await api.post('/patient-services', {
+            patient_id: patientId,
+            service_id: null, // Medications don't have a service_id
+            service_name: `${medDetail.name} - ${medDetail.prescribed_dosage}`,
+            quantity: medDetail.prescribed_quantity,
+            unit_price: medDetail.unit_price || 0,
+            total_price: (medDetail.unit_price || 0) * medDetail.prescribed_quantity,
+            service_date: new Date().toISOString().split('T')[0],
+            status: 'Completed',
+            notes: `Medication: ${medDetail.prescribed_frequency}${medDetail.prescribed_instructions ? '. ' + medDetail.prescribed_instructions : ''}`
+          });
+          
+          console.log(`✅ Added ${medDetail.name} (TSh ${medDetail.unit_price * medDetail.prescribed_quantity}) to patient services`);
         }
-      } catch (error) {
-        console.warn('Could not fetch visit_id for invoice');
-      }
-
-      let newInvoice;
-      try {
-        console.log('Creating invoice with data:', {
-          invoice_number: invoiceNumber,
-          patient_id: patientId,
-          visit_id: visitId,
-          total_amount: totalInvoiceAmount,
-          items_count: invoiceItems.length,
-          items: invoiceItems
-        });
-
-        const invoiceRes = await api.post('/billing/invoices', {
-          invoice_number: invoiceNumber,
-          patient_id: patientId,
-          total_amount: totalInvoiceAmount,
-          paid_amount: 0,
-          status: 'Pending',
-          invoice_date: new Date().toISOString().split('T')[0],
-          notes: `Pharmacy dispensing - ${medicationDetails.length} medication(s)${dispenseData?.notes ? '. ' + dispenseData.notes : ''}`
-        });
-        newInvoice = invoiceRes.data.invoice;
-        console.log('✅ Invoice created:', newInvoice);
-
-        // Create invoice items for each medication
-        for (const item of invoiceItems) {
-          try {
-            await api.post('/billing/invoice-items', {
-              invoice_id: newInvoice.id,
-              description: item.description,
-              quantity: item.quantity,
-              unit_price: item.unit_price
-            });
-          } catch (itemError: any) {
-            console.error('Error creating invoice item:', itemError);
-            // Continue with other items even if one fails
-          }
-        }
-        console.log('✅ Invoice items created');
       } catch (error: any) {
-        console.error('❌ Error creating invoice:', error);
-        console.error('Error response data:', error.response?.data);
-        console.error('Error response status:', error.response?.status);
+        console.error('❌ Error adding medications to patient services:', error);
         const errorMsg = error.response?.data?.details || error.response?.data?.error || error.message;
-        toast.error(`Failed to create invoice: ${errorMsg}`);
+        toast.error(`Failed to add medications to billing: ${errorMsg}`);
         await logActivity('pharmacy.dispense.error', { 
-          error: 'Failed to create invoice',
+          error: 'Failed to add medications to patient services',
           details: errorMsg,
           response: error.response?.data
         });
-        return; // STOP HERE if invoice fails
+        return; // STOP HERE if adding to services fails
       }
 
       // STEP 2: Update medication stock
@@ -517,7 +482,6 @@ export default function PharmacyDashboard() {
           quantity: m.prescribed_quantity
         })),
         medication_count: medicationDetails.length,
-        invoice_number: invoiceNumber,
         timestamp: new Date().toISOString()
       });
 

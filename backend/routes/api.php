@@ -180,6 +180,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/services/assign', [ServiceController::class, 'assignToPatient']);
     Route::get('/patients/{patientId}/services', [ServiceController::class, 'getPatientServices']);
     
+    // Patient Services (alias for services/assign for backward compatibility)
+    Route::post('/patient-services', [ServiceController::class, 'assignToPatient']);
+    Route::get('/patient-services', [ServiceController::class, 'getAllPatientServices']);
+    
     // Payments
     Route::get('/payments', [PaymentController::class, 'index']);
     Route::get('/payments/{id}', [PaymentController::class, 'show']);

@@ -218,14 +218,16 @@ export default function BillingDashboard() {
         patientsRes,
         insuranceRes,
         claimsRes,
-        paymentsRes
+        paymentsRes,
+        servicesRes
       ] = await Promise.all([
         api.get('/visits?current_stage=billing&overall_status=Active').catch(() => ({ data: { visits: [] } })),
         api.get('/billing/invoices').catch(() => ({ data: { invoices: [] } })),
         api.get('/patients?status=Active').catch(() => ({ data: { patients: [] } })),
         api.get('/insurance/companies').catch(() => ({ data: { companies: [] } })),
         api.get('/insurance/claims').catch(() => ({ data: { claims: [] } })),
-        api.get(`/payments?date=${today}`).catch(() => ({ data: { payments: [] } })) // Filter by today's date
+        api.get(`/payments?date=${today}`).catch(() => ({ data: { payments: [] } })), // Filter by today's date
+        api.get('/patient-services').catch(() => ({ data: { services: [] } })) // Fetch all patient services
       ]);
 
       const billingVisitsData = billingVisitsRes.data.visits || [];
@@ -234,9 +236,17 @@ export default function BillingDashboard() {
       const insuranceData = insuranceRes.data.companies || [];
       const claimsData = claimsRes.data.claims || [];
       const paymentsData = paymentsRes.data.payments || [];
-      const servicesData: any[] = []; // Services endpoint doesn't exist yet
+      const servicesData = servicesRes.data.services || [];
+      
+      console.log('📊 Billing data fetched:', {
+        billingVisits: billingVisitsData.length,
+        services: servicesData.length,
+        invoices: invoicesData.length,
+        patients: patientsData.length
+      });
 
       // Update raw data state to trigger memoized computations
+      setBillingVisits(billingVisitsData);
       setRawInvoicesData(invoicesData);
       setRawPatientsData(patientsData);
       setRawInsuranceData(insuranceData);
@@ -244,15 +254,36 @@ export default function BillingDashboard() {
       setRawPaymentsData(paymentsData);
       setPatientServices(servicesData);
 
-      // Calculate patient costs (simplified for now - would need API endpoint)
+      // Calculate patient costs from services (medications + lab tests only)
+      // Consultation fee is paid at registration and NOT included here
       const costs: Record<string, number> = {};
-      if (patientsData) {
-        for (const patient of patientsData) {
-          // In a real implementation, this would call an API endpoint
-          costs[patient.id] = 50000; // Default cost
-        }
+      
+      // Group services by patient and calculate total cost
+      if (servicesData && servicesData.length > 0) {
+        servicesData.forEach((service: any) => {
+          const patientId = service.patient_id;
+          
+          // Only include unpaid services (medications and lab tests)
+          // Skip consultation fees as they're paid at registration
+          const serviceType = service.service?.service_type || '';
+          const isConsultation = serviceType.toLowerCase().includes('consultation');
+          
+          if (!isConsultation) {
+            // Use total_price if available (for medications), otherwise calculate from unit_price or base_price
+            const totalPrice = Number(service.total_price || 
+              (service.unit_price || service.service?.base_price || service.price || 0) * (service.quantity || 1));
+            
+            if (!costs[patientId]) {
+              costs[patientId] = 0;
+            }
+            costs[patientId] += totalPrice;
+          }
+        });
       }
+      
       setPatientCosts(costs);
+      
+      console.log('Patient costs calculated (medications + lab tests only):', costs);
 
       // Update other state with safety checks
       setPatients(patientsData);
@@ -304,6 +335,16 @@ export default function BillingDashboard() {
 
     const calculatedCost = patientCosts[selectedPatientId] || 50000; // Fallback to default if no services
 
+    // Get patient services for invoice items (exclude consultation - already paid at registration)
+    const patientServicesList = patientServices.filter((s: any) => {
+      if (s.patient_id !== selectedPatientId) return false;
+      
+      // Exclude consultation services (already paid at registration)
+      const serviceType = s.service?.service_type || '';
+      const isConsultation = serviceType.toLowerCase().includes('consultation');
+      return !isConsultation;
+    });
+
     const invoiceNumber = await generateInvoiceNumber();
 
     const invoiceData = {
@@ -311,22 +352,52 @@ export default function BillingDashboard() {
       patient_id: selectedPatientId,
       total_amount: calculatedCost,
       paid_amount: 0,
-      discount: 0,
-      tax: 0,
-      status: 'Unpaid',
+      status: 'Pending',
+      invoice_date: new Date().toISOString().split('T')[0], // Send as date only (YYYY-MM-DD)
       due_date: formData.get('dueDate') as string || null,
-      invoice_date: new Date().toISOString(),
-      notes: formData.get('notes') as string || `Invoice based on medical services - Total: TSh${calculatedCost.toFixed(2)}`,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      notes: formData.get('notes') as string || `Invoice for ${patientServicesList.length} service(s) - Total: TSh${calculatedCost.toFixed(2)}`,
+      items: patientServicesList.map((service: any) => ({
+        service_id: service.service_id,
+        service_name: service.service?.service_name || service.service_name || 'Medical Service',
+        description: service.service?.service_name || service.service_name || 'Medical Service',
+        quantity: service.quantity || 1,
+        unit_price: Number(service.service?.base_price || service.unit_price || service.price || 0),
+        total_price: Number(service.total_price || (service.service?.base_price || service.unit_price || service.price || 0) * (service.quantity || 1))
+      }))
     };
 
     try {
       const invoiceRes = await api.post('/billing/invoices', invoiceData);
       const createdInvoice = invoiceRes.data.invoice;
       
-      console.log('Invoice created successfully:', createdInvoice);
-      toast.success(`Invoice ${createdInvoice.invoice_number} created for TSh${calculatedCost.toFixed(2)}`);
+      console.log('Invoice created successfully with items:', createdInvoice);
+      
+      // Update the patient's visit to mark billing as completed
+      try {
+        const visitsRes = await api.get(`/visits?patient_id=${selectedPatientId}&current_stage=billing&overall_status=Active&limit=1`);
+        const visits = visitsRes.data.visits;
+        
+        if (visits && visits.length > 0) {
+          const visit = visits[0];
+          await api.put(`/visits/${visit.id}`, {
+            billing_status: 'Completed',
+            billing_completed_at: new Date().toISOString(),
+            current_stage: 'completed',
+            overall_status: 'Completed',
+            updated_at: new Date().toISOString()
+          });
+          
+          console.log('✅ Visit updated - patient billing completed');
+          
+          // Remove from billingVisits list
+          setBillingVisits(prev => prev.filter(v => v.id !== visit.id));
+        }
+      } catch (visitError) {
+        console.error('Error updating visit:', visitError);
+        // Don't fail the whole operation if visit update fails
+      }
+      
+      toast.success(`Invoice ${createdInvoice.invoice_number} created for TSh${calculatedCost.toFixed(2)} (${patientServicesList.length} items)`);
       setDialogOpen(false);
       setSelectedPatientId('');
       
@@ -385,27 +456,15 @@ export default function BillingDashboard() {
 
         toast.success(`📱 ${paymentMethod} payment request sent to ${phoneNumber}. Waiting for confirmation...`);
 
-        // Create a pending payment record
-        const paymentData = {
-          invoice_id: selectedInvoice.id,
-          amount,
-          payment_method: paymentMethod,
-          reference_number: response.transactionId,
-          status: 'pending',
-          notes: `Mobile payment via ${paymentMethod} from ${phoneNumber} - Transaction ID: ${response.transactionId}`,
-        };
-
-        try {
-          await api.post('/payments', paymentData);
-        } catch (error: any) {
-          console.error('Failed to create pending payment record:', error);
-        }
+        // Payment record is created by backend ZenoPay controller
+        // No need to create it here - webhook will handle completion
 
         // Close dialog but keep status visible
         setPaymentDialogOpen(false);
 
-        // Poll for payment status (in a real app, this would be handled via webhooks)
-        setTimeout(() => checkPaymentStatus(response.transactionId), 5000);
+        toast.info('Payment is pending. It will be confirmed automatically when customer completes payment on their phone.', {
+          duration: 5000
+        });
 
       } else {
         setPaymentStatus('failed');
@@ -422,23 +481,15 @@ export default function BillingDashboard() {
 
   const checkPaymentStatus = async (transactionId: string) => {
     try {
-      // In a real implementation, this would check the actual payment status
-      // For now, we'll simulate checking the status
-      let paymentData;
-      try {
-        const paymentRes = await api.get(`/payments/${transactionId}`);
-        paymentData = paymentRes.data.payment;
-      } catch (error) {
-        console.error('Error checking payment status:', error);
-        return;
-      }
+      // Check payment status via ZenoPay endpoint
+      const response = await mobilePaymentService.checkPaymentStatus(transactionId);
 
-      if (paymentData && paymentData.status === 'completed') {
+      if (response.success && response.status === 'completed') {
         setPaymentStatus('completed');
         toast.success('✅ Payment confirmed successfully!');
 
-        // Update invoice status
-        await updateInvoiceAfterPayment(paymentData.invoice_id, paymentData.amount);
+        // Refresh data to show updated invoice
+        fetchData(false);
 
         // Reset state after a delay
         setTimeout(() => {
@@ -447,7 +498,7 @@ export default function BillingDashboard() {
           setSelectedInvoice(null);
           setPaymentMethod('');
         }, 3000);
-      } else if (paymentData && paymentData.status === 'failed') {
+      } else if (response.status === 'failed') {
         setPaymentStatus('failed');
         toast.error('❌ Payment failed');
       } else {
@@ -854,12 +905,111 @@ export default function BillingDashboard() {
         </div>
 
         {/* Main Content with Tabs */}
-        <Tabs defaultValue="invoices" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs defaultValue="pending" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="pending">Awaiting Billing ({billingVisits.length})</TabsTrigger>
             <TabsTrigger value="invoices">Invoices & Payments</TabsTrigger>
             <TabsTrigger value="payments">Today's Payments</TabsTrigger>
             <TabsTrigger value="insurance">Insurance Claims</TabsTrigger>
           </TabsList>
+
+          {/* Pending Invoices Tab - Patients Awaiting Billing */}
+          <TabsContent value="pending" className="space-y-4">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Patients Awaiting Billing</CardTitle>
+                    <CardDescription>
+                      {billingVisits.length > 0 
+                        ? `${billingVisits.length} patient(s) ready for invoice creation`
+                        : 'No patients waiting for billing'}
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {billingVisits.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
+                    <h3 className="text-lg font-medium">All caught up!</h3>
+                    <p className="text-muted-foreground text-sm mt-1">
+                      No patients waiting for billing at the moment.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Patient</TableHead>
+                          <TableHead>Phone</TableHead>
+                          <TableHead>Services</TableHead>
+                          <TableHead>Total Cost</TableHead>
+                          <TableHead>Visit Date</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {billingVisits.map((visit: any) => {
+                          const patient = patients.find(p => p.id === visit.patient_id) || visit.patient;
+                          const patientServicesList = patientServices.filter((s: any) => s.patient_id === visit.patient_id);
+                          const totalCost = patientCosts[visit.patient_id] || 0;
+                          
+                          return (
+                            <TableRow key={visit.id}>
+                              <TableCell className="font-medium">
+                                {patient?.full_name || 'Unknown Patient'}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {patient?.phone || '-'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  {patientServicesList.length} service(s)
+                                  {patientServicesList.length > 0 && (
+                                    <div className="text-xs text-muted-foreground mt-1">
+                                      {patientServicesList.slice(0, 2).map((s: any, i: number) => (
+                                        <div key={i}>
+                                          • {s.service_name || s.service?.service_name || 'Service'}
+                                        </div>
+                                      ))}
+                                      {patientServicesList.length > 2 && (
+                                        <div>+ {patientServicesList.length - 2} more</div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="font-semibold text-blue-600">
+                                TSh{totalCost.toFixed(2)}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {format(new Date(visit.visit_date || visit.created_at), 'MMM dd, yyyy')}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedPatientId(visit.patient_id);
+                                    setDialogOpen(true);
+                                  }}
+                                  disabled={totalCost === 0}
+                                >
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Create Invoice
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* Invoices Tab */}
           <TabsContent value="invoices" className="space-y-4">
@@ -1209,15 +1359,15 @@ export default function BillingDashboard() {
                   </div>
 
                   {/* Invoice Items */}
-                  {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 && (
-                    <div className="mt-4">
-                      <h5 className="font-medium mb-2">Items:</h5>
+                  {selectedInvoice.items && selectedInvoice.items.length > 0 && (
+                    <div className="mt-4 border-t pt-2">
+                      <h5 className="font-medium mb-2">Invoice Items:</h5>
                       <div className="space-y-1">
-                        {selectedInvoice.invoice_items.map((item: any, index: number) => (
-                          <div key={item.id || index} className="flex justify-between text-sm">
-                            <span>{item.description}</span>
-                            <span>
-                              {item.quantity} × TSh{Number(item.unit_price as number).toFixed(2)} = TSh{Number(item.total_price as number).toFixed(2)}
+                        {selectedInvoice.items.map((item: any, index: number) => (
+                          <div key={item.id || index} className="flex justify-between text-sm bg-gray-100 p-2 rounded">
+                            <span className="flex-1">{item.description}</span>
+                            <span className="text-right">
+                              {item.quantity} × TSh{Number(item.unit_price as number).toFixed(2)} = <span className="font-semibold">TSh{Number(item.total_price as number).toFixed(2)}</span>
                             </span>
                           </div>
                         ))}
@@ -1433,6 +1583,91 @@ export default function BillingDashboard() {
           </DialogContent>
         </Dialog>
 
+        {/* Create Invoice Dialog */}
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create Invoice</DialogTitle>
+              <DialogDescription>
+                Create a new invoice for patient services
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleCreateInvoice} className="space-y-4">
+              {selectedPatientId && (() => {
+                const patient = patients.find(p => p.id === selectedPatientId);
+                const patientServicesList = patientServices.filter((s: any) => {
+                  if (s.patient_id !== selectedPatientId) return false;
+                  const serviceType = s.service?.service_type || '';
+                  const isConsultation = serviceType.toLowerCase().includes('consultation');
+                  return !isConsultation;
+                });
+                const totalCost = patientCosts[selectedPatientId] || 0;
+
+                return (
+                  <>
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                      <h4 className="font-medium text-blue-900 mb-2">Patient Information</h4>
+                      <div className="space-y-1 text-sm">
+                        <p><span className="font-medium">Name:</span> {patient?.full_name}</p>
+                        <p><span className="font-medium">Phone:</span> {patient?.phone || '-'}</p>
+                        <p><span className="font-medium">Services:</span> {patientServicesList.length}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                      <h4 className="font-medium text-green-900 mb-2">Services to Bill</h4>
+                      <div className="space-y-2">
+                        {patientServicesList.map((service: any, index: number) => (
+                          <div key={index} className="flex justify-between text-sm">
+                            <span>{service.service_name || service.service?.service_name || 'Service'}</span>
+                            <span className="font-medium">
+                              {service.quantity} × TSh{Number(service.unit_price || service.service?.base_price || 0).toFixed(2)} = 
+                              TSh{Number(service.total_price || 0).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="border-t border-green-300 pt-2 mt-2 flex justify-between font-bold text-green-900">
+                          <span>Total Amount:</span>
+                          <span>TSh{totalCost.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="dueDate">Due Date (Optional)</Label>
+                      <Input
+                        id="dueDate"
+                        name="dueDate"
+                        type="date"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="notes">Notes (Optional)</Label>
+                      <Textarea
+                        id="notes"
+                        name="notes"
+                        placeholder="Add any additional notes..."
+                        rows={3}
+                      />
+                    </div>
+                  </>
+                );
+              })()}
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!selectedPatientId}>
+                  <File className="mr-2 h-4 w-4" />
+                  Create Invoice
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         {/* Insurance Claim Dialog */}
         <Dialog open={claimDialogOpen} onOpenChange={setClaimDialogOpen}>
           <DialogContent className="max-w-md w-[95vw] max-h-[90vh] overflow-y-auto">
@@ -1587,9 +1822,6 @@ export default function BillingDashboard() {
                       const eligibleInvoices = invoices.filter(patientData => 
                         patientData.patient?.insurance_company_id && patientData.status !== 'Paid'
                       );
-                      
-                      console.log('Eligible patients for claims:', eligibleInvoices.length);
-                      console.log('Sample patient data:', eligibleInvoices[0]);
                       
                       if (eligibleInvoices.length === 0) {
                         return <SelectItem value="no-invoices" disabled>No eligible invoices (patients must have insurance)</SelectItem>;

@@ -1,15 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import api from '@/lib/api';
+import React from 'react';
 
-interface LogoProps {
+interface StaticLogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   showText?: boolean;
   className?: string;
 }
 
-const Logo: React.FC<LogoProps> = React.memo(({ size = 'md', showText = true, className = '' }) => {
-  const [customLogo, setCustomLogo] = useState<string | null>(null);
-  
+const StaticLogo: React.FC<StaticLogoProps> = ({ size = 'md', showText = true, className = '' }) => {
   const sizeClasses = {
     sm: 'h-8 w-8',
     md: 'h-12 w-12',
@@ -24,57 +21,11 @@ const Logo: React.FC<LogoProps> = React.memo(({ size = 'md', showText = true, cl
     xl: 'text-4xl'
   };
 
-  useEffect(() => {
-    let isMounted = true;
-    let hasFetched = false; // Prevent multiple fetches
-    
-    // Fetch custom logo from settings
-    const fetchLogo = async () => {
-      if (hasFetched) return; // Already fetched
-      hasFetched = true;
-      
-      try {
-        const response = await api.get('/settings/logo');
-        if (isMounted && response.data.logo_url) {
-          setCustomLogo(response.data.logo_url);
-        }
-      } catch (error) {
-        // Silently fail - use default logo
-        if (isMounted) {
-          console.log('Using default logo');
-        }
-      }
-    };
-    
-    fetchLogo();
-    
-    // Listen for logo updates
-    const handleLogoUpdate = (event: any) => {
-      if (isMounted) {
-        setCustomLogo(event.detail.logoUrl);
-      }
-    };
-    
-    window.addEventListener('logoUpdated', handleLogoUpdate);
-    
-    return () => {
-      isMounted = false;
-      window.removeEventListener('logoUpdated', handleLogoUpdate);
-    };
-  }, []); // Empty deps - only run once
-
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      {/* Logo - Custom or Default SVG */}
+      {/* Static SVG Logo - No API calls */}
       <div className={`${sizeClasses[size]} flex-shrink-0`}>
-        {customLogo ? (
-          <img 
-            src={customLogo} 
-            alt="Hospital Logo" 
-            className="w-full h-full object-cover rounded-full shadow-md border-2 border-white"
-          />
-        ) : (
-          <svg viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+        <svg viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
           {/* Circle border */}
           <circle cx="512" cy="512" r="450" stroke="#2D7A5F" strokeWidth="40" fill="none"/>
           
@@ -94,7 +45,6 @@ const Logo: React.FC<LogoProps> = React.memo(({ size = 'md', showText = true, cl
           <text x="512" y="800" fontFamily="Arial, sans-serif" fontSize="120" fontWeight="bold" 
                 fill="white" textAnchor="middle" dominantBaseline="middle">HASET</text>
         </svg>
-        )}
       </div>
       
       {/* Optional text */}
@@ -110,8 +60,6 @@ const Logo: React.FC<LogoProps> = React.memo(({ size = 'md', showText = true, cl
       )}
     </div>
   );
-});
+};
 
-Logo.displayName = 'Logo';
-
-export default Logo;
+export default StaticLogo;

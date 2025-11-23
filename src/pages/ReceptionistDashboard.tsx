@@ -1167,14 +1167,46 @@ export default function ReceptionistDashboard() {
   };
 
   const completePatientRegistration = async () => {
+    // Prevent multiple submissions
+    if (loading) {
+      console.log('⚠️ Registration already in progress, ignoring duplicate click');
+      return;
+    }
+
     const amountPaid = Number(paymentForm.amount_paid);
     if (isNaN(amountPaid) || amountPaid < consultationFee) {
       toast.error(`Payment must be at least TSh ${consultationFee.toLocaleString()}`);
       return;
     }
 
-    console.log('Payment method selected:', paymentForm.payment_method);
+    console.log('✅ Starting patient registration with payment method:', paymentForm.payment_method);
     
+    // Get phone number BEFORE closing dialog (if mobile money)
+    let mobilePhoneNumber = '';
+    if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method)) {
+      const phoneInput = document.getElementById('mobile_phone') as HTMLInputElement;
+      mobilePhoneNumber = phoneInput?.value || '';
+      
+      if (!mobilePhoneNumber) {
+        toast.error('Please enter mobile money phone number');
+        return;
+      }
+      
+      // Validate phone number
+      const phoneRegex = /^0[67][0-9]{8}$/;
+      if (!phoneRegex.test(mobilePhoneNumber)) {
+        toast.error('Invalid phone number format. Use 07xxxxxxxx or 06xxxxxxxx');
+        return;
+      }
+    }
+    
+    // Don't close dialog yet for mobile payments - we'll close after payment confirmation
+    // For cash payments, close immediately
+    if (paymentForm.payment_method === 'Cash') {
+      setShowRegistrationPaymentDialog(false);
+    }
+    
+    setLoading(true); // Prevent duplicate submissions
     try {
       // First, create the patient record
       const patientData = {
@@ -1211,75 +1243,125 @@ export default function ReceptionistDashboard() {
       // Handle Mobile Money Payment - Initiate payment after patient is created
       if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method)) {
         console.log('Mobile Money payment detected - initiating payment flow');
-        const phoneInput = document.getElementById('mobile_phone') as HTMLInputElement;
-        const phoneNumber = phoneInput?.value;
         
-        if (!phoneNumber) {
-          toast.error('Please enter mobile money phone number');
-          return;
-        }
-        
-        // Validate phone number
-        const phoneRegex = /^0[67][0-9]{8}$/;
-        if (!phoneRegex.test(phoneNumber)) {
-          toast.error('Invalid phone number format. Use 07xxxxxxxx or 06xxxxxxxx');
-          return;
-        }
-        
+        // Phone number already validated and captured before dialog closed
         try {
           toast.info(`Initiating ${paymentForm.payment_method} payment...`);
           
           // Use mobilePaymentService (same as BillingDashboard)
           const paymentRequest: MobilePaymentRequest = {
-            phoneNumber,
+            phoneNumber: mobilePhoneNumber,
             amount: amountPaid,
-            invoiceId: patientId, // Use patient ID as invoice ID for now
+            invoiceId: '', // No invoice for registration payment
+            patientId: patientId, // Send patient ID instead
+            paymentType: 'Registration', // Specify payment type
             paymentMethod: paymentForm.payment_method as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-            description: `Consultation fee for ${registerForm.full_name}`
+            description: `Registration fee for ${registerForm.full_name}`
           };
 
           const response = await mobilePaymentService.initiatePayment(paymentRequest);
 
           if (response.success && response.transactionId) {
-            toast.success(
-              `📱 ${paymentForm.payment_method} payment request sent to ${phoneNumber}!\n` +
-              `Transaction ID: ${response.transactionId.slice(-8)}\n` +
-              `Patient will receive payment prompt on their phone.\n` +
-              `Registration will complete automatically once payment is confirmed.`,
-              { duration: 6000 }
-            );
-            
-            // Payment is pending - webhook will confirm it and complete registration
             console.log('Mobile payment initiated:', {
               transactionId: response.transactionId,
               orderId: response.orderId,
               patientId: patientId,
-              status: response.status
+              status: response.status,
+              testMode: (response as any).testMode
             });
             
-            // Close dialog - webhook will handle the rest
-            setShowRegistrationPaymentDialog(false);
-            setRegisterForm({
-              full_name: '',
-              date_of_birth: '',
-              gender: '',
-              phone: '',
-              email: '',
-              blood_group: '',
-              address: '',
-              insurance_company_id: '',
-              insurance_number: ''
-            });
-            fetchData(false);
+            // Check if test mode - payment is already completed
+            if ((response as any).testMode) {
+              toast.success('✅ Payment completed! Patient added to nurse queue.');
+              
+              // Close dialog and reset form immediately
+              setShowRegistrationPaymentDialog(false);
+              setRegisterForm({
+                full_name: '',
+                date_of_birth: '',
+                gender: '',
+                phone: '',
+                email: '',
+                blood_group: '',
+                address: '',
+                insurance_company_id: '',
+                insurance_number: ''
+              });
+              setLoading(false);
+              fetchData(false);
+              return;
+            }
+            
+            // Production mode - show waiting message and poll
+            toast.info(
+              `📱 ${paymentForm.payment_method} payment initiated!\n` +
+              `Waiting for payment confirmation...\n` +
+              `Transaction ID: ${response.transactionId.slice(-8)}`,
+              { duration: 5000 }
+            );
+            
+            // Poll for payment status
+            const checkPayment = async (attempt = 1, maxAttempts = 30) => {
+              if (attempt > maxAttempts) {
+                toast.error('Payment confirmation timeout. Please check payment status manually.');
+                setLoading(false);
+                setShowRegistrationPaymentDialog(false);
+                return;
+              }
+              
+              try {
+                const statusResponse = await mobilePaymentService.checkPaymentStatus(response.transactionId);
+                
+                if (statusResponse.success && statusResponse.status === 'completed') {
+                  // Payment confirmed!
+                  toast.success('✅ Payment confirmed! Patient added to nurse queue.');
+                  
+                  // Close dialog and reset form
+                  setShowRegistrationPaymentDialog(false);
+                  setRegisterForm({
+                    full_name: '',
+                    date_of_birth: '',
+                    gender: '',
+                    phone: '',
+                    email: '',
+                    blood_group: '',
+                    address: '',
+                    insurance_company_id: '',
+                    insurance_number: ''
+                  });
+                  setLoading(false);
+                  fetchData(false);
+                } else {
+                  // Still pending, check again
+                  setTimeout(() => checkPayment(attempt + 1, maxAttempts), 2000);
+                }
+              } catch (error) {
+                console.error('Payment status check error:', error);
+                setTimeout(() => checkPayment(attempt + 1, maxAttempts), 2000);
+              }
+            };
+            
+            // Start polling after 2 seconds
+            setTimeout(() => checkPayment(), 2000);
             return; // Exit here for mobile payments
           } else {
-            toast.error(response.message || 'Failed to initiate mobile payment');
+            // Show specific error message from backend
+            const errorMessage = response.message || 'Failed to initiate mobile payment';
+            toast.error(errorMessage, { duration: 8000 });
+            setLoading(false); // Clear loading state on error
             return;
           }
           
-        } catch (error) {
+        } catch (error: any) {
           console.error('Mobile money payment error:', error);
-          toast.error('Failed to initiate mobile money payment');
+          
+          // Check if error response has the ZenoPay API error message
+          const errorMessage = error?.response?.data?.message || 
+                              error?.message || 
+                              'Failed to initiate mobile money payment';
+          
+          toast.error(errorMessage, { duration: 8000 });
+          setLoading(false); // Clear loading state on error
           return;
         }
       }
@@ -1338,8 +1420,7 @@ export default function ReceptionistDashboard() {
         }
       }
 
-      // Close payment dialog
-      setShowRegistrationPaymentDialog(false);
+      // Dialog already closed at start of function
       
       // Reset form
       setRegisterForm({
@@ -1362,6 +1443,8 @@ export default function ReceptionistDashboard() {
       console.error('Registration error:', error);
       const errorMessage = error.response?.data?.error || error.response?.data?.details || error.message || 'Unknown error';
       toast.error(`Failed to register patient: ${errorMessage}`);
+    } finally {
+      setLoading(false); // Re-enable button
     }
   };
 
@@ -1984,8 +2067,9 @@ export default function ReceptionistDashboard() {
             </div>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setShowRegisterDialog(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => setShowRegisterDialog(false)}>Cancel</Button>
             <Button 
+              type="button"
               onClick={submitPatientRegistration}
               disabled={registerWithAppointment && (!appointmentDepartmentId || !appointmentDoctorId || !appointmentDate || !appointmentTime)}
             >
@@ -2342,7 +2426,7 @@ export default function ReceptionistDashboard() {
             )}
 
             <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+              <Button type="button" variant="outline" onClick={() => setShowPaymentDialog(false)}>
                 Cancel
               </Button>
               <Button 
@@ -2473,17 +2557,29 @@ export default function ReceptionistDashboard() {
                   )}
 
                   <div className="flex justify-end gap-2 pt-4">
-                    <Button variant="outline" onClick={() => {
-                      setShowRegistrationPaymentDialog(false);
-                      setShowRegisterDialog(true);
-                    }}>
+                    <Button 
+                      type="button"
+                      variant="outline" 
+                      onClick={() => {
+                        setShowRegistrationPaymentDialog(false);
+                        setShowRegisterDialog(true);
+                      }}
+                    >
                       Back
                     </Button>
                     <Button 
+                      type="button"
                       onClick={completePatientRegistration}
-                      disabled={Number(paymentForm.amount_paid) < requiredFee}
+                      disabled={Number(paymentForm.amount_paid) < requiredFee || loading}
                     >
-                      Confirm Payment & Register
+                      {loading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        'Confirm Payment & Register'
+                      )}
                     </Button>
                   </div>
                 </>
@@ -2574,7 +2670,7 @@ export default function ReceptionistDashboard() {
             )}
 
             <div className="flex justify-end gap-2 pt-4">
-              <Button variant="outline" onClick={() => {
+              <Button type="button" variant="outline" onClick={() => {
                 setShowReturningPatientPaymentDialog(false);
                 setShowReturningPatientDialog(true);
               }}>

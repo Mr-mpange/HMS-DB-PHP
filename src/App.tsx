@@ -48,11 +48,8 @@ const LoadingFallback = () => (
 );
 
 const App = () => {
-  // Update favicon and title on app load
-  useEffect(() => {
-    updateFavicon();
-    updatePageTitle();
-  }, []);
+  // Don't load settings on app mount - wait until after login
+  // This prevents repeated API calls on the auth page
 
   return (
     <QueryClientProvider client={queryClient}>

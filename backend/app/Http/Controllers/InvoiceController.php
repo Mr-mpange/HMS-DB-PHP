@@ -68,6 +68,24 @@ class InvoiceController extends Controller
             'notes' => $request->notes,
         ]);
         
+        // Create invoice items if provided
+        if ($request->has('items') && is_array($request->items)) {
+            foreach ($request->items as $item) {
+                \App\Models\InvoiceItem::create([
+                    'id' => Str::uuid(),
+                    'invoice_id' => $invoice->id,
+                    'service_id' => $item['service_id'] ?? null,
+                    'description' => $item['service_name'] ?? $item['description'] ?? 'Service',
+                    'quantity' => $item['quantity'] ?? 1,
+                    'unit_price' => $item['unit_price'] ?? 0,
+                    'total_price' => $item['total_price'] ?? ($item['unit_price'] * $item['quantity']),
+                ]);
+            }
+        }
+        
+        // Reload invoice with items
+        $invoice->load('items', 'patient');
+        
         return response()->json(['invoice' => $invoice], 201);
     }
     

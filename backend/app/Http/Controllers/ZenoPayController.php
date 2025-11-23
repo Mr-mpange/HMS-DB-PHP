@@ -32,41 +32,143 @@ class ZenoPayController extends Controller
     public function initiatePayment(Request $request)
     {
         $validated = $request->validate([
-            'invoice_id' => 'required|uuid|exists:invoices,id',
-            'amount' => 'required|numeric|min:1000',
+            'invoice_id' => 'nullable|uuid|exists:invoices,id', // Made optional for registration payments
+            'patient_id' => 'nullable|uuid|exists:patients,id', // For payments without invoice
+            'amount' => 'required|numeric|min:100', // Reduced minimum for testing
             'customer_name' => 'required|string',
             'customer_email' => 'required|email',
             'customer_phone' => 'required|string',
+            'payment_type' => 'nullable|string', // e.g., 'Registration', 'Consultation', 'Invoice'
         ]);
 
         try {
-            $invoice = Invoice::with('patient')->findOrFail($validated['invoice_id']);
+            // Handle both invoice payments and direct payments (registration, consultation)
+            $invoice = null;
+            $patientId = null;
             
-            // Create payment reference
-            $reference = 'INV-' . $invoice->invoice_number . '-' . time();
+            if (!empty($validated['invoice_id'])) {
+                $invoice = Invoice::with('patient')->findOrFail($validated['invoice_id']);
+                $patientId = $invoice->patient_id;
+                $reference = 'INV-' . $invoice->invoice_number . '-' . time();
+            } else {
+                // Direct payment without invoice (registration, consultation fee)
+                $patientId = $validated['patient_id'] ?? null;
+                $paymentType = $validated['payment_type'] ?? 'Payment';
+                $reference = strtoupper($paymentType) . '-' . time() . '-' . rand(1000, 9999);
+            }
 
-            // Prepare ZenoPay request
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->apiKey,
-                'Content-Type' => 'application/json',
-            ])->post($this->apiUrl . '/v1/payments/initiate', [
-                'merchant_id' => $this->merchantId,
-                'amount' => $validated['amount'],
-                'currency' => 'TZS',
-                'reference' => $reference,
-                'customer' => [
-                    'name' => $validated['customer_name'],
-                    'email' => $validated['customer_email'],
-                    'phone' => $validated['customer_phone'],
-                ],
-                'callback_url' => $this->callbackUrl,
-                'return_url' => $this->returnUrl,
+            // Prepare ZenoPay request for mobile money Tanzania
+            $paymentData = [
+                'order_id' => $reference,
+                'buyer_name' => $validated['customer_name'],
+                'buyer_phone' => $validated['customer_phone'],
+                'buyer_email' => $validated['customer_email'],
+                'amount' => (int) $validated['amount'],
+                'webhook_url' => $this->callbackUrl,
                 'metadata' => [
-                    'invoice_id' => $invoice->id,
-                    'invoice_number' => $invoice->invoice_number,
-                    'patient_id' => $invoice->patient_id,
+                    'invoice_id' => $invoice ? $invoice->id : null,
+                    'invoice_number' => $invoice ? $invoice->invoice_number : null,
+                    'patient_id' => $patientId,
+                    'payment_type' => $validated['payment_type'] ?? 'Payment',
+                    'payment_method' => $validated['payment_method'] ?? 'Mobile Money',
                 ],
+            ];
+
+            Log::info('ZenoPay payment request:', [
+                'url' => $this->apiUrl . '/api/payments/mobile_money_tanzania',
+                'data' => $paymentData,
+                'has_api_key' => !empty($this->apiKey),
+                'api_key_length' => strlen($this->apiKey ?? ''),
             ]);
+
+            // Check if we're in test/development mode
+            $testMode = env('ZENOPAY_TEST_MODE', false);
+            
+            if ($testMode) {
+                // DEVELOPMENT MODE: Simulate successful payment
+                Log::info('ZenoPay TEST MODE: Simulating payment (API not called)');
+                Log::info('Payment details:', [
+                    'patient_id' => $patientId,
+                    'payment_type' => $validated['payment_type'] ?? 'NOT SET',
+                    'amount' => $validated['amount']
+                ]);
+                
+                // Create COMPLETED payment record immediately in test mode
+                // (In production, payment starts as Pending and webhook updates it)
+                $payment = Payment::create([
+                    'id' => Str::uuid(),
+                    'patient_id' => $patientId,
+                    'invoice_id' => $invoice ? $invoice->id : null,
+                    'amount' => $validated['amount'],
+                    'payment_method' => 'Mobile Money (Test)',
+                    'payment_type' => $validated['payment_type'] ?? 'Payment',
+                    'status' => 'Completed', // Auto-complete in test mode
+                    'payment_date' => now(),
+                    'reference_number' => $reference,
+                    'notes' => 'TEST MODE: Payment auto-completed (simulated)',
+                ]);
+                
+                // For registration payments, create visit immediately
+                if (($validated['payment_type'] ?? '') === 'Registration' && $patientId) {
+                    $existingVisit = \App\Models\PatientVisit::where('patient_id', $patientId)
+                        ->where('overall_status', 'Active')
+                        ->first();
+                    
+                    if (!$existingVisit) {
+                        \App\Models\PatientVisit::create([
+                            'id' => Str::uuid(),
+                            'patient_id' => $patientId,
+                            'visit_date' => now(),
+                            'status' => 'Active',
+                            'overall_status' => 'Active',
+                            'current_stage' => 'nurse',
+                            'reception_status' => 'Completed',
+                            'nurse_status' => 'Pending',
+                            'doctor_status' => 'Pending',
+                            'lab_status' => 'Pending',
+                            'pharmacy_status' => 'Pending',
+                            'billing_status' => 'Pending',
+                        ]);
+                        
+                        Log::info('TEST MODE: Visit created immediately');
+                    }
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'reference' => $reference,
+                    'message' => 'TEST MODE: Payment completed (simulated). Patient added to queue.',
+                    'test_mode' => true, // Indicate test mode so frontend shows success immediately
+                ]);
+            }
+
+            // PRODUCTION MODE: Call real ZenoPay API
+            try {
+                $response = Http::timeout(10)->withHeaders([
+                    'x-api-key' => $this->apiKey,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
+                ])->post($this->apiUrl . '/api/payments/mobile_money_tanzania', $paymentData);
+
+                Log::info('ZenoPay response:', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                    'successful' => $response->successful(),
+                ]);
+            } catch (\Exception $apiError) {
+                Log::error('ZenoPay API connection error:', [
+                    'error' => $apiError->getMessage(),
+                    'url' => $this->apiUrl . '/api/payments/mobile_money_tanzania',
+                ]);
+                
+                // Return error with helpful message
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unable to connect to ZenoPay API. Please contact ZenoPay support to verify API endpoint and credentials.',
+                    'error' => 'API_CONNECTION_TIMEOUT',
+                    'details' => 'The payment gateway is not responding. Please enable TEST MODE in .env or contact ZenoPay support.',
+                ], 500);
+            }
 
             if ($response->successful()) {
                 $data = $response->json();
@@ -74,11 +176,11 @@ class ZenoPayController extends Controller
                 // Create pending payment record
                 Payment::create([
                     'id' => Str::uuid(),
-                    'patient_id' => $invoice->patient_id,
-                    'invoice_id' => $invoice->id,
+                    'patient_id' => $patientId,
+                    'invoice_id' => $invoice ? $invoice->id : null,
                     'amount' => $validated['amount'],
                     'payment_method' => 'ZenoPay',
-                    'payment_type' => 'Invoice Payment',
+                    'payment_type' => $validated['payment_type'] ?? 'Invoice Payment',
                     'status' => 'Pending',
                     'payment_date' => now(),
                     'reference_number' => $reference,
@@ -163,6 +265,34 @@ class ZenoPayController extends Controller
                         }
                         
                         $invoice->save();
+                    }
+                }
+
+                // For registration payments, create a visit so patient appears in nurse queue
+                if ($payment->payment_type === 'Registration' && $payment->patient_id) {
+                    // Check if visit already exists
+                    $existingVisit = \App\Models\PatientVisit::where('patient_id', $payment->patient_id)
+                        ->where('overall_status', 'Active')
+                        ->first();
+                    
+                    if (!$existingVisit) {
+                        // Create new visit
+                        \App\Models\PatientVisit::create([
+                            'id' => \Illuminate\Support\Str::uuid(),
+                            'patient_id' => $payment->patient_id,
+                            'visit_date' => now(),
+                            'status' => 'Active',
+                            'overall_status' => 'Active',
+                            'current_stage' => 'nurse',
+                            'reception_status' => 'Completed',
+                            'nurse_status' => 'Pending',
+                            'doctor_status' => 'Pending',
+                            'lab_status' => 'Pending',
+                            'pharmacy_status' => 'Pending',
+                            'billing_status' => 'Pending',
+                        ]);
+                        
+                        Log::info('Visit created for registration payment: ' . $payment->patient_id);
                     }
                 }
 

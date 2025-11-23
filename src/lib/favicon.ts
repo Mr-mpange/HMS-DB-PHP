@@ -1,5 +1,11 @@
 import api from './api';
 
+// Cache to prevent repeated API calls
+let faviconCache: string | null = null;
+let titleCache: string | null = null;
+let faviconFetching = false;
+let titleFetching = false;
+
 const createCircularFavicon = (imageUrl: string): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -41,6 +47,20 @@ const createCircularFavicon = (imageUrl: string): Promise<string> => {
 };
 
 export const updateFavicon = async () => {
+  // Return cached result if already fetched
+  if (faviconCache) {
+    console.log('Using cached favicon');
+    return;
+  }
+  
+  // Prevent multiple simultaneous fetches
+  if (faviconFetching) {
+    console.log('Favicon fetch already in progress');
+    return;
+  }
+  
+  faviconFetching = true;
+  
   try {
     // Fetch logo from settings
     const response = await api.get('/settings/logo');
@@ -66,13 +86,32 @@ export const updateFavicon = async () => {
         document.head.appendChild(appleLink);
       }
       appleLink.href = circularLogo;
+      
+      // Cache the result
+      faviconCache = circularLogo;
     }
   } catch (error) {
     console.log('Using default favicon');
+  } finally {
+    faviconFetching = false;
   }
 };
 
 export const updatePageTitle = async () => {
+  // Return cached result if already fetched
+  if (titleCache) {
+    console.log('Using cached title');
+    return;
+  }
+  
+  // Prevent multiple simultaneous fetches
+  if (titleFetching) {
+    console.log('Title fetch already in progress');
+    return;
+  }
+  
+  titleFetching = true;
+  
   try {
     const response = await api.get('/settings');
     const settings = response.data.settings || [];
@@ -80,8 +119,11 @@ export const updatePageTitle = async () => {
     const hospitalName = settings.find((s: any) => s.key === 'hospital_name')?.value;
     if (hospitalName) {
       document.title = `${hospitalName} - Hospital Management System`;
+      titleCache = hospitalName;
     }
   } catch (error) {
     console.log('Using default title');
+  } finally {
+    titleFetching = false;
   }
 };

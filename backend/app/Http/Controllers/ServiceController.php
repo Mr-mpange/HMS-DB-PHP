@@ -79,17 +79,36 @@ class ServiceController extends Controller
     {
         $validated = $request->validate([
             'patient_id' => 'required|uuid|exists:patients,id',
-            'service_id' => 'required|uuid|exists:medical_services,id',
+            'service_id' => 'nullable|uuid|exists:medical_services,id',
+            'service_name' => 'nullable|string|max:255',
             'quantity' => 'nullable|integer|min:1',
+            'unit_price' => 'nullable|numeric|min:0',
+            'total_price' => 'nullable|numeric|min:0',
             'service_date' => 'required|date',
+            'status' => 'nullable|string|max:50',
             'notes' => 'nullable|string',
         ]);
 
-        $service = MedicalService::findOrFail($validated['service_id']);
+        // If service_id is provided, get pricing from service
+        if (!empty($validated['service_id'])) {
+            $service = MedicalService::findOrFail($validated['service_id']);
+            $validated['unit_price'] = $service->base_price;
+            $validated['total_price'] = $service->base_price * ($validated['quantity'] ?? 1);
+        } else {
+            // For medications or custom items, use provided prices
+            if (empty($validated['service_name'])) {
+                return response()->json(['error' => 'Either service_id or service_name is required'], 400);
+            }
+            // Use provided unit_price and total_price, or calculate if missing
+            if (empty($validated['unit_price'])) {
+                $validated['unit_price'] = 0;
+            }
+            if (empty($validated['total_price'])) {
+                $validated['total_price'] = $validated['unit_price'] * ($validated['quantity'] ?? 1);
+            }
+        }
         
         $validated['id'] = (string) Str::uuid();
-        $validated['unit_price'] = $service->base_price;
-        $validated['total_price'] = $service->base_price * ($validated['quantity'] ?? 1);
         $validated['created_by'] = auth()->id();
 
         $patientService = PatientService::create($validated);
@@ -103,6 +122,25 @@ class ServiceController extends Controller
                                   ->where('patient_id', $patientId)
                                   ->orderBy('service_date', 'desc')
                                   ->get();
+
+        return response()->json(['services' => $services]);
+    }
+
+    public function getAllPatientServices(Request $request)
+    {
+        $query = PatientService::with(['service', 'patient']);
+
+        // Filter by status if provided
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Filter by patient if provided
+        if ($request->has('patient_id')) {
+            $query->where('patient_id', $request->patient_id);
+        }
+
+        $services = $query->orderBy('service_date', 'desc')->get();
 
         return response()->json(['services' => $services]);
     }

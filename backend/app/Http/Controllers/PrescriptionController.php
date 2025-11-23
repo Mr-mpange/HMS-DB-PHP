@@ -12,7 +12,7 @@ class PrescriptionController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Prescription::with(['patient', 'doctor', 'items.medication']);
+        $query = Prescription::with(['patient', 'doctor', 'items.medication', 'visit']);
 
         if ($request->has('patient_id')) {
             $query->where('patient_id', $request->patient_id);
@@ -20,6 +20,13 @@ class PrescriptionController extends Controller
 
         if ($request->has('status')) {
             $query->where('status', $request->status);
+        }
+
+        // Filter by visit current_stage (for pharmacy dashboard)
+        if ($request->has('visit_stage')) {
+            $query->whereHas('visit', function($q) use ($request) {
+                $q->where('current_stage', $request->visit_stage);
+            });
         }
 
         $prescriptions = $query->orderBy('prescription_date', 'desc')

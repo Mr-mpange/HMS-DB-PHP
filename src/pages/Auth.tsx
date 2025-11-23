@@ -8,22 +8,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Activity, Loader2 } from 'lucide-react';
-import Logo from '@/components/Logo';
+import StaticLogo from '@/components/StaticLogo';
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
   const { signIn, signUp, user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  
+  // Debug: log renders
+  console.log('Auth page render - user:', !!user, 'loading:', loading);
 
   // Redirect if already logged in - using useEffect to avoid render-phase updates
   useEffect(() => {
-    if (user) {
+    if (user && !loading) {
       // Check if there's a redirect path in the state
       const from = location.state?.from?.pathname || '/';
       navigate(from, { replace: true });
     }
-  }, [user, navigate, location]);
+  }, [user, loading]); // Removed navigate and location from deps to prevent loops
 
   const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -79,7 +82,7 @@ export default function Auth() {
       <Card className="w-full max-w-md shadow-xl border-primary/10">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <Logo size="lg" showText={true} className="justify-center" />
+            <StaticLogo size="lg" showText={true} className="justify-center" />
           </div>
           <CardDescription className="text-base">
             Professional healthcare management system

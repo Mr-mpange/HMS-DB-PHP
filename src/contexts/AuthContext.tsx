@@ -45,12 +45,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    // Check for existing session on mount
+    // Check for existing session on mount - only run once
+    let isMounted = true;
+    
     const checkSession = async () => {
       try {
         console.log('Checking for existing session...');
         const token = localStorage.getItem('auth_token');
         console.log('Auth token found:', !!token);
+        
+        if (!isMounted) return; // Prevent state updates if unmounted
         
         if (token) {
           try {
@@ -124,7 +128,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     checkSession();
-  }, []);
+    
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Empty dependency array - only run once on mount
 
   const signIn = async (email: string, password: string) => {
     try {

@@ -1228,6 +1228,38 @@ export default function DoctorDashboard() {
 
       console.log('Lab tests created successfully:', createdTests.length);
 
+      // Add lab tests to patient billing (patient-services)
+      // Each lab test should be billed as a service
+      for (const testData of labTests) {
+        try {
+          const test = availableLabTests.find(t => t.id === testData.service_id || t.service_id === testData.service_id);
+          if (test && test.service_id) {
+            // Get the service details to get the price
+            const serviceRes = await api.get(`/services/${test.service_id}`);
+            const service = serviceRes.data.service;
+            
+            if (service) {
+              // Create patient-service entry for billing
+              await api.post('/patient-services', {
+                patient_id: selectedVisit.patient_id,
+                service_id: service.id,
+                quantity: 1,
+                unit_price: service.base_price,
+                total_price: service.base_price,
+                service_date: new Date().toISOString().split('T')[0],
+                status: 'Pending',
+                notes: `Lab test: ${testData.test_name}`
+              });
+              
+              console.log(`✅ Added ${testData.test_name} (TSh ${service.base_price}) to patient bill`);
+            }
+          }
+        } catch (billingError) {
+          console.error('Error adding lab test to billing:', billingError);
+          // Continue - don't fail the whole operation if billing fails
+        }
+      }
+
       // Update or create patient visit to lab stage
       // Patient will return to doctor after lab is completed
       if (selectedVisit.id) {
