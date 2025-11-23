@@ -38,6 +38,14 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '
       }
     };
     fetchLogo();
+    
+    // Listen for logo updates
+    const handleLogoUpdate = (event: any) => {
+      setCustomLogo(event.detail.logoUrl);
+    };
+    
+    window.addEventListener('logoUpdated', handleLogoUpdate);
+    return () => window.removeEventListener('logoUpdated', handleLogoUpdate);
   }, []);
 
   return (

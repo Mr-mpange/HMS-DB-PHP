@@ -330,18 +330,34 @@ Route::middleware('auth:sanctum')->group(function () {
             'services' => 'required|array',
             'services.*.service_name' => 'required|string',
             'services.*.service_type' => 'required|string',
-            'services.*.price' => 'required|numeric|min:0'
+            'services.*.base_price' => 'required|numeric|min:0',
         ]);
         
         $results = ['success' => 0, 'failed' => 0, 'errors' => []];
         
         foreach ($request->services as $serviceData) {
             try {
-                \App\Models\Service::create($serviceData);
+                // Add UUID if not present
+                if (!isset($serviceData['id'])) {
+                    $serviceData['id'] = \Illuminate\Support\Str::uuid();
+                }
+                
+                // Set defaults
+                if (!isset($serviceData['currency'])) {
+                    $serviceData['currency'] = 'TSh';
+                }
+                if (!isset($serviceData['is_active'])) {
+                    $serviceData['is_active'] = true;
+                }
+                
+                \App\Models\MedicalService::create($serviceData);
                 $results['success']++;
             } catch (\Exception $e) {
                 $results['failed']++;
-                $results['errors'][] = $e->getMessage();
+                $results['errors'][] = [
+                    'service' => $serviceData['service_name'] ?? 'Unknown',
+                    'error' => $e->getMessage()
+                ];
             }
         }
         

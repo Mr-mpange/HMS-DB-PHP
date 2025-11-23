@@ -1312,10 +1312,8 @@ export default function AdminDashboard() {
       toast.success('Logo updated successfully!');
       setShowLogoDialog(false);
       
-      // Reload page to update logo everywhere
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      // Dispatch custom event to update logo everywhere without page reload
+      window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: logoPreview } }));
     } catch (error: any) {
       console.error('Error uploading logo:', error);
       toast.error('Failed to upload logo');

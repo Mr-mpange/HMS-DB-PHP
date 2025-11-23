@@ -35,7 +35,8 @@ export default function BillingDashboard() {
   const [insuranceCompanies, setInsuranceCompanies] = useState<any[]>([]);
   const [insuranceClaims, setInsuranceClaims] = useState<any[]>([]);
   const [stats, setStats] = useState({ unpaid: 0, partiallyPaid: 0, totalRevenue: 0, pendingClaims: 0, todayRevenue: 0 });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Initial load only
+  const [refreshing, setRefreshing] = useState(false); // Background refresh
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
@@ -58,11 +59,11 @@ export default function BillingDashboard() {
   const [billingVisits, setBillingVisits] = useState<any[]>([]);
 
   useEffect(() => {
-    fetchData();
+    fetchData(true); // Initial load with loading screen
 
     // Set up polling instead of real-time subscriptions (every 30 seconds)
     const intervalId = setInterval(() => {
-      fetchData(); // Refresh data periodically
+      fetchData(false); // Background refresh without loading screen
     }, 30000);
 
     // Cleanup interval on unmount
@@ -198,9 +199,14 @@ export default function BillingDashboard() {
     setStats(calculatedStats);
   }, [processedPatients, calculatedStats]);
 
-  const fetchData = async () => {
+  const fetchData = async (isInitialLoad = false) => {
     try {
-      setLoading(true);
+      // Only show full loading screen on initial load
+      if (isInitialLoad) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
 
       // Fetch all data from MySQL API endpoints (only existing endpoints)
       // Get today's date for filtering payments
@@ -265,6 +271,7 @@ export default function BillingDashboard() {
       toast.error('Failed to load billing data');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -748,6 +755,16 @@ export default function BillingDashboard() {
   return (
     <DashboardLayout title="Billing Dashboard">
       <div className="space-y-8">
+        {/* Background Refresh Indicator */}
+        {refreshing && (
+          <div className="fixed top-4 right-4 z-50 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 shadow-sm animate-in slide-in-from-right-2">
+            <div className="flex items-center gap-2 text-sm text-blue-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Updating...</span>
+            </div>
+          </div>
+        )}
+
         {/* Payment Status Notification */}
         {paymentStatus && (
           <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm animate-in slide-in-from-right-2 ${

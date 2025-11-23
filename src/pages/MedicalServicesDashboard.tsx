@@ -111,52 +111,7 @@ export default function MedicalServicesDashboard() {
     return rows;
   };
 
-  const downloadServicesTemplate = () => {
-    const headers = ['service_code','service_name','service_type','description','base_price','currency'];
-    const sample = [
-      // Laboratory Tests (from HASET DISPENSARY lab services)
-      'LAB001,MALARIA (MRDT),Laboratory,Malaria Rapid Diagnostic Test - 20 min turnaround,5000,TSH',
-      'LAB002,MALARIA (BS),Laboratory,Malaria Blood Smear - 1 hour turnaround,8000,TSH',
-      'LAB003,HEPATITIS B,Laboratory,Hepatitis B Test - 20 min turnaround,15000,TSH',
-      'LAB004,H. PYLORI,Laboratory,H. Pylori Test - 20 min turnaround,12000,TSH',
-      'LAB005,HIV,Laboratory,HIV Test - 20 min turnaround,10000,TSH',
-      'LAB006,VDRL,Laboratory,VDRL Test - 15 min turnaround,8000,TSH',
-      'LAB007,BLOOD GLUCOSE TEST,Laboratory,Blood Glucose Test - 5 min turnaround,3000,TSH',
-      'LAB008,HAEMOGLOBIN TEST,Laboratory,Haemoglobin Test - 5 min turnaround,3000,TSH',
-      'LAB009,ABO BLOOD GROUPING,Laboratory,ABO Blood Grouping - 10 min turnaround,5000,TSH',
-      'LAB010,URINALYSIS,Laboratory,Urinalysis - 20 min turnaround,5000,TSH',
-      'LAB011,URINE SEDIMENT,Laboratory,Urine Sediment - 20 min turnaround,6000,TSH',
-      'LAB012,URINE PREGNANCY TEST,Laboratory,Urine Pregnancy Test - 5 min turnaround,3000,TSH',
-      'LAB013,STOOL ANALYSIS,Laboratory,Stool Analysis - 20 min turnaround,5000,TSH',
-      // Radiology Services
-      'RAD001,X-RAY CHEST,Radiology,Chest X-Ray,25000,TSH',
-      'RAD002,X-RAY ABDOMEN,Radiology,Abdominal X-Ray,25000,TSH',
-      'RAD003,ULTRASOUND,Radiology,Ultrasound Scan,35000,TSH',
-      // Consultations
-      'CONS001,GENERAL CONSULTATION,Consultation,General Medical Consultation,20000,TSH',
-      'CONS002,SPECIALIST CONSULTATION,Consultation,Specialist Doctor Consultation,50000,TSH',
-      // Procedures
-      'PROC001,WOUND DRESSING,Procedure,Wound Dressing and Care,10000,TSH',
-      'PROC002,INJECTION,Procedure,Injection Administration,5000,TSH',
-      'PROC003,IV CANNULATION,Procedure,IV Cannula Insertion,8000,TSH',
-      // Surgery
-      'SURG001,MINOR SURGERY,Surgery,Minor Surgical Procedure,100000,TSH',
-      // Emergency
-      'EMRG001,EMERGENCY CARE,Emergency,Emergency Room Care,30000,TSH',
-      // Ward Stay
-      'WARD001,GENERAL WARD,Ward Stay,General Ward Per Day,50000,TSH',
-      'WARD002,PRIVATE WARD,Ward Stay,Private Ward Per Day,100000,TSH'
-    ];
-    const csv = [headers.join(','), ...sample].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'medical_services_template.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Template downloaded! Includes all lab tests from your image.');
-  };
+
 
   useEffect(() => {
     fetchData();
@@ -339,7 +294,6 @@ export default function MedicalServicesDashboard() {
               Add New Service
             </Button>
             <Button variant="outline" onClick={() => setImportDialogOpen(true)}>Import CSV</Button>
-            <Button variant="ghost" onClick={downloadServicesTemplate}>Download Template</Button>
           </div>
         </div>
 
@@ -708,18 +662,44 @@ export default function MedicalServicesDashboard() {
             setImportError(null);
           }
         }}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Import Medical Services & Lab Tests (CSV)</DialogTitle>
               <DialogDescription>
-                Upload a CSV file to bulk import lab tests and medical services. 
-                Use service_type = "Laboratory" for lab tests, "Radiology" for X-rays, "Consultation" for doctor visits, etc.
-                Download the template which includes all 13 lab tests from your dispensary.
+                Upload a CSV file to bulk import lab tests and medical services.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Input type="file" accept=".csv" onChange={async (e) => {
+              {/* CSV Format Instructions */}
+              <div className="border rounded-lg p-4 bg-muted/50 space-y-3">
+                <h4 className="font-semibold text-sm">CSV Format Required:</h4>
+                <div className="space-y-2 text-sm">
+                  <p className="font-mono text-xs bg-background p-2 rounded border">
+                    service_code,service_name,service_type,description,base_price,currency
+                  </p>
+                  <div className="space-y-1 text-muted-foreground">
+                    <p><strong>service_code:</strong> Unique code (e.g., LAB001, CONS001)</p>
+                    <p><strong>service_name:</strong> Name of service (e.g., MALARIA TEST, X-RAY CHEST)</p>
+                    <p><strong>service_type:</strong> Laboratory, Radiology, Consultation, Procedure, Surgery, Emergency, Ward Stay, or Other</p>
+                    <p><strong>description:</strong> Brief description (optional)</p>
+                    <p><strong>base_price:</strong> Price in numbers (e.g., 5000, 25000)</p>
+                    <p><strong>currency:</strong> TSH, USD, etc. (optional, defaults to TSH)</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="font-semibold text-sm">Example rows:</p>
+                  <div className="font-mono text-xs bg-background p-2 rounded border space-y-1">
+                    <p>LAB001,MALARIA (MRDT),Laboratory,Malaria Rapid Test,5000,TSH</p>
+                    <p>LAB002,BLOOD GLUCOSE,Laboratory,Blood Glucose Test,3000,TSH</p>
+                    <p>RAD001,X-RAY CHEST,Radiology,Chest X-Ray,25000,TSH</p>
+                    <p>CONS001,GENERAL CONSULTATION,Consultation,General Medical Consultation,20000,TSH</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="csvFile">Select CSV File</Label>
+                <Input id="csvFile" type="file" accept=".csv" onChange={async (e) => {
                   setImportError(null);
                   const file = e.target.files?.[0] || null;
                   setImportFile(file);
@@ -733,9 +713,6 @@ export default function MedicalServicesDashboard() {
                     setImportError(err?.message || 'Failed to read CSV file');
                   }
                 }} />
-                <Button type="button" variant="ghost" onClick={downloadServicesTemplate}>
-                  Download Template
-                </Button>
               </div>
               {importError && (
                 <div className="text-sm text-red-600">{importError}</div>

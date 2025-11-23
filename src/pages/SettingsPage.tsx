@@ -71,10 +71,8 @@ export default function SettingsPage() {
       setLogoUrl(previewUrl);
       toast.success('Logo updated successfully!');
       
-      // Reload the page to update logo everywhere
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      // Dispatch custom event to update logo everywhere without page reload
+      window.dispatchEvent(new CustomEvent('logoUpdated', { detail: { logoUrl: previewUrl } }));
     } catch (error: any) {
       console.error('Error uploading logo:', error);
       toast.error('Failed to upload logo');

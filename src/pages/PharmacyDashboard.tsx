@@ -106,7 +106,10 @@ export default function PharmacyDashboard() {
     }
 
     try {
-      setLoading(true);
+      // Only show loading spinner on initial load, not on background refresh
+      if (showToast) {
+        setLoading(true);
+      }
       setLoadError(null);
 
       // Fetch all the data we need from MySQL API
@@ -154,9 +157,7 @@ export default function PharmacyDashboard() {
         totalMedications: (medicationsData || []).length
       });
       
-      if (showToast) {
-        toast.success('Pharmacy data loaded successfully');
-      }
+      // Silently load data - no toast needed for background refresh
     } catch (error) {
       console.error('Error loading pharmacy data:', error);
       const errorMsg = error instanceof Error ? error.message : 'Failed to load pharmacy data';
@@ -637,26 +638,7 @@ export default function PharmacyDashboard() {
     setMedicationDialogOpen(true);
   };
 
-  const downloadCSVTemplate = () => {
-    const headers = ['name', 'generic_name', 'strength', 'dosage_form', 'manufacturer', 'quantity_in_stock', 'reorder_level', 'unit_price', 'expiry_date'];
-    const csvContent = [
-      headers.join(','),
-      'Paracetamol,Acetaminophen,500mg,Tablet,ABC Pharma,100,20,5000,2025-12-31',
-      'Amoxicillin,Amoxicillin,500mg,Capsule,XYZ Pharma,50,10,8000,2024-06-30',
-      'Ibuprofen,Ibuprofen,400mg,Tablet,DEF Pharma,200,30,3000,2025-08-15',
-      'Metformin,Metformin HCl,500mg,Tablet,GHI Pharma,150,25,4000,2026-01-20'
-    ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.setAttribute('href', url);
-    a.setAttribute('download', 'medications_template.csv');
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
 
   const parseCSV = (text: string) => {
     const lines = text.split('\n');
@@ -1263,7 +1245,7 @@ export default function PharmacyDashboard() {
 
           <TabsContent value="inventory">
             {/* Critical Low Stock Alert */}
-            {medications.filter(m => m.quantity_in_stock <= 5).length > 0 && (
+            {medications.filter(m => (m.stock_quantity || m.quantity_in_stock || 0) <= 5).length > 0 && (
               <Card className="shadow-lg border-red-200 bg-red-50 mb-4">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-red-700">
@@ -1271,14 +1253,14 @@ export default function PharmacyDashboard() {
                     Critical Low Stock Alert
                   </CardTitle>
                   <CardDescription className="text-red-600">
-                    {medications.filter(m => m.quantity_in_stock <= 5).length} medication(s) have 5 or fewer units remaining
+                    {medications.filter(m => (m.stock_quantity || m.quantity_in_stock || 0) <= 5).length} medication(s) have 5 or fewer units remaining
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
                     {medications
-                      .filter(m => m.quantity_in_stock <= 5)
-                      .sort((a, b) => a.quantity_in_stock - b.quantity_in_stock)
+                      .filter(m => (m.stock_quantity || m.quantity_in_stock || 0) <= 5)
+                      .sort((a, b) => (a.stock_quantity || a.quantity_in_stock || 0) - (b.stock_quantity || b.quantity_in_stock || 0))
                       .map(med => (
                         <div key={med.id} className="flex items-center justify-between p-3 bg-white rounded-md border border-red-200">
                           <div className="flex items-center gap-3">
@@ -1286,8 +1268,8 @@ export default function PharmacyDashboard() {
                             <div>
                               <p className="font-medium text-red-900">{med.name} ({med.strength})</p>
                               <p className="text-sm text-red-700">
-                                Only <span className="font-bold">{med.quantity_in_stock}</span> units left
-                                {med.quantity_in_stock === 0 && <span className="ml-2 text-red-800 font-bold">OUT OF STOCK!</span>}
+                                Only <span className="font-bold">{med.stock_quantity || med.quantity_in_stock || 0}</span> units left
+                                {(med.stock_quantity || med.quantity_in_stock || 0) === 0 && <span className="ml-2 text-red-800 font-bold">OUT OF STOCK!</span>}
                               </p>
                             </div>
                           </div>
@@ -1320,9 +1302,6 @@ export default function PharmacyDashboard() {
                     <Plus className="mr-2 h-4 w-4" />
                     Add Medication
                   </Button>
-                  <Button variant="outline" onClick={() => setStockDialogOpen(true)}>
-                    Update Stock
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1343,14 +1322,14 @@ export default function PharmacyDashboard() {
                     </TableHeader>
                     <TableBody>
                       {medications.map((med) => {
-                        const isLowStock = med.quantity_in_stock <= med.reorder_level;
+                        const isLowStock = (med.stock_quantity || med.quantity_in_stock || 0) <= med.reorder_level;
                         return (
                           <TableRow key={med.id}>
                             <TableCell className="font-medium">{med.name}</TableCell>
                             <TableCell className="text-muted-foreground">{med.generic_name || '-'}</TableCell>
                             <TableCell>{med.strength}</TableCell>
                             <TableCell className="text-muted-foreground">{med.dosage_form || 'Tablet'}</TableCell>
-                            <TableCell className="font-semibold">{med.quantity_in_stock}</TableCell>
+                            <TableCell className="font-semibold">{med.stock_quantity || med.quantity_in_stock || 0}</TableCell>
                             <TableCell>{med.reorder_level}</TableCell>
                             <TableCell className="font-medium">TSh{Number(med.unit_price).toFixed(2)}</TableCell>
                             <TableCell>
@@ -1378,7 +1357,7 @@ export default function PharmacyDashboard() {
 
               {/* Import Medications Dialog */}
               <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-                <DialogContent className="max-w-4xl">
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Bulk Import Medications</DialogTitle>
                     <DialogDescription>
@@ -1386,19 +1365,37 @@ export default function PharmacyDashboard() {
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <Label htmlFor="csvFile">CSV File</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={downloadCSVTemplate}
-                          className="text-xs"
-                        >
-                          <File className="mr-1 h-3 w-3" />
-                          Download Template
-                        </Button>
+                    {/* CSV Format Instructions */}
+                    <div className="border rounded-lg p-4 bg-muted/50 space-y-3">
+                      <h4 className="font-semibold text-sm">CSV Format Required:</h4>
+                      <div className="space-y-2 text-sm">
+                        <p className="font-mono text-xs bg-background p-2 rounded border">
+                          name,generic_name,strength,dosage_form,manufacturer,quantity_in_stock,reorder_level,unit_price,expiry_date
+                        </p>
+                        <div className="space-y-1 text-muted-foreground">
+                          <p><strong>name:</strong> Brand/Trade name (e.g., Panadol, Amoxil)</p>
+                          <p><strong>generic_name:</strong> Generic name (e.g., Paracetamol, Amoxicillin)</p>
+                          <p><strong>strength:</strong> Dosage strength (e.g., 500mg, 250mg/5ml)</p>
+                          <p><strong>dosage_form:</strong> Tablet, Capsule, Syrup, Injection, etc.</p>
+                          <p><strong>manufacturer:</strong> Manufacturer name</p>
+                          <p><strong>quantity_in_stock:</strong> Current stock quantity (number)</p>
+                          <p><strong>reorder_level:</strong> Minimum stock level before reorder (number)</p>
+                          <p><strong>unit_price:</strong> Price per unit in TSh (number)</p>
+                          <p><strong>expiry_date:</strong> Expiry date in YYYY-MM-DD format</p>
+                        </div>
                       </div>
+                      <div className="space-y-2">
+                        <p className="font-semibold text-sm">Example rows:</p>
+                        <div className="font-mono text-xs bg-background p-2 rounded border space-y-1">
+                          <p>Panadol,Paracetamol,500mg,Tablet,GSK,1000,100,500,2025-12-31</p>
+                          <p>Amoxil,Amoxicillin,250mg,Capsule,GSK,500,50,1500,2025-06-30</p>
+                          <p>Brufen,Ibuprofen,400mg,Tablet,Abbott,800,80,800,2025-09-15</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="csvFile">Select CSV File</Label>
                       <Input
                         id="csvFile"
                         type="file"
@@ -1406,9 +1403,6 @@ export default function PharmacyDashboard() {
                         onChange={handleFileUpload}
                         disabled={importLoading}
                       />
-                      <p className="text-sm text-muted-foreground">
-                        Upload a CSV file with columns: name, generic_name, strength, dosage_form, manufacturer, quantity_in_stock, reorder_level, unit_price, expiry_date
-                      </p>
                     </div>
 
                     {importPreview.length > 0 && (
@@ -1431,7 +1425,7 @@ export default function PharmacyDashboard() {
                                   <TableRow key={med.name + med.strength || index}>
                                     <TableCell className="font-medium">{med.name}</TableCell>
                                     <TableCell>{med.strength}</TableCell>
-                                    <TableCell>{med.quantity_in_stock}</TableCell>
+                                    <TableCell>{med.stock_quantity || med.quantity_in_stock || 0}</TableCell>
                                     <TableCell>TSh{Number(med.unit_price).toFixed(2)}</TableCell>
                                     <TableCell>
                                       <CheckCircle className="h-4 w-4 text-green-500" />
@@ -1573,7 +1567,7 @@ export default function PharmacyDashboard() {
                       <Label htmlFor="currentStock">Current Stock</Label>
                       <Input
                         id="currentStock"
-                        value={selectedMedication?.quantity_in_stock || 0}
+                        value={selectedMedication?.stock_quantity || selectedMedication?.quantity_in_stock || 0}
                         disabled
                       />
                     </div>
@@ -1583,7 +1577,7 @@ export default function PharmacyDashboard() {
                         id="quantity"
                         name="quantity"
                         type="number"
-                        defaultValue={selectedMedication?.quantity_in_stock || 0}
+                        defaultValue={selectedMedication?.stock_quantity || selectedMedication?.quantity_in_stock || 0}
                         required
                       />
                     </div>
