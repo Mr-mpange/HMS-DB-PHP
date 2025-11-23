@@ -529,9 +529,64 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     
     Route::put('/pharmacy/medications/{id}', function(Request $request, $id) {
-        $medication = \App\Models\Medication::findOrFail($id);
-        $medication->update($request->all());
-        return response()->json(['medication' => $medication]);
+        try {
+            $medication = \App\Models\Medication::findOrFail($id);
+            
+            // Validate the input
+            $validated = $request->validate([
+                'quantity_in_stock' => 'sometimes|integer|min:0',
+                'stock_quantity' => 'sometimes|integer|min:0',
+                'name' => 'sometimes|string',
+                'generic_name' => 'sometimes|string|nullable',
+                'category' => 'sometimes|string|nullable',
+                'dosage_form' => 'sometimes|string|nullable',
+                'strength' => 'sometimes|string|nullable',
+                'manufacturer' => 'sometimes|string|nullable',
+                'unit_price' => 'sometimes|numeric|min:0',
+                'reorder_level' => 'sometimes|integer|min:0|nullable',
+                'expiry_date' => 'sometimes|date|nullable',
+                'batch_number' => 'sometimes|string|nullable',
+                'is_active' => 'sometimes|boolean',
+            ]);
+            
+            // Handle both quantity_in_stock and stock_quantity
+            // If quantity_in_stock is provided, also update stock_quantity
+            if (isset($validated['quantity_in_stock'])) {
+                $validated['stock_quantity'] = $validated['quantity_in_stock'];
+            }
+            // If stock_quantity is provided, also update quantity_in_stock
+            if (isset($validated['stock_quantity'])) {
+                $validated['quantity_in_stock'] = $validated['stock_quantity'];
+            }
+            
+            $medication->update($validated);
+            
+            // Reload to get fresh data
+            $medication->refresh();
+            
+            return response()->json(['medication' => $medication]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'error' => 'Medication not found',
+                'message' => "Medication with ID {$id} does not exist"
+            ], 404);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => 'Validation failed',
+                'details' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            \Log::error('Medication update error: ' . $e->getMessage(), [
+                'id' => $id,
+                'request' => $request->all(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'error' => 'Failed to update medication',
+                'message' => $e->getMessage(),
+                'type' => get_class($e)
+            ], 500);
+        }
     });
     
     Route::post('/pharmacy/medications/bulk', function(Request $request) {
@@ -574,7 +629,22 @@ Route::middleware('auth:sanctum')->group(function () {
         }
         
         $tests = $query->orderBy('created_at', 'desc')->get();
-        return response()->json(['labTests' => $tests, 'tests' => $tests]);
+        
+        // Transform tests to include lab_results as an array
+        $testsWithResults = $tests->map(function($test) {
+            $testArray = $test->toArray();
+            // Parse results JSON field into lab_results array
+            if (isset($testArray['results']) && is_string($testArray['results'])) {
+                $testArray['lab_results'] = json_decode($testArray['results'], true) ?: [];
+            } else if (isset($testArray['results']) && is_array($testArray['results'])) {
+                $testArray['lab_results'] = $testArray['results'];
+            } else {
+                $testArray['lab_results'] = [];
+            }
+            return $testArray;
+        });
+        
+        return response()->json(['labTests' => $testsWithResults, 'tests' => $testsWithResults]);
     });
     
     Route::post('/labs', function(Request $request) {

@@ -315,8 +315,8 @@ export default function DoctorDashboard() {
     // Show loading state for the specific appointment being processed
     const isProcessing = loading && selectedAppointment?.id === appointment.id;
 
-    // Check if appointment time has arrived (allow starting 5 minutes before scheduled time)
-    // Use currentTime state to ensure re-render when time changes
+    // Check if appointment can be started
+    // Allow starting appointments on the same day (no time restriction)
     const canStartAppointment = () => {
       if (!appointment.appointment_date) {
         console.log('Missing appointment date');
@@ -324,30 +324,27 @@ export default function DoctorDashboard() {
       }
       
       try {
-        // The appointment_date from backend is already a full datetime
-        // Check if it's already an ISO string with time, or if we need to append time
-        let appointmentDateTime;
+        // Extract the appointment date (ignore time for now)
+        let appointmentDate;
         
-        if (appointment.appointment_date.includes('T') && appointment.appointment_date.length > 10) {
-          // It's already a full datetime string (e.g., '2025-11-16T21:00:00.000Z')
-          appointmentDateTime = new Date(appointment.appointment_date);
-        } else if (appointment.appointment_time) {
-          // It's just a date, append the time
-          appointmentDateTime = new Date(`${appointment.appointment_date}T${appointment.appointment_time}`);
+        if (appointment.appointment_date.includes('T')) {
+          // It's a full datetime string
+          appointmentDate = appointment.appointment_date.split('T')[0];
         } else {
-          console.log('Cannot determine appointment time');
-          return false;
+          // It's just a date
+          appointmentDate = appointment.appointment_date;
         }
         
-        const now = currentTime;
-        const fiveMinutesBefore = new Date(appointmentDateTime.getTime() - 5 * 60 * 1000);
+        // Get today's date
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         
-        const canStart = now >= fiveMinutesBefore;
+        // Allow starting if appointment is today or in the past
+        const canStart = appointmentDate <= today;
         
         // Debug logging (only when button is disabled)
         if (!canStart) {
-          const minutesUntil = Math.ceil((fiveMinutesBefore.getTime() - now.getTime()) / (1000 * 60));
-          console.log(`${appointment.patient?.full_name}: Cannot start yet. ${minutesUntil} minutes until start time.`);
+          console.log(`${appointment.patient?.full_name}: Cannot start yet. Appointment is scheduled for ${appointmentDate} (today is ${today}).`);
         }
         
         return canStart;
@@ -557,7 +554,7 @@ export default function DoctorDashboard() {
           console.error('Error processing appointment time:', error, appointment);
         }
       });
-    }, 30000); // Check every 30 seconds for better responsiveness
+    }, 10000); // Check every 10 seconds for better responsiveness
     
     return () => clearInterval(timer);
   }, [appointments]);
@@ -1642,14 +1639,9 @@ export default function DoctorDashboard() {
 
             console.log('Lab tests found for patient:', visit.patient?.id, labTests.length);
 
-            // Also get any completed lab tests regardless of completion date
-            const completedTestsResponse = await api.get(`/labs?patient_id=${visit.patient?.id}&status=Completed`);
-            
-            if (!completedTestsResponse.data.error) {
-              allCompletedTests = completedTestsResponse.data.labTests || [];
-            }
-            
-            console.log('All completed lab tests for patient:', visit.patient?.id, allCompletedTests.length);
+            // Don't fetch completed tests separately - they're already in labTests
+            // This was causing double counting (e.g., 1 test showing as "2 tests")
+            allCompletedTests = []; // Keep empty to avoid duplication
 
             console.log('Fetching prescriptions for patient:', visit.patient?.id, visit.patient?.full_name);
 
@@ -2157,8 +2149,8 @@ export default function DoctorDashboard() {
                         visit.overall_status === 'Active'
                       )
                       .map((visit) => {
-                        const labTestCount = (visit.labTests?.length || 0) + (visit.allCompletedLabTests?.length || 0);
-                        const hasAbnormal = [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])]
+                        const labTestCount = visit.labTests?.length || 0;
+                        const hasAbnormal = (visit.labTests || [])
                           .some((test: any) => test.lab_results?.some((r: any) => r.abnormal_flag));
                         
                         return (
@@ -2202,7 +2194,7 @@ export default function DoctorDashboard() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleViewLabResults(
-                                    [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])],
+                                    visit.labTests || [],
                                     visit
                                   )}
                                   className="flex items-center gap-1"
@@ -2289,7 +2281,7 @@ export default function DoctorDashboard() {
                     visit.overall_status === 'Active'
                   )
                   .map((visit) => {
-                    const hasLabResults = (visit.labTests && visit.labTests.length > 0) || (visit.allCompletedLabTests && visit.allCompletedLabTests.length > 0);
+                    const hasLabResults = visit.labTests && visit.labTests.length > 0;
                     const hasAbnormal = hasLabResults && [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])]
                       .some((test: any) => test.lab_results?.some((r: any) => r.abnormal_flag));
                     const age = visit.patient?.date_of_birth 
