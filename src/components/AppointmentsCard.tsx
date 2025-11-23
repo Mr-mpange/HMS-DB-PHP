@@ -17,25 +17,8 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
   const day = String(now.getDate()).padStart(2, '0');
   const today = `${year}-${month}-${day}`;
   
-  console.log('Today (local):', today, 'UTC:', new Date().toISOString().split('T')[0]);
-  
-  // Debug: Log all appointment dates
-  console.log('All appointments dates:', appointments.map(a => {
-    const dateStr = typeof a.appointment_date === 'string' ? a.appointment_date : '';
-    // Simply extract date part from string like "2025-11-17T20:06:00"
-    const parts = dateStr.split('T');
-    const extracted = parts[0];
-    console.log('DEBUG Split:', { dateStr, parts, extracted });
-    return {
-      patient: a.patient?.full_name,
-      date: a.appointment_date,
-      extracted,
-      status: a.status
-    };
-  }));
-  
-  // Filter for today's appointments that need action (Scheduled or Confirmed status)
-  const todayAppointments = appointments.filter(
+  // Filter for today's and upcoming appointments that need action (Scheduled or Confirmed status)
+  const relevantAppointments = appointments.filter(
     a => {
       // Use appointment_date_only if available (from backend), otherwise extract from datetime
       let appointmentDate = '';
@@ -56,42 +39,33 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
         appointmentDate = dateStr.split('T')[0];
       }
       
-      const isToday = appointmentDate === today;
       const needsAction = a.status === 'Scheduled' || a.status === 'Confirmed';
       
-      // Debug logging
-      console.log('Checking appointment:', {
-        patient: a.patient?.full_name,
-        rawDate: a.appointment_date,
-        hasDateOnly: !!a.appointment_date_only,
-        dateOnlyValue: a.appointment_date_only,
-        extractedDate: appointmentDate,
-        extractedType: typeof appointmentDate,
-        today: today,
-        todayType: typeof today,
-        isToday,
-        status: a.status,
-        needsAction
-      });
-      
-      return isToday && needsAction;
+      // Show today's and future appointments (not past ones)
+      return appointmentDate >= today && needsAction;
     }
   );
   
-  console.log('AppointmentsCard:', {
-    today,
-    totalAppointments: appointments.length,
-    todayAppointments: todayAppointments.length,
-    sampleAppointment: appointments[0] ? {
-      date: appointments[0].appointment_date,
-      dateType: typeof appointments[0].appointment_date,
-      status: appointments[0].status,
-      patient: appointments[0].patient?.full_name
-    } : null
+  // Separate today's appointments from upcoming ones
+  const todayAppointments = relevantAppointments.filter(a => {
+    const appointmentDate = a.appointment_date_only || a.appointment_date?.split('T')[0] || '';
+    return appointmentDate === today;
+  });
+  
+  const upcomingAppointments = relevantAppointments.filter(a => {
+    const appointmentDate = a.appointment_date_only || a.appointment_date?.split('T')[0] || '';
+    return appointmentDate > today;
   });
 
-  // Sort by appointment time
-  const sortedAppointments = todayAppointments.sort((a, b) => {
+  // Sort by date and time
+  const sortedAppointments = relevantAppointments.sort((a, b) => {
+    const dateA = a.appointment_date_only || a.appointment_date?.split('T')[0] || '';
+    const dateB = b.appointment_date_only || b.appointment_date?.split('T')[0] || '';
+    
+    if (dateA !== dateB) {
+      return dateA.localeCompare(dateB);
+    }
+    
     const timeA = a.appointment_time || '00:00';
     const timeB = b.appointment_time || '00:00';
     return timeA.localeCompare(timeB);
@@ -104,9 +78,9 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
           <div>
             <CardTitle className="flex items-center gap-2">
               <Calendar className="h-5 w-5" />
-              Today's Appointments ({sortedAppointments.length})
+              Appointments ({todayAppointments.length} today, {upcomingAppointments.length} upcoming)
             </CardTitle>
-            <CardDescription>Manage today's patient schedule</CardDescription>
+            <CardDescription>Manage patient appointments</CardDescription>
           </div>
           {sortedAppointments.length > 5 && (
             <Badge variant="secondary" className="ml-2">
@@ -119,21 +93,32 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
         {sortedAppointments.length === 0 ? (
           <div className="text-center py-12">
             <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground font-medium">No appointments for today</p>
+            <p className="text-muted-foreground font-medium">No upcoming appointments</p>
             <p className="text-sm text-muted-foreground mt-1">All appointments have been completed or there are no scheduled visits</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {sortedAppointments.slice(0, 5).map((appointment) => (
-              <div key={appointment.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors">
+            {sortedAppointments.slice(0, 5).map((appointment) => {
+              const appointmentDate = appointment.appointment_date_only || appointment.appointment_date?.split('T')[0] || '';
+              const isToday = appointmentDate === today;
+              
+              return (
+              <div key={appointment.id} className={`flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors ${!isToday ? 'bg-gray-50/50' : ''}`}>
                 <div className="flex items-center gap-3 flex-1">
-                  <div className="p-2 bg-blue-50 rounded-full">
-                    <User className="h-4 w-4 text-blue-600" />
+                  <div className={`p-2 rounded-full ${isToday ? 'bg-blue-50' : 'bg-gray-100'}`}>
+                    <User className={`h-4 w-4 ${isToday ? 'text-blue-600' : 'text-gray-600'}`} />
                   </div>
                   <div className="flex flex-col flex-1">
-                    <p className="font-medium text-base">
-                      {appointment.patient?.full_name || 'Unknown Patient'}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-base">
+                        {appointment.patient?.full_name || 'Unknown Patient'}
+                      </p>
+                      {!isToday && (
+                        <Badge variant="outline" className="text-xs">
+                          {appointmentDate}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Clock className="h-3 w-3" />
                       <span>{appointment.appointment_time}</span>
@@ -163,7 +148,7 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
                   }>
                     {appointment.status}
                   </Badge>
-                  {appointment.status === 'Scheduled' && (
+                  {appointment.status === 'Scheduled' && isToday && (
                     <>
                       <Button
                         size="sm"
@@ -182,6 +167,16 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
                       </Button>
                     </>
                   )}
+                  {appointment.status === 'Scheduled' && !isToday && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onCancel(appointment.id)}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      Cancel
+                    </Button>
+                  )}
                   {appointment.status === 'Confirmed' && (
                     <Badge variant="default" className="bg-blue-600">
                       In Progress
@@ -189,7 +184,8 @@ export function AppointmentsCard({ appointments, onCheckIn, onCancel }: Appointm
                   )}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </CardContent>

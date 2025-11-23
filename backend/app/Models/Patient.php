@@ -13,7 +13,7 @@ class Patient extends Model
         'full_name', 'date_of_birth', 'gender', 'phone', 'email',
         'address', 'emergency_contact', 'emergency_phone', 'blood_group',
         'allergies', 'medical_history', 'insurance_provider',
-        'insurance_number', 'status'
+        'insurance_number', 'insurance_company_id', 'status'
     ];
 
     protected $casts = [
@@ -43,5 +43,10 @@ class Patient extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function insuranceCompany()
+    {
+        return $this->belongsTo(InsuranceCompany::class);
     }
 }

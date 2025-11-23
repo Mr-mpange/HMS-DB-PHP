@@ -37,4 +37,13 @@ class Prescription extends Model
     {
         return $this->hasMany(PrescriptionItem::class);
     }
+
+    // Accessor for medications (alias for items for frontend compatibility)
+    public function getMedicationsAttribute()
+    {
+        return $this->items;
+    }
+
+    // Append medications to JSON responses
+    protected $appends = ['medications'];
 }

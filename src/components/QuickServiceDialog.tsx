@@ -43,11 +43,15 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
     setLoading(true);
     try {
       const response = await api.get('/services');
-      // Filter for direct services (Procedure, Consultation, Emergency)
-      const directServices = response.data.services.filter((s: any) => 
-        ['Procedure', 'Consultation', 'Emergency', 'Other'].includes(s.service_type) && s.is_active
+      // Filter for active services that DON'T require lab tests
+      // Exclude Laboratory and Radiology services (they need lab stage)
+      const activeServices = response.data.services.filter((s: any) => 
+        s.is_active && 
+        s.service_type !== 'Laboratory' && 
+        s.service_type !== 'Radiology'
       );
-      setServices(directServices);
+      setServices(activeServices);
+      console.log('Loaded quick services (excluding lab/radiology):', activeServices.length, activeServices);
     } catch (error) {
       console.error('Error fetching services:', error);
       toast.error('Failed to load services');
@@ -106,7 +110,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         status: 'Pending'
       });
 
-      // Create a visit so patient appears in nurse queue
+      // Create a visit for quick service (nurse → doctor → billing, NO lab)
       await api.post('/visits', {
         patient_id: patientId,
         visit_date: new Date().toISOString().split('T')[0],
@@ -114,6 +118,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         reception_completed_at: new Date().toISOString(),
         current_stage: 'nurse',
         nurse_status: 'Pending',
+        lab_status: 'Not Required', // Skip lab stage
         overall_status: 'Active',
         visit_type: 'Quick Service'
       });

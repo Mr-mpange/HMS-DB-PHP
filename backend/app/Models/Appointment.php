@@ -18,6 +18,26 @@ class Appointment extends Model
         'appointment_date' => 'datetime',
     ];
 
+    protected $appends = ['appointment_date_only', 'appointment_time'];
+
+    public function getAppointmentDateOnlyAttribute()
+    {
+        if (!$this->appointment_date) {
+            return null;
+        }
+        // Return just the date part in Y-m-d format
+        return $this->appointment_date->format('Y-m-d');
+    }
+
+    public function getAppointmentTimeAttribute()
+    {
+        if (!$this->appointment_date) {
+            return null;
+        }
+        // Return just the time part in H:i format (24-hour)
+        return $this->appointment_date->format('H:i');
+    }
+
     public function patient()
     {
         return $this->belongsTo(Patient::class);

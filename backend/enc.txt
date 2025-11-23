@@ -1,0 +1,62 @@
+
+APP_NAME="Hospital Management System"
+APP_ENV=production
+APP_KEY=
+APP_DEBUG=false
+APP_URL=https://hasetcompany.or.tz
+
+# IMPORTANT: After upload, run: php artisan key:generate
+
+APP_LOCALE=en
+APP_FALLBACK_LOCALE=en
+
+BCRYPT_ROUNDS=12
+
+LOG_CHANNEL=stack
+LOG_LEVEL=error
+
+# Database Configuration - UPDATE THESE!
+DB_CONNECTION=mysql
+DB_HOST=localhost
+DB_PORT=3306
+DB_DATABASE=u232077031_hospital
+DB_USERNAME=u232077031_haset_db
+DB_PASSWORD=Haset@123
+
+SESSION_DRIVER=database
+SESSION_LIFETIME=120
+SESSION_ENCRYPT=false
+SESSION_PATH=/
+SESSION_DOMAIN=.hasetcompany.or.tz
+
+BROADCAST_CONNECTION=log
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=database
+
+CACHE_STORE=database
+
+# CORS Configuration
+SANCTUM_STATEFUL_DOMAINS=hasetcompany.or.tz,www.hasetcompany.or.tz
+SESSION_DOMAIN=.hasetcompany.or.tz
+
+# Frontend URL
+FRONTEND_URL=https://hasetcompany.or.tz
+
+# ZenoPay Payment Gateway Configuration
+ZENOPAY_API_KEY=zhSoTm5n-rtrKEPICtZbQjksN0yADCAoq76JO_9W8tOqI70fhaMY3-iqdbm0UP5z4a4qY-hOootZVt7_g4PHFA
+ZENOPAY_MERCHANT_ID=zp67025646
+ZENOPAY_API_URL=https://api.zenopay.com
+ZENOPAY_ENV=production
+ZENOPAY_CALLBACK_URL=https://hasetcompany.or.tz/api/payments/zenopay/callback
+ZENOPAY_RETURN_URL=https://hasetcompany.or.tz/billing/payment-success
+ZENOPAY_WEBHOOK_SECRET=YOUR_ZENOPAY_WEBHOOK_SECRET_HERE
+
+# Mail Configuration (Optional)
+MAIL_MAILER=smtp
+MAIL_HOST=smtp.hostinger.com
+MAIL_PORT=587
+MAIL_USERNAME=noreply@hasetcompany.or.tz
+MAIL_PASSWORD=YOUR_EMAIL_PASSWORD_HERE
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS=noreply@hasetcompany.or.tz
+MAIL_FROM_NAME="${APP_NAME}"

@@ -191,9 +191,23 @@ export default function PharmacyDashboard() {
     };
   }, [user]);
 
-  const handleOpenDispenseDialog = (prescription: any) => {
-    setSelectedPrescriptionForDispense(prescription);
-    setDispenseDialogOpen(true);
+  const handleOpenDispenseDialog = async (prescription: any) => {
+    try {
+      // Fetch full prescription details with items
+      const response = await api.get(`/prescriptions/${prescription.id}`);
+      const fullPrescription = response.data.prescription;
+      
+      // Merge with existing prescription data (patient, doctor info)
+      setSelectedPrescriptionForDispense({
+        ...prescription,
+        ...fullPrescription,
+        items: fullPrescription.items || fullPrescription.medications || []
+      });
+      setDispenseDialogOpen(true);
+    } catch (error) {
+      console.error('Error fetching prescription details:', error);
+      toast.error('Failed to load prescription details');
+    }
   };
 
   const handleDispenseWithDetails = async (dispenseData: any) => {
@@ -260,8 +274,9 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Check if prescription has medications
-      if (!prescription.medications || prescription.medications.length === 0) {
+      // Check if prescription has medications (items)
+      const prescriptionItems = prescription.items || prescription.medications || [];
+      if (prescriptionItems.length === 0) {
         await logActivity('pharmacy.dispense.error', { 
           error: 'No medications in prescription',
           prescription_id: prescriptionId
@@ -270,8 +285,8 @@ export default function PharmacyDashboard() {
         return;
       }
 
-      // Use edited medications from dispenseData if available, otherwise use prescription medications
-      const medicationsToDispense = dispenseData?.medications || prescription.medications;
+      // Use edited medications from dispenseData if available, otherwise use prescription items
+      const medicationsToDispense = dispenseData?.medications || prescriptionItems;
       const medicationDetails = [];
       
       // Fetch all medication details
@@ -334,17 +349,30 @@ export default function PharmacyDashboard() {
         const invoiceRes = await api.post('/billing/invoices', {
           invoice_number: invoiceNumber,
           patient_id: patientId,
-          visit_id: visitId,
           total_amount: totalInvoiceAmount,
           paid_amount: 0,
-          balance: totalInvoiceAmount,
           status: 'Pending',
           invoice_date: new Date().toISOString().split('T')[0],
-          items: invoiceItems,
           notes: `Pharmacy dispensing - ${medicationDetails.length} medication(s)${dispenseData?.notes ? '. ' + dispenseData.notes : ''}`
         });
         newInvoice = invoiceRes.data.invoice;
         console.log('✅ Invoice created:', newInvoice);
+
+        // Create invoice items for each medication
+        for (const item of invoiceItems) {
+          try {
+            await api.post('/billing/invoice-items', {
+              invoice_id: newInvoice.id,
+              description: item.description,
+              quantity: item.quantity,
+              unit_price: item.unit_price
+            });
+          } catch (itemError: any) {
+            console.error('Error creating invoice item:', itemError);
+            // Continue with other items even if one fails
+          }
+        }
+        console.log('✅ Invoice items created');
       } catch (error: any) {
         console.error('❌ Error creating invoice:', error);
         console.error('Error response data:', error.response?.data);
@@ -1113,11 +1141,12 @@ export default function PharmacyDashboard() {
                                   </TableHeader>
                                   <TableBody>
                                     {patientPrescriptions.flatMap((prescription: any) => {
-                                      // Parse medications if it's a string
-                                      const meds = Array.isArray(prescription.medications) 
-                                        ? prescription.medications 
-                                        : (typeof prescription.medications === 'string' 
-                                            ? JSON.parse(prescription.medications) 
+                                      // Get items or medications (support both formats)
+                                      const prescriptionItems = prescription.items || prescription.medications || [];
+                                      const meds = Array.isArray(prescriptionItems) 
+                                        ? prescriptionItems 
+                                        : (typeof prescriptionItems === 'string' 
+                                            ? JSON.parse(prescriptionItems) 
                                             : [prescription]);
                                       
                                       // Create a row for each medication in the prescription

@@ -157,8 +157,15 @@ export default function NurseDashboard() {
       // Prepare vitals data as JSON string
       const vitalsData = JSON.stringify(vitalsForm);
 
+      console.log('🔄 Updating visit:', visit.id, 'for patient:', selectedPatient.full_name);
+      console.log('📤 Sending update:', {
+        nurse_status: 'Completed',
+        current_stage: 'doctor',
+        doctor_status: 'Pending'
+      });
+
       // Update visit with vitals and move to doctor stage
-      await api.put(`/visits/${visit.id}`, {
+      const response = await api.put(`/visits/${visit.id}`, {
         nurse_status: 'Completed',
         nurse_notes: vitalsData, // Store vitals in nurse_notes as JSON
         nurse_completed_at: new Date().toISOString(),
@@ -166,7 +173,13 @@ export default function NurseDashboard() {
         doctor_status: 'Pending'
       });
 
+      console.log('✅ Visit updated successfully!', response.data);
       toast.success(`Vital signs recorded. Patient sent to doctor.`);
+      
+      // Update local state immediately to remove patient from list
+      setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
+      
+      // Close dialog and reset form
       setShowVitalsDialog(false);
       setSelectedPatient(null);
       
@@ -185,9 +198,11 @@ export default function NurseDashboard() {
         notes: ''
       });
       
-      // Update local state
-      setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
-      fetchData(false); // Refresh data in background
+      // Refresh data after a delay to ensure backend has processed
+      setTimeout(() => {
+        console.log('🔄 Refreshing nurse dashboard data...');
+        fetchData(false);
+      }, 2000); // Increased to 2 seconds
     } catch (error: any) {
       console.error('Vitals submission error:', error);
       toast.error(error.response?.data?.error || 'Failed to record vital signs');
@@ -263,9 +278,28 @@ export default function NurseDashboard() {
         setLoading(true);
       }
 
-      // Fetch visits waiting for nurse
-      const visitsResponse = await api.get('/visits?current_stage=nurse&nurse_status=Pending&overall_status=Active');
-      const visitsData = Array.isArray(visitsResponse.data.visits) ? visitsResponse.data.visits : [];
+      // Fetch visits waiting for nurse - don't filter by nurse_status in API call
+      // because some visits may have NULL nurse_status
+      const visitsResponse = await api.get('/visits?current_stage=nurse&overall_status=Active');
+      const allVisits = Array.isArray(visitsResponse.data.visits) ? visitsResponse.data.visits : [];
+      
+      // Filter for visits that are pending for nurse (Pending, null, undefined, or empty string)
+      const visitsData = allVisits.filter(v => 
+        v.current_stage === 'nurse' && 
+        (!v.nurse_status || v.nurse_status === 'Pending' || v.nurse_status === '')
+      );
+      
+      console.log('👥 Nurse Dashboard - Visits fetched:', {
+        totalFromAPI: allVisits.length,
+        afterFilter: visitsData.length,
+        filtered: allVisits.length - visitsData.length,
+        visits: visitsData.map(v => ({
+          id: v.id,
+          patient: v.patient?.full_name,
+          current_stage: v.current_stage,
+          nurse_status: v.nurse_status
+        }))
+      });
 
       // Fetch today's appointments for this nurse
       const today = new Date().toISOString().split('T')[0];
@@ -404,8 +438,8 @@ export default function NurseDashboard() {
           </CardHeader>
           <CardContent>
             {pendingVisits.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No patients waiting</p>
-            ) : (
+                <p className="text-center text-muted-foreground py-8">No patients waiting</p>
+              ) : (
               <div className="space-y-3">
                 {pendingVisits.map((visit) => (
                   <div key={visit.id} className="flex items-center justify-between p-3 border rounded-lg">
@@ -422,7 +456,7 @@ export default function NurseDashboard() {
                       <Thermometer className="h-4 w-4 mr-2" />
                       Record Vitals
                     </Button>
-                  </div>
+                </div>
                 ))}
               </div>
             )}

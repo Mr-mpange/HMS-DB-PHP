@@ -50,15 +50,18 @@ class AuthController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
             'phone' => 'nullable|string|max:20',
-            'role' => 'required|in:admin,doctor,nurse,receptionist,pharmacist,lab_technician',
+            'role' => 'required|in:admin,doctor,nurse,receptionist,pharmacist,lab_technician,lab_tech,billing,patient',
         ]);
+
+        // Normalize lab_tech to lab_technician for database consistency
+        $role = $request->role === 'lab_tech' ? 'lab_technician' : $request->role;
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
             'phone' => $request->phone,
-            'role' => $request->role,
+            'role' => $role,
             'is_active' => true,
         ]);
 
@@ -84,6 +87,17 @@ class AuthController extends Controller
 
     public function me(Request $request)
     {
-        return response()->json($request->user());
+        $user = $request->user();
+        
+        return response()->json([
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'phone' => $user->phone,
+                'is_active' => $user->is_active,
+            ]
+        ]);
     }
 }

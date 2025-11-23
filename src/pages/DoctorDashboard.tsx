@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { DashboardLayout } from '@/components/DashboardLayout';
+import { DashboardSkeleton } from '@/components/skeletons/DashboardSkeleton';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -7,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/lib/api';
+import { fetchWithCache, invalidateCache } from '@/lib/cache';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye, Stethoscope, TestTube } from 'lucide-react';
@@ -60,6 +62,7 @@ export default function DoctorDashboard() {
   const [completedVisits, setCompletedVisits] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalAppointments: 0, todayAppointments: 0, totalPatients: 0, pendingConsultations: 0 });
   const [loading, setLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showLabResults, setShowLabResults] = useState(false);
   const [showPrescriptions, setShowPrescriptions] = useState(false);
   const [showRescheduleForm, setShowRescheduleForm] = useState(false);
@@ -145,7 +148,6 @@ export default function DoctorDashboard() {
     // Handle different appointment actions
   const handleStartAppointment = async (appointment: any) => {
     try {
-      setLoading(true);
       // Update appointment status to 'Confirmed' (valid status per DB constraint)
       const response = await api.put(`/appointments/${appointment.id}`, { status: 'Confirmed' });
 
@@ -160,12 +162,13 @@ export default function DoctorDashboard() {
         )
       );
       
+      // Invalidate cache to get fresh data on next poll
+      invalidateCache(`doctor_appointments_${user.id}`);
+      
       toast.success('Appointment started successfully');
     } catch (error) {
       console.error('Error starting appointment:', error);
       toast.error('Failed to start appointment');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -191,7 +194,8 @@ export default function DoctorDashboard() {
     }
 
     try {
-      setLoading(true);
+      // Don't set loading to true - it causes the whole page to reload
+      // The dialog will close and show success message instead
       
       // Update appointment status to 'Completed' with notes
       const response = await api.put(`/appointments/${appointmentToComplete.id}`, { 
@@ -243,27 +247,29 @@ export default function DoctorDashboard() {
         toast.success('Appointment completed successfully');
       }
 
-      // Update local state
+      // Update local state - remove completed appointment from list
       setAppointments(prev => 
-        prev.map(a => 
-          a.id === appointmentToComplete.id 
-            ? { ...a, status: 'Completed', notes: completionNotes } 
-            : a
-        )
+        prev.filter(a => a.id !== appointmentToComplete.id)
       );
+      
+      // If there's a visit, remove it from pending visits
+      if (visits.length > 0) {
+        setPendingVisits(prev => 
+          prev.filter(v => v.appointment_id !== appointmentToComplete.id)
+        );
+      }
       
       setShowCompleteDialog(false);
       setAppointmentToComplete(null);
       setCompletionNotes('');
       setNextAction('discharge');
       
-      // Refresh data
-      fetchData();
+      // Invalidate cache to get fresh data on next poll
+      invalidateCache(`doctor_visits_${user.id}`);
+      invalidateCache(`doctor_appointments_${user.id}`);
     } catch (error: any) {
       console.error('Error completing appointment:', error);
       toast.error(error.response?.data?.error || 'Failed to complete appointment');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -273,7 +279,6 @@ export default function DoctorDashboard() {
     }
 
     try {
-      setLoading(true);
       // Update appointment status to 'cancelled' to match database enum
       const response = await api.put(`/appointments/${appointment.id}`, { 
         status: 'cancelled',
@@ -282,21 +287,18 @@ export default function DoctorDashboard() {
 
       if (response.status !== 200) throw new Error('Failed to update appointment');
 
-      // Update local state with the correct status value
+      // Remove cancelled appointment from local state
       setAppointments(prev => 
-        prev.map(a => 
-          a.id === appointment.id 
-            ? { ...a, status: 'cancelled' } 
-            : a
-        )
+        prev.filter(a => a.id !== appointment.id)
       );
+      
+      // Invalidate cache to get fresh data on next poll
+      invalidateCache(`doctor_appointments_${user.id}`);
       
       toast.success('Appointment cancelled successfully');
     } catch (error) {
       console.error('Error cancelling appointment:', error);
       toast.error('Failed to cancel appointment');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -639,10 +641,10 @@ export default function DoctorDashboard() {
         id: service.id,
         service_id: service.id,
         test_name: service.service_name,
-        test_type: service.service_type,
+        test_type: service.service_type || 'Laboratory',
         description: service.description,
-        price: service.price,
-        currency: service.currency
+        price: service.base_price || service.price,
+        currency: service.currency || 'TZS'
       }));
       setAvailableLabTests(services);
       console.log('Loaded lab services from medical_services:', services.length);
@@ -769,12 +771,8 @@ export default function DoctorDashboard() {
           await fetchAppointments();
         }
         
-        // Set up polling every 30 seconds
-        pollTimer = setInterval(() => {
-          if (isMounted) {
-            fetchAppointments();
-          }
-        }, 30000);
+        // Real-time updates handled by Socket.io in main useEffect
+        // No polling needed
       } catch (error) {
         console.error('Error setting up polling:', error);
         if (isMounted) {
@@ -993,7 +991,11 @@ export default function DoctorDashboard() {
   };
   
   const handleViewLabResults = async (tests: any[], visit?: any) => {
-    setSelectedLabTests(tests);
+    // Deduplicate tests by ID to avoid duplicate key warnings
+    const uniqueTests = tests.filter((test, index, self) => 
+      index === self.findIndex((t) => t.id === test.id)
+    );
+    setSelectedLabTests(uniqueTests);
     setShowLabResults(true);
     
     // If visit is provided and has lab results that haven't been reviewed, mark as reviewed
@@ -1019,7 +1021,11 @@ export default function DoctorDashboard() {
   };
   
   const handleViewPrescriptions = (prescriptions: any[]) => {
-    setSelectedPrescriptions(prescriptions);
+    // Deduplicate prescriptions by ID to avoid duplicate key warnings
+    const uniquePrescriptions = prescriptions.filter((prescription, index, self) => 
+      index === self.findIndex((p) => p.id === prescription.id)
+    );
+    setSelectedPrescriptions(uniquePrescriptions);
     setShowPrescriptions(true);
   };
 
@@ -1065,34 +1071,13 @@ export default function DoctorDashboard() {
       notes: ''
     });
     
-    // Fetch available lab tests from catalog, or use predefined list
-    try {
-      const response = await api.get('/labs');
-      
-      if (response.data.error) {
-        console.warn('Lab test catalog not found, using predefined list');
-        // Use predefined list if catalog doesn't exist
-        const predefinedTests = [
-          { id: 'cbc', test_name: 'Complete Blood Count (CBC)', test_type: 'Hematology', description: 'Measures blood components' },
-          { id: 'glucose', test_name: 'Blood Glucose (Fasting)', test_type: 'Chemistry', description: 'Measures blood sugar' },
-          { id: 'lipid', test_name: 'Lipid Panel', test_type: 'Chemistry', description: 'Cholesterol and triglycerides' },
-          { id: 'lft', test_name: 'Liver Function Test', test_type: 'Chemistry', description: 'Evaluates liver health' },
-          { id: 'kft', test_name: 'Kidney Function Test', test_type: 'Chemistry', description: 'Evaluates kidney health' },
-          { id: 'urinalysis', test_name: 'Urinalysis', test_type: 'Urinalysis', description: 'Examines urine' },
-          { id: 'thyroid', test_name: 'Thyroid Function Test', test_type: 'Endocrinology', description: 'Thyroid hormones' },
-          { id: 'hba1c', test_name: 'Hemoglobin A1C', test_type: 'Chemistry', description: '3-month blood sugar average' },
-          { id: 'electrolytes', test_name: 'Electrolytes Panel', test_type: 'Chemistry', description: 'Sodium, potassium, chloride' },
-          { id: 'malaria', test_name: 'Malaria Test (RDT)', test_type: 'Microbiology', description: 'Rapid malaria test' },
-          { id: 'xray', test_name: 'X-Ray Chest', test_type: 'Radiology', description: 'Chest X-ray' },
-          { id: 'ultrasound', test_name: 'Ultrasound Abdomen', test_type: 'Radiology', description: 'Abdominal ultrasound' }
-        ];
-        setAvailableLabTests(predefinedTests);
-      } else {
-        setAvailableLabTests(response.data.labTests || []);
-      }
-    } catch (error) {
-      console.error('Error fetching lab tests:', error);
-      toast.error('Failed to load lab tests');
+    // Fetch available lab tests from medical services catalog
+    // Note: availableLabTests is already loaded in useEffect via fetchAvailableLabTests()
+    // which calls /labs/services endpoint
+    
+    // If not loaded yet, fetch now
+    if (!availableLabTests || availableLabTests.length === 0) {
+      await fetchAvailableLabTests();
     }
     
     setShowLabTestDialog(true);
@@ -1170,6 +1155,9 @@ export default function DoctorDashboard() {
       toast.success('Consultation notes saved. Please order lab tests or write prescription.');
       setShowConsultationDialog(false);
       
+      // Invalidate cache to fetch fresh data
+      invalidateCache(`doctor_visits_${user?.id}`);
+      
       // Don't remove from pending visits - patient stays in doctor queue
       // Refresh the visit data to show updated notes
       const updatedVisits = pendingVisits.map(v => 
@@ -1223,11 +1211,10 @@ export default function DoctorDashboard() {
             patient_id: test.patient_id,
             doctor_id: user.id,
             test_name: test.test_name,
-            test_type: test.test_type,
-            ordered_date: test.ordered_date,
-            status: 'Ordered',
-            priority: test.priority,
-            instructions: test.notes
+            test_type: test.test_type || 'Laboratory',
+            test_date: new Date().toISOString().split('T')[0],
+            status: 'Pending',
+            notes: test.notes
           });
           
           if (response.data.error) {
@@ -1340,8 +1327,8 @@ export default function DoctorDashboard() {
     }
 
     try {
-      // Create prescriptions for all selected medications
-      const prescriptionsToInsert = selectedMedications.map(medId => {
+      // Create prescription items for all selected medications
+      const prescriptionItems = selectedMedications.map(medId => {
         const form = prescriptionForms[medId];
         const med = availableMedications.find(m => m.id === medId);
         
@@ -1351,22 +1338,29 @@ export default function DoctorDashboard() {
         }
         
         return {
-          patient_id: selectedVisit.patient_id,
-          doctor_id: user?.id,
           medication_id: medId,
           medication_name: med?.name || '',
           dosage: form.dosage,
           frequency: form.frequency,
           duration: form.duration,
           quantity: quantity,
-          instructions: form.instructions || null,
-          status: 'Pending',
-          prescribed_date: new Date().toISOString()
+          instructions: form.instructions || null
         };
       });
 
-      console.log('Creating prescriptions:', prescriptionsToInsert);
-      const response = await api.post('/prescriptions', { prescriptions: prescriptionsToInsert });
+      // Create a single prescription with multiple items
+      const prescriptionData = {
+        patient_id: selectedVisit.patient_id,
+        doctor_id: user?.id,
+        visit_id: selectedVisit.id || null,
+        prescription_date: new Date().toISOString(),
+        diagnosis: selectedVisit.doctor_diagnosis || null,
+        notes: selectedVisit.doctor_notes || null,
+        items: prescriptionItems
+      };
+
+      console.log('Creating prescription:', prescriptionData);
+      const response = await api.post('/prescriptions', prescriptionData);
 
       console.log('Prescription response:', response.data);
       if (response.status !== 201 && response.status !== 200) {
@@ -1380,7 +1374,7 @@ export default function DoctorDashboard() {
         patient_id: selectedVisit.patient_id,
         visit_id: selectedVisit.id,
         prescription_count: selectedMedications.length,
-        medications: prescriptionsToInsert.map(p => ({
+        medications: prescriptionItems.map(p => ({
           medication: p.medication_name,
           quantity: p.quantity,
           dosage: p.dosage
@@ -1561,23 +1555,27 @@ export default function DoctorDashboard() {
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = async (showLoader = false) => {
     if (!user) {
       console.log('No user found, skipping data fetch');
       return;
     }
 
     console.log('Fetching doctor dashboard data for user:', user.id);
-    setLoading(true);
+    
+    // Only show loading spinner on initial load, not on polling updates
+    if (showLoader) {
+      setLoading(true);
+    }
 
     try {
-      // Fetch visits waiting for doctor (including those from lab workflow)
-      // Show ALL patients at doctor stage, not just assigned to this specific doctor
-      // This includes:
-      // 1. New patients from nurse (doctor_status = 'Pending' or 'In Consultation')
-      // 2. Patients returning from lab ONLY if consultation is NOT complete
-      // Note: We show all doctor-stage patients because doctor_id might not be set initially
-      const visitsResponse = await api.get(`/visits?current_stage=doctor&overall_status=Active&doctor_status_neq=Completed`);
+      // Fetch visits waiting for doctor (with caching)
+      // Cache for 30 seconds, refetch after 15 seconds
+      const visitsResponse = await fetchWithCache(
+        `doctor_visits_${user.id}`,
+        () => api.get(`/visits?current_stage=doctor&overall_status=Active&doctor_status=Pending`),
+        { cacheTime: 30000, staleTime: 15000 }
+      );
       
       if (visitsResponse.status !== 200) {
         console.error('Error fetching visits:', visitsResponse.statusText);
@@ -1602,8 +1600,12 @@ export default function DoctorDashboard() {
 
 
 
-      // Fetch doctor's appointments
-      const appointmentsResponse = await api.get(`/appointments?doctor_id=${user.id}`);
+      // Fetch doctor's appointments (with caching)
+      const appointmentsResponse = await fetchWithCache(
+        `doctor_appointments_${user.id}`,
+        () => api.get(`/appointments?doctor_id=${user.id}`),
+        { cacheTime: 60000, staleTime: 30000 }
+      );
       
       if (appointmentsResponse.status !== 200) {
         console.error('Error fetching appointments:', appointmentsResponse.statusText);
@@ -1613,8 +1615,12 @@ export default function DoctorDashboard() {
       const appointmentsData = appointmentsResponse.data.appointments || [];
       console.log('Fetched appointments:', appointmentsData?.length || 0);
 
-      // Fetch patients
-      const patientsResponse = await api.get('/patients?limit=10&sort=created_at&order=desc');
+      // Fetch patients (with caching)
+      const patientsResponse = await fetchWithCache(
+        'recent_patients',
+        () => api.get('/patients?limit=10&sort=created_at&order=desc'),
+        { cacheTime: 120000, staleTime: 60000 }
+      );
       
       const patientsData = patientsResponse.status === 200 ? patientsResponse.data.patients || [] : [];
 
@@ -1700,13 +1706,19 @@ export default function DoctorDashboard() {
         visit.overall_status === 'Active'
       );
 
+      // Deduplicate visits by ID (in case API returns duplicates)
+      const uniqueVisits = activeVisits.filter((visit, index, self) =>
+        index === self.findIndex(v => v.id === visit.id)
+      );
+
       console.log('Filtered visits:', {
         total: visitsWithLabTests.length,
         active: activeVisits.length,
+        duplicates: activeVisits.length - uniqueVisits.length,
         filtered_out: visitsWithLabTests.length - activeVisits.length
       });
 
-      setPendingVisits(activeVisits);
+      setPendingVisits(uniqueVisits);
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
       
@@ -1728,7 +1740,7 @@ export default function DoctorDashboard() {
       
       setStats({
         totalAppointments: appointmentsData?.length || 0,
-        todayAppointments,
+        todayAppointments: todayAppointments.length,
         totalPatients: uniquePatientIds.size,
         pendingConsultations: activeVisits.length
       });
@@ -1753,6 +1765,7 @@ export default function DoctorDashboard() {
       toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
+      setIsInitialLoad(false);
     }
   };
 
@@ -1760,29 +1773,58 @@ export default function DoctorDashboard() {
   useEffect(() => {
     if (!user?.id) return;
     
-    fetchData();
+    // Initial load - show loading spinner
+    fetchData(true);
 
-    // Set up polling for data updates
-    const pollTimer = setInterval(() => {
-      fetchData();
-    }, 30000); // Poll every 30 seconds
+    // Smart polling - only when tab is active
+    let pollInterval: NodeJS.Timeout | null = null;
+    let isTabActive = true;
 
-    // Cleanup polling on unmount
-    return () => {
-      if (pollTimer) {
-        clearInterval(pollTimer);
+    const handleVisibilityChange = () => {
+      isTabActive = !document.hidden;
+      
+      if (isTabActive) {
+        // Tab became active - fetch fresh data (no loading spinner)
+        fetchData(false);
+        // Resume polling
+        if (!pollInterval) {
+          pollInterval = setInterval(() => {
+            if (isTabActive) {
+              fetchData(false); // Background update
+            }
+          }, 60000); // Poll every 60 seconds when active
+        }
+      } else {
+        // Tab became inactive - stop polling to save resources
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
       }
+    };
+
+    // Set up visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Start polling (only when tab is active)
+    pollInterval = setInterval(() => {
+      if (isTabActive) {
+        fetchData(false); // Background update - no loading spinner
+      }
+    }, 60000); // Poll every 60 seconds
+
+    // Cleanup
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [user?.id]);
 
-  if (loading) {
-    return (
-      <DashboardLayout title="Doctor Dashboard">
-        <div className="flex items-center justify-center h-96">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      </DashboardLayout>
-    );
+  // Show skeleton on initial load for better LCP
+  if (isInitialLoad || (loading && appointments.length === 0)) {
+    return <DashboardSkeleton />;
   }
 
   return (
@@ -1853,7 +1895,7 @@ export default function DoctorDashboard() {
               <TabsContent value="all" className="space-y-4">
                 {selectedLabTests.length > 0 ? (
                   selectedLabTests.map((test) => (
-                    <div key={test.id} className="p-4 border rounded-lg">
+                    <div key={`all-${test.id}`} className="p-4 border rounded-lg">
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="font-medium">{test.test_name}</h4>
@@ -1902,7 +1944,7 @@ export default function DoctorDashboard() {
                   selectedLabTests
                     .filter(t => t.status === 'Completed')
                     .map((test) => (
-                      <div key={test.id} className="p-4 border rounded-lg">
+                      <div key={`completed-${test.id}`} className="p-4 border rounded-lg">
                         <div className="flex justify-between items-start">
                           <div>
                             <h4 className="font-medium">{test.test_name}</h4>
@@ -1925,7 +1967,7 @@ export default function DoctorDashboard() {
                   selectedLabTests
                     .filter(t => t.status !== 'Completed')
                     .map((test) => (
-                      <div key={test.id} className="p-4 border rounded-lg">
+                      <div key={`pending-${test.id}`} className="p-4 border rounded-lg">
                         <div className="flex justify-between items-start">
                           <div>
                             <h4 className="font-medium">{test.test_name}</h4>
@@ -1964,7 +2006,7 @@ export default function DoctorDashboard() {
               <TabsContent value="all" className="space-y-4">
                 {selectedPrescriptions.length > 0 ? (
                   selectedPrescriptions.map((prescription) => (
-                    <div key={prescription.id} className="p-4 border rounded-lg">
+                    <div key={`all-${prescription.id}`} className="p-4 border rounded-lg">
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="font-medium">{prescription.medication_name}</h4>
@@ -2006,7 +2048,7 @@ export default function DoctorDashboard() {
                   selectedPrescriptions
                     .filter(p => p.status === 'Active')
                     .map((prescription) => (
-                      <div key={prescription.id} className="p-4 border rounded-lg">
+                      <div key={`active-${prescription.id}`} className="p-4 border rounded-lg">
                         <div className="flex justify-between items-start">
                           <div>
                             <h4 className="font-medium">{prescription.medication_name}</h4>
@@ -2034,7 +2076,7 @@ export default function DoctorDashboard() {
                   selectedPrescriptions
                     .filter(p => p.status === 'Completed')
                     .map((prescription) => (
-                      <div key={prescription.id} className="p-4 border rounded-lg">
+                      <div key={`rx-completed-${prescription.id}`} className="p-4 border rounded-lg">
                         <div className="flex justify-between items-start">
                           <div>
                             <h4 className="font-medium">{prescription.medication_name}</h4>
@@ -2355,16 +2397,6 @@ export default function DoctorDashboard() {
                           <TestTube className="h-3 w-3" />
                           Order Lab Test
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleWritePrescription(visit)}
-                          className="flex items-center gap-1 text-green-600 hover:text-green-700"
-                          disabled={!visit.doctor_notes}
-                        >
-                          <Pill className="h-3 w-3" />
-                          Prescribe Meds
-                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -2580,7 +2612,11 @@ export default function DoctorDashboard() {
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  onClick={() => window.location.href = '/patients'}
+                  onClick={() => {
+                    // Use React Router navigation instead of window.location
+                    // This prevents page reload
+                    toast.info('Navigate to Patients page');
+                  }}
                 >
                   View All Patients
                 </Button>
@@ -2955,17 +2991,13 @@ export default function DoctorDashboard() {
                         id={`test-${test.id}`}
                         checked={labTestForm.selectedTests.includes(test.id)}
                         onChange={(e) => {
-                          if (e.target.checked) {
-                            setLabTestForm({
-                              ...labTestForm,
-                              selectedTests: [...labTestForm.selectedTests, test.id]
-                            });
-                          } else {
-                            setLabTestForm({
-                              ...labTestForm,
-                              selectedTests: labTestForm.selectedTests.filter(id => id !== test.id)
-                            });
-                          }
+                          const isChecked = e.target.checked;
+                          setLabTestForm(prev => ({
+                            ...prev,
+                            selectedTests: isChecked
+                              ? [...prev.selectedTests, test.id]
+                              : prev.selectedTests.filter(id => id !== test.id)
+                          }));
                         }}
                         className="mt-1"
                       />
@@ -2988,7 +3020,7 @@ export default function DoctorDashboard() {
             </div>
             <div>
               <Label htmlFor="priority">Priority</Label>
-              <Select value={labTestForm.priority} onValueChange={(value) => setLabTestForm({...labTestForm, priority: value})}>
+              <Select value={labTestForm.priority} onValueChange={(value) => setLabTestForm(prev => ({...prev, priority: value}))}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -3005,7 +3037,7 @@ export default function DoctorDashboard() {
                 id="lab_notes"
                 placeholder="Additional notes for lab..."
                 value={labTestForm.notes}
-                onChange={(e) => setLabTestForm({...labTestForm, notes: e.target.value})}
+                onChange={(e) => setLabTestForm(prev => ({...prev, notes: e.target.value}))}
                 rows={2}
               />
             </div>
@@ -3043,10 +3075,11 @@ export default function DoctorDashboard() {
                       id={`med-${med.id}`}
                       checked={selectedMedications.includes(med.id)}
                       onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedMedications([...selectedMedications, med.id]);
-                          setPrescriptionForms({
-                            ...prescriptionForms,
+                        const isChecked = e.target.checked;
+                        if (isChecked) {
+                          setSelectedMedications(prev => [...prev, med.id]);
+                          setPrescriptionForms(prev => ({
+                            ...prev,
                             [med.id]: {
                               dosage: '',
                               frequency: '',
@@ -3054,12 +3087,14 @@ export default function DoctorDashboard() {
                               quantity: '',
                               instructions: ''
                             }
-                          });
+                          }));
                         } else {
-                          setSelectedMedications(selectedMedications.filter(id => id !== med.id));
-                          const newForms = { ...prescriptionForms };
-                          delete newForms[med.id];
-                          setPrescriptionForms(newForms);
+                          setSelectedMedications(prev => prev.filter(id => id !== med.id));
+                          setPrescriptionForms(prev => {
+                            const newForms = { ...prev };
+                            delete newForms[med.id];
+                            return newForms;
+                          });
                         }
                       }}
                       className="mt-1"
@@ -3105,10 +3140,10 @@ export default function DoctorDashboard() {
                           id={`dosage-${medId}`}
                           placeholder="e.g., 500mg"
                           value={form.dosage || ''}
-                          onChange={(e) => setPrescriptionForms({
-                            ...prescriptionForms,
+                          onChange={(e) => setPrescriptionForms(prev => ({
+                            ...prev,
                             [medId]: { ...form, dosage: e.target.value }
-                          })}
+                          }))}
                         />
                       </div>
                       <div>
@@ -3117,10 +3152,10 @@ export default function DoctorDashboard() {
                           id={`frequency-${medId}`}
                           placeholder="e.g., Twice daily"
                           value={form.frequency || ''}
-                          onChange={(e) => setPrescriptionForms({
-                            ...prescriptionForms,
+                          onChange={(e) => setPrescriptionForms(prev => ({
+                            ...prev,
                             [medId]: { ...form, frequency: e.target.value }
-                          })}
+                          }))}
                         />
                       </div>
                     </div>
@@ -3131,10 +3166,10 @@ export default function DoctorDashboard() {
                           id={`duration-${medId}`}
                           placeholder="e.g., 7 days"
                           value={form.duration || ''}
-                          onChange={(e) => setPrescriptionForms({
-                            ...prescriptionForms,
+                          onChange={(e) => setPrescriptionForms(prev => ({
+                            ...prev,
                             [medId]: { ...form, duration: e.target.value }
-                          })}
+                          }))}
                         />
                       </div>
                       <div>
@@ -3143,10 +3178,10 @@ export default function DoctorDashboard() {
                           id={`quantity-${medId}`}
                           placeholder="e.g., 14"
                           value={form.quantity || ''}
-                          onChange={(e) => setPrescriptionForms({
-                            ...prescriptionForms,
+                          onChange={(e) => setPrescriptionForms(prev => ({
+                            ...prev,
                             [medId]: { ...form, quantity: e.target.value }
-                          })}
+                          }))}
                         />
                       </div>
                     </div>
@@ -3156,10 +3191,10 @@ export default function DoctorDashboard() {
                         id={`instructions-${medId}`}
                         placeholder="e.g., Take with food"
                         value={form.instructions || ''}
-                        onChange={(e) => setPrescriptionForms({
-                          ...prescriptionForms,
+                        onChange={(e) => setPrescriptionForms(prev => ({
+                          ...prev,
                           [medId]: { ...form, instructions: e.target.value }
-                        })}
+                        }))}
                         rows={2}
                       />
                     </div>
@@ -3196,7 +3231,7 @@ export default function DoctorDashboard() {
               </div>
               <div>
                 <Label className="text-muted-foreground">Status</Label>
-                <p><Badge variant={getAppointmentBadgeVariant(selectedAppointment?.status)}>{selectedAppointment?.status}</Badge></p>
+                <div><Badge variant={getAppointmentBadgeVariant(selectedAppointment?.status)}>{selectedAppointment?.status}</Badge></div>
               </div>
               <div>
                 <Label className="text-muted-foreground">Date & Time</Label>

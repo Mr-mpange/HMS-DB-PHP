@@ -32,15 +32,19 @@ export function DispenseDialog({
 
   // Update when prescription changes
   useEffect(() => {
-    if (prescription?.medications) {
+    const prescriptionItems = prescription?.items || prescription?.medications || [];
+    console.log('DispenseDialog - prescription:', prescription);
+    console.log('DispenseDialog - items:', prescriptionItems);
+    
+    if (prescriptionItems.length > 0) {
       setEditableMedications(
-        prescription.medications.map((med: any) => ({
+        prescriptionItems.map((med: any) => ({
           ...med,
           dispensed_quantity: med.quantity,
           dispensed_dosage: med.dosage
         }))
       );
-      setNotes(''); // Reset notes when prescription changes
+      setNotes('');
     }
   }, [prescription]);
 

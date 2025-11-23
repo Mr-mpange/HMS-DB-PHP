@@ -31,6 +31,7 @@ import {
   FileCheck, 
   FileX, 
   FileSearch,
+  CheckCircle,
   Stethoscope as StethoscopeIcon,
   FileText as FileTextIcon
 } from 'lucide-react';
@@ -155,10 +156,33 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
     blood_group = null,
     medical_history = '',
     allergies = '',
-    medications = '',
+    medications: manualMedications = '',
     insurance_provider = '',
     insurance_policy_number = ''
   } = patient;
+
+  // Get current medications from recent prescriptions
+  const currentMedications = React.useMemo(() => {
+    if (manualMedications) return manualMedications;
+    
+    // Get medications from recent prescriptions (last 30 days)
+    const recentPrescriptions = records.filter(r => 
+      r.record_type === 'Prescription' && 
+      new Date(r.date) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    );
+    
+    if (recentPrescriptions.length === 0) return '';
+    
+    const meds = recentPrescriptions.flatMap((rx: any) => {
+      const prescription = rx.prescription_data;
+      const items = prescription?.medications || prescription?.items || [];
+      return items.map((item: any) => 
+        `${item.medication_name || item.name} - ${item.dosage} ${item.frequency}`
+      );
+    });
+    
+    return meds.length > 0 ? meds.join('\n') : '';
+  }, [manualMedications, records]);
 
   const formatDate = (dateString?: string) => {
     return dateString ? format(new Date(dateString), 'MMM d, yyyy') : 'N/A';
@@ -194,7 +218,7 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
 
         <div className="border-b">
           <div className="flex space-x-4">
-            {['overview', 'records', 'appointments'].map((tab) => (
+            {['overview', 'records'].map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -286,8 +310,8 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
                     <p className="text-sm text-muted-foreground flex items-center">
                       <Pill className="h-4 w-4 mr-1 text-blue-500" /> Current Medications
                     </p>
-                    <p className="whitespace-pre-line mt-1">
-                      {medications || 'No current medications'}
+                    <p className="whitespace-pre-line mt-1 text-sm">
+                      {currentMedications || 'No current medications'}
                     </p>
                   </div>
                 </CardContent>
@@ -300,10 +324,6 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
                       <Shield className="h-5 w-5 text-muted-foreground" />
                       <CardTitle>Insurance Information</CardTitle>
                     </div>
-                    <Button variant="outline" size="sm" className="h-8">
-                      <FilePlus className="h-4 w-4 mr-2" />
-                      Update Insurance
-                    </Button>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -332,10 +352,6 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
                 <FileText className="h-5 w-5 mr-2" />
                 Medical Records
               </h3>
-              <Button size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Record
-              </Button>
             </div>
             
             {isLoadingRecords ? (
@@ -373,7 +389,26 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
                             </TableCell>
                             <TableCell>{record.created_by}</TableCell>
                             <TableCell>
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-8 w-8 p-0"
+                                onClick={() => {
+                                  const rec = record as any;
+                                  // Show record details based on type
+                                  if (record.record_type === 'Prescription' && rec.prescription_data) {
+                                    const rx = rec.prescription_data;
+                                    const meds = rx.medications || rx.items || [];
+                                    const medsList = meds.map((m: any) => 
+                                      `• ${m.medication_name || m.name} - ${m.dosage} ${m.frequency} for ${m.duration}`
+                                    ).join('\n');
+                                    alert(`Prescription Details\n\nDate: ${format(new Date(record.date), 'PPP')}\nDoctor: ${record.created_by}\n${rx.diagnosis ? `Diagnosis: ${rx.diagnosis}\n` : ''}\nMedications:\n${medsList}${rx.notes ? `\n\nNotes: ${rx.notes}` : ''}`);
+                                  } else if (rec.visit_data) {
+                                    const visit = rec.visit_data;
+                                    alert(`Visit Details\n\nDate: ${format(new Date(record.date), 'PPP')}\nStage: ${visit.current_stage || 'N/A'}\nStatus: ${visit.overall_status || 'N/A'}\n${visit.chief_complaint ? `Chief Complaint: ${visit.chief_complaint}\n` : ''}${visit.diagnosis ? `Diagnosis: ${visit.diagnosis}\n` : ''}${visit.notes ? `Notes: ${visit.notes}` : ''}`);
+                                  }
+                                }}
+                              >
                                 <Eye className="h-4 w-4" />
                               </Button>
                             </TableCell>
@@ -677,6 +712,8 @@ const BillingAnalysis = () => {
 
   const fetchBillingData = async () => {
     try {
+      setLoading(true);
+      
       // Calculate date range based on filter
       const now = new Date();
       let startDate, endDate;
@@ -696,52 +733,88 @@ const BillingAnalysis = () => {
           break;
       }
 
-      // Fetch invoices with date filtering
-      const { data } = await api.get('/billing/invoices', {
-        params: {
-          from: startDate.toISOString(),
-          to: endDate.toISOString(),
-          limit: 1000
-        }
+      // Format dates as YYYY-MM-DD to avoid timezone issues
+      const fromDate = format(startDate, 'yyyy-MM-dd');
+      const toDate = format(endDate, 'yyyy-MM-dd');
+
+      console.log('🔍 Fetching billing data with params:', {
+        from: fromDate,
+        to: toDate,
+        timeFilter
       });
+
+      // Fetch payments (actual revenue) and invoices in parallel
+      const [paymentsRes, invoicesRes] = await Promise.all([
+        api.get('/payments', {
+          params: {
+            from: fromDate,
+            to: toDate,
+            limit: 1000,
+            _cache: `${Date.now()}-${Math.random()}` // Strong cache buster
+          },
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        }).catch((err) => {
+          console.error('❌ Error fetching payments:', err);
+          console.error('Params sent:', { from: startDate.toISOString(), to: endDate.toISOString() });
+          return { data: { payments: [] } };
+        }),
+        api.get('/billing/invoices', {
+          params: { limit: 1000 }
+        }).catch((err) => {
+          console.error('❌ Error fetching invoices:', err);
+          return { data: { invoices: [] } };
+        })
+      ]);
       
-      const invoices = data.invoices || [];
+      const payments = paymentsRes.data.payments || [];
+      const invoices = invoicesRes.data.invoices || [];
 
-      if (invoices.length > 0) {
-        const totalRevenue = invoices
-          .filter(inv => inv.status === 'Paid')
-          .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+      console.log('Admin Billing Stats Debug:', {
+        timeFilter,
+        dateRange: { from: fromDate, to: toDate },
+        paymentsReceived: payments.length,
+        samplePayments: payments.slice(0, 3).map(p => ({ amount: p.amount, date: p.payment_date, status: p.status }))
+      });
 
-        const unpaidAmount = invoices
-          .filter(inv => inv.status !== 'Paid')
-          .reduce((sum, inv) => sum + (Number(inv.total_amount) - Number(inv.paid_amount || 0)), 0);
+      // Calculate revenue from actual payments in the period
+      const totalRevenue = payments
+        .filter(p => p.status === 'Completed')
+        .reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      
+      console.log('Total Revenue Calculated:', totalRevenue);
 
-        const paidInPeriod = invoices
-          .filter(inv => inv.status === 'Paid')
-          .reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+      // Calculate unpaid amount from all invoices
+      const unpaidAmount = invoices
+        .filter(inv => inv.status !== 'Paid')
+        .reduce((sum, inv) => sum + (Number(inv.total_amount) - Number(inv.paid_amount || 0)), 0);
 
-        setBillingStats({
-          totalRevenue,
-          unpaidAmount,
-          paidToday: paidInPeriod,
-          invoiceCount: invoices.length,
-          paidCount: invoices.filter(inv => inv.status === 'Paid').length,
-          unpaidCount: invoices.filter(inv => inv.status === 'Unpaid' || inv.status === 'Pending').length
-        });
-      } else {
-        setBillingStats({
-          totalRevenue: 0,
-          unpaidAmount: 0,
-          paidToday: 0,
-          invoiceCount: 0,
-          paidCount: 0,
-          unpaidCount: 0
-        });
-      }
+      // Count paid invoices
+      const paidCount = invoices.filter(inv => inv.status === 'Paid').length;
+      const unpaidCount = invoices.filter(inv => inv.status === 'Unpaid' || inv.status === 'Pending').length;
 
-      setRecentInvoices(invoices || []);
+      setBillingStats({
+        totalRevenue,
+        unpaidAmount,
+        paidToday: totalRevenue, // Same as totalRevenue for the selected period
+        invoiceCount: invoices.length,
+        paidCount,
+        unpaidCount
+      });
+
+      setRecentInvoices(invoices.slice(0, 10) || []);
     } catch (error) {
       console.error('Error fetching billing data:', error);
+      setBillingStats({
+        totalRevenue: 0,
+        unpaidAmount: 0,
+        paidToday: 0,
+        invoiceCount: 0,
+        paidCount: 0,
+        unpaidCount: 0
+      });
     } finally {
       setLoading(false);
     }
@@ -799,14 +872,16 @@ const BillingAnalysis = () => {
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-green-200">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-green-700">Total Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium text-green-700">
+              Revenue ({timeFilter === 'day' ? 'Today' : timeFilter === 'week' ? 'This Week' : 'This Month'})
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
               TSh {billingStats.totalRevenue.toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {billingStats.paidCount} paid invoices
+              From payments received
             </p>
           </CardContent>
         </Card>
@@ -1106,11 +1181,10 @@ export default function AdminDashboard() {
       try {
         const settingsRes = await api.get('/settings');
         
-        // Backend returns both formats: settings (object) and settingsArray (array)
-        const settingsData = settingsRes.data.settings || {};
-        const settingsArray = settingsRes.data.settingsArray || [];
+        // Backend returns settings as an array
+        const settingsArray = settingsRes.data.settings || [];
         
-        // Use settingsArray if available, otherwise use settings object
+        // Start with defaults
         const settingsObj: any = {
           consultation_fee: '50000',
           currency: 'TSh',
@@ -1122,14 +1196,13 @@ export default function AdminDashboard() {
           enable_appointment_fees: 'true'
         };
         
-        // If we have an array, convert it
-        if (settingsArray.length > 0) {
+        // Convert array to object, overwriting defaults
+        if (Array.isArray(settingsArray) && settingsArray.length > 0) {
           settingsArray.forEach((setting: any) => {
-            settingsObj[setting.key] = setting.value;
+            if (setting && setting.key) {
+              settingsObj[setting.key] = setting.value || '';
+            }
           });
-        } else if (Object.keys(settingsData).length > 0) {
-          // If we have an object, use it directly
-          Object.assign(settingsObj, settingsData);
         }
         
         setSystemSettings(settingsObj);
@@ -1173,10 +1246,13 @@ export default function AdminDashboard() {
     setSavingSettings(true);
     try {
       // Save each setting to the backend
-      const settingsToSave = Object.keys(systemSettings).map(key => ({
-        key,
-        value: systemSettings[key]
-      }));
+      // Filter out numeric keys (array indices) and only keep string keys
+      const settingsToSave = Object.keys(systemSettings)
+        .filter(key => isNaN(Number(key))) // Only keep non-numeric keys
+        .map(key => ({
+          key,
+          value: systemSettings[key]
+        }));
 
       console.log('💾 Saving settings:', settingsToSave);
       let created = 0;
@@ -1293,16 +1369,20 @@ export default function AdminDashboard() {
     try {
       // Fetch all doctors
       const { data: usersData } = await api.get('/users');
-      const doctors = usersData.users.filter((u: any) => u.roles?.includes('doctor'));
+      const allDoctors = usersData.users.filter((u: any) => u.role === 'doctor');
+      
+      console.log('All doctors:', allDoctors);
       
       // Fetch doctors assigned to this department
       const { data: deptData } = await api.get(`/departments/${dept.id}/doctors`);
-      const assignedDoctorIds = deptData.doctors
-        .filter((d: any) => d.assignment_id)
-        .map((d: any) => d.id);
+      const assignedDoctors = deptData.doctors || [];
+      const assignedDoctorIds = assignedDoctors.map((d: any) => d.id);
       
-      setDepartmentDoctors(deptData.doctors.filter((d: any) => d.assignment_id));
-      setAvailableDoctors(doctors.filter((d: any) => !assignedDoctorIds.includes(d.id)));
+      console.log('Assigned doctors:', assignedDoctors);
+      console.log('Assigned doctor IDs:', assignedDoctorIds);
+      
+      setDepartmentDoctors(assignedDoctors);
+      setAvailableDoctors(allDoctors.filter((d: any) => !assignedDoctorIds.includes(d.id)));
     } catch (error: any) {
       console.error('Error fetching doctors:', error);
       toast.error('Failed to load doctors');
@@ -1363,8 +1443,9 @@ export default function AdminDashboard() {
       // Users from API already include roles
       const usersWithRoles = usersData.map((user: any) => ({
         ...user,
+        full_name: user.name || user.full_name || 'Unknown',
         roles: user.roles || [],
-        activeRole: user.primaryRole || user.roles?.[0] || 'No role assigned'
+        activeRole: user.role || user.primaryRole || user.roles?.[0] || 'No role assigned'
       }));
 
       console.log('Users with roles:', usersWithRoles);
@@ -1582,8 +1663,8 @@ export default function AdminDashboard() {
         return;
       }
       
-      if (password.length < 6) {
-        toast.error('Password must be at least 6 characters long');
+      if (password.length < 8) {
+        toast.error('Password must be at least 8 characters long');
         return;
       }
       
@@ -1594,11 +1675,11 @@ export default function AdminDashboard() {
       
       console.log('Creating user with email:', email);
       
-      // Create user via MySQL API
-      const { data } = await api.post('/users', {
+      // Create user via auth/register endpoint
+      const { data } = await api.post('/auth/register', {
         email: email,
         password: password,
-        full_name: fullName,
+        name: fullName, // AuthController expects 'name', not 'full_name'
         phone: userForm.phone,
         role: userForm.role
       });
@@ -1619,13 +1700,24 @@ export default function AdminDashboard() {
       }
     } catch (error: any) {
       console.error('Error creating user:', error);
+      console.error('Error response:', error.response?.data);
       
       // Provide more helpful error messages
-      const errorMessage = error.response?.data?.error || error.message;
-      if (errorMessage?.includes('already')) {
+      const errorData = error.response?.data;
+      const errorMessage = errorData?.message || errorData?.error || error.message;
+      const validationErrors = errorData?.errors;
+      
+      // Show validation errors if available
+      if (validationErrors) {
+        const errorMessages = Object.entries(validationErrors)
+          .map(([field, messages]: [string, any]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
+          .join('\n');
+        console.error('Validation errors:', errorMessages);
+        toast.error(`Validation failed:\n${errorMessages}`);
+      } else if (errorMessage?.includes('already')) {
         toast.error('A user with this email already exists');
       } else if (errorMessage?.includes('Password')) {
-        toast.error('Password must be at least 6 characters');
+        toast.error('Password must be at least 8 characters');
       } else if (errorMessage?.includes('Email')) {
         toast.error('Please provide a valid email address');
       } else {
@@ -1677,21 +1769,42 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+    if (!confirm('Are you sure you want to deactivate this user? They will no longer be able to log in.')) {
       return;
     }
     
     try {
-      // Delete user via MySQL API
-      await api.delete(`/users/${userId}`);
-      toast.success('User deleted successfully');
+      // Deactivate user instead of deleting (safer approach)
+      await api.put(`/users/${userId}`, {
+        is_active: false
+      });
+      toast.success('User deactivated successfully');
       
-      // Update local state
-      setUsers(prev => prev.filter(u => u.id !== userId));
+      // Refresh data to show updated status
       fetchData();
     } catch (error: any) {
-      console.error('Error deleting user:', error);
-      toast.error(error.response?.data?.error || 'Failed to delete user');
+      console.error('Error deactivating user:', error);
+      toast.error(error.response?.data?.error || 'Failed to deactivate user');
+    }
+  };
+
+  const handleActivateUser = async (userId: string) => {
+    if (!confirm('Are you sure you want to activate this user? They will be able to log in again.')) {
+      return;
+    }
+    
+    try {
+      // Activate user
+      await api.put(`/users/${userId}`, {
+        is_active: true
+      });
+      toast.success('User activated successfully');
+      
+      // Refresh data to show updated status
+      fetchData();
+    } catch (error: any) {
+      console.error('Error activating user:', error);
+      toast.error(error.response?.data?.error || 'Failed to activate user');
     }
   };
 
@@ -1718,9 +1831,9 @@ export default function AdminDashboard() {
     }
 
     try {
-      await api.post(`/users/${selectedUserId}/roles`, {
-        role,
-        is_primary: isPrimary
+      await api.post('/users/roles', {
+        user_id: selectedUserId,
+        role
       });
       
       toast.success(`Role ${role} assigned successfully`);
@@ -1843,11 +1956,48 @@ export default function AdminDashboard() {
   const fetchPatientRecords = async (patientId: string) => {
     try {
       setIsLoadingRecords(true);
-      // Patient records not yet implemented in backend
-      setPatientRecords([]);
+      
+      // Fetch patient visits and prescriptions in parallel
+      const [visitsRes, prescriptionsRes] = await Promise.all([
+        api.get(`/visits?patient_id=${patientId}`).catch(() => ({ data: { visits: [] } })),
+        api.get(`/prescriptions?patient_id=${patientId}`).catch(() => ({ data: { prescriptions: [] } }))
+      ]);
+      
+      const visits = visitsRes.data.visits || [];
+      const prescriptions = prescriptionsRes.data.prescriptions || [];
+      
+      // Transform visits into medical records format
+      const visitRecords = visits.map((visit: any) => ({
+        id: visit.id,
+        date: visit.visit_date || visit.created_at,
+        record_type: 'Visit',
+        title: `${visit.current_stage || 'Medical'} Visit`,
+        description: visit.chief_complaint || visit.diagnosis || visit.notes || 'Medical consultation',
+        created_by: visit.doctor?.full_name || visit.doctor?.name || 'Doctor',
+        visit_data: visit
+      }));
+      
+      // Transform prescriptions into medical records format
+      const prescriptionRecords = prescriptions.map((rx: any) => ({
+        id: rx.id,
+        date: rx.prescription_date || rx.created_at,
+        record_type: 'Prescription',
+        title: 'Prescription',
+        description: `${rx.medications?.length || rx.items?.length || 0} medication(s) prescribed${rx.diagnosis ? ': ' + rx.diagnosis : ''}`,
+        created_by: rx.doctor?.full_name || rx.doctor?.name || 'Doctor',
+        prescription_data: rx
+      }));
+      
+      // Combine and sort by date (newest first)
+      const allRecords = [...visitRecords, ...prescriptionRecords].sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      
+      setPatientRecords(allRecords);
     } catch (error) {
       console.error('Error fetching patient records:', error);
       toast.error('Failed to load patient records');
+      setPatientRecords([]);
     } finally {
       setIsLoadingRecords(false);
     }
@@ -2032,9 +2182,14 @@ export default function AdminDashboard() {
                   </TableHeader>
                   <TableBody>
                     {users.map((u) => (
-                      <TableRow key={u.id}>
+                      <TableRow key={u.id} className={(u as any).is_active === false ? 'opacity-60 bg-gray-50' : ''}>
                         <TableCell>
-                          <div className="font-medium">{u.full_name || u.user_metadata?.full_name || 'Unknown'}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium">{u.full_name || u.user_metadata?.full_name || 'Unknown'}</div>
+                            {(u as any).is_active === false && (
+                              <Badge variant="destructive" className="text-xs">Inactive</Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>{u.email}</TableCell>
                         <TableCell>
@@ -2043,18 +2198,32 @@ export default function AdminDashboard() {
 
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditUser(u)}>
-                              <Edit className="h-4 w-4" />
-                              <span className="sr-only">Edit</span>
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleAssignRole(u)}>
-                              <Shield className="h-4 w-4" />
-                              <span className="sr-only">Assign Role</span>
-                            </Button>
-                            <Button variant="destructive" size="sm" className="h-8 w-8 p-0" onClick={() => handleDeleteUser(u.id)}>
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Delete</span>
-                            </Button>
+                            {(u as any).is_active !== false ? (
+                              <>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleEditUser(u)}>
+                                  <Edit className="h-4 w-4" />
+                                  <span className="sr-only">Edit</span>
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleAssignRole(u)}>
+                                  <Shield className="h-4 w-4" />
+                                  <span className="sr-only">Assign Role</span>
+                                </Button>
+                                <Button variant="destructive" size="sm" className="h-8 w-8 p-0" onClick={() => handleDeleteUser(u.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                  <span className="sr-only">Deactivate</span>
+                                </Button>
+                              </>
+                            ) : (
+                              <Button 
+                                variant="default" 
+                                size="sm" 
+                                className="bg-green-600 hover:bg-green-700"
+                                onClick={() => handleActivateUser(u.id)}
+                              >
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                                Activate
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2200,10 +2369,7 @@ export default function AdminDashboard() {
                 </CardTitle>
                 <CardDescription>Financial summary and billing statistics</CardDescription>
               </div>
-              <Button onClick={() => window.location.href = '/billing'} variant="outline" size="sm">
-                <DollarSign className="h-4 w-4 mr-2" />
-                View Full Billing
-              </Button>
+
             </div>
           </CardHeader>
           <CardContent>
@@ -2732,10 +2898,10 @@ export default function AdminDashboard() {
                   <Checkbox
                     checked={systemSettings.enable_appointment_fees === 'true'}
                     onCheckedChange={(checked) => 
-                      setSystemSettings({
-                        ...systemSettings, 
+                      setSystemSettings(prev => ({
+                        ...prev, 
                         enable_appointment_fees: checked ? 'true' : 'false'
-                      })
+                      }))
                     }
                   />
                 </div>

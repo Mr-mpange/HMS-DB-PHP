@@ -22,9 +22,9 @@ export default function DebugDashboard() {
   const assignRole = async (role: string) => {
     setAssigningRole(true);
     try {
-      await api.post(`/users/${user.id}/roles`, {
-        role: role,
-        is_primary: true
+      await api.post('/users/roles', {
+        user_id: user.id,
+        role: role
       });
 
       toast.success(`${role} role assigned successfully!`);

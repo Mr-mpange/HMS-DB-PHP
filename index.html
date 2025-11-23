@@ -8,9 +8,15 @@
     <meta name="description" content="Professional hospital management system with patient records, appointment scheduling, and role-based access for healthcare providers" />
     <meta name="author" content="Hospital Management" />
 
-    <!-- Performance Optimization -->
+    <!-- Critical Resource Hints for LCP Optimization -->
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://zftdedqtnpgmwadyjwmg.supabase.co" crossorigin>
     <link rel="dns-prefetch" href="https://zftdedqtnpgmwadyjwmg.supabase.co">
+    <link rel="dns-prefetch" href="http://localhost:8000">
+    
+    <!-- Preload critical scripts -->
+    <link rel="modulepreload" href="/src/main.tsx">
+    <link rel="modulepreload" href="/src/App.tsx">
     
     <meta property="og:title" content="Hospital Management System" />
     <meta property="og:description" content="Professional healthcare management platform for hospitals and clinics" />
@@ -20,20 +26,110 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@lovable_dev" />
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+    
+    <!-- Inline critical CSS for faster LCP -->
+    <style>
+      /* Base layout - prevents CLS */
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { 
+        margin: 0; 
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+        background-color: #f9fafb;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      #root { min-height: 100vh; display: block; }
+      
+      /* Critical Typography - LCP element h3.text-2xl.font-semibold.leading-none.tracking-tight */
+      h1, h2, h3, h4, h5, h6 { 
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: -0.025em;
+      }
+      .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
+      .text-2xl { font-size: 1.5rem; line-height: 2rem; }
+      .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+      .text-lg { font-size: 1.125rem; line-height: 1.75rem; }
+      .font-bold { font-weight: 700; }
+      .font-semibold { font-weight: 600; }
+      .leading-none { line-height: 1; }
+      .tracking-tight { letter-spacing: -0.025em; }
+      
+      /* Layout utilities */
+      .min-h-screen { min-height: 100vh; }
+      .flex { display: flex; }
+      .grid { display: grid; }
+      .hidden { display: none; }
+      .items-center { align-items: center; }
+      .justify-center { justify-content: center; }
+      
+      /* Spacing */
+      .p-6 { padding: 1.5rem; }
+      .p-4 { padding: 1rem; }
+      .p-3 { padding: 0.75rem; }
+      .space-y-6 > * + * { margin-top: 1.5rem; }
+      .space-y-3 > * + * { margin-top: 0.75rem; }
+      .space-y-2 > * + * { margin-top: 0.5rem; }
+      .gap-4 { gap: 1rem; }
+      .gap-3 { gap: 0.75rem; }
+      .mb-4 { margin-bottom: 1rem; }
+      .mb-2 { margin-bottom: 0.5rem; }
+      .mt-2 { margin-top: 0.5rem; }
+      
+      /* Grid layouts */
+      .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+      .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      
+      /* Colors */
+      .bg-white { background-color: #ffffff; }
+      .bg-gray-50 { background-color: #f9fafb; }
+      .bg-gray-200 { background-color: #e5e7eb; }
+      .text-gray-600 { color: #4b5563; }
+      
+      /* Borders & Shadows */
+      .rounded-lg { border-radius: 0.5rem; }
+      .rounded { border-radius: 0.25rem; }
+      .rounded-full { border-radius: 9999px; }
+      .border { border-width: 1px; border-style: solid; border-color: #e5e7eb; }
+      .shadow { box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
+      
+      /* Sizing */
+      .h-8 { height: 2rem; }
+      .h-6 { height: 1.5rem; }
+      .h-4 { height: 1rem; }
+      .h-3 { height: 0.75rem; }
+      .h-10 { height: 2.5rem; }
+      .w-64 { width: 16rem; }
+      .w-48 { width: 12rem; }
+      .w-40 { width: 10rem; }
+      .w-32 { width: 8rem; }
+      .w-20 { width: 5rem; }
+      .w-10 { width: 2.5rem; }
+      .w-4 { width: 1rem; }
+      .flex-1 { flex: 1 1 0%; }
+      
+      /* Loading skeleton animation */
+      .animate-pulse {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .5; }
+      }
+      
+      /* Responsive */
+      @media (min-width: 768px) {
+        .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+      @media (min-width: 1024px) {
+        .lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    
-    <!-- Inline critical CSS for faster LCP -->
-    <style>
-      #root { min-height: 100vh; display: block; }
-      .text-2xl { font-size: 1.5rem; line-height: 2rem; }
-      .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
-      .font-bold { font-weight: 700; }
-      .font-semibold { font-weight: 600; }
-      h1, h2 { font-family: system-ui, -apple-system, sans-serif; }
-    </style>
   </body>
 </html>

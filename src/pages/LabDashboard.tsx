@@ -44,18 +44,30 @@ export default function LabDashboard() {
         index === self.findIndex(t => t.id === test.id)
       ) || [];
 
+      // Filter to only show tests that are NOT completed
+      // Completed tests should not appear in the lab queue
+      const activeTests = uniqueTests.filter(t => 
+        t.status !== 'Completed' && t.status !== 'Cancelled'
+      );
+
       console.log('Lab tests data:', {
         raw: testsData?.length || 0,
         unique: uniqueTests.length,
-        duplicates: (testsData?.length || 0) - uniqueTests.length,
+        active: activeTests.length,
+        filtered: uniqueTests.length - activeTests.length,
         timestamp: new Date().toISOString(),
-        sample: uniqueTests.slice(0, 3).map(t => ({ id: t.id, name: t.test_name, patient: t.patient?.full_name }))
+        sample: activeTests.slice(0, 3).map(t => ({ 
+          id: t.id, 
+          name: t.test_name, 
+          patient: t.patient?.full_name,
+          status: t.status 
+        }))
       });
 
-      setLabTests(uniqueTests);
+      setLabTests(activeTests);
 
       // Group tests by patient
-      const grouped = uniqueTests.reduce((acc: Record<string, any[]>, test) => {
+      const grouped = activeTests.reduce((acc: Record<string, any[]>, test) => {
         const patientId = test.patient_id;
         if (!acc[patientId]) {
           acc[patientId] = [];
@@ -65,9 +77,9 @@ export default function LabDashboard() {
       }, {});
       setGroupedTests(grouped);
 
-      const pending = uniqueTests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected').length;
-      const inProgress = uniqueTests.filter(t => t.status === 'In Progress').length;
-      const completed = uniqueTests.filter(t => t.status === 'Completed').length;
+      const pending = activeTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length;
+      const inProgress = activeTests.filter(t => t.status === 'In Progress').length;
+      const completed = activeTests.filter(t => t.status === 'Completed').length;
 
       setStats({ pending, inProgress, completed });
     } catch (error) {
@@ -81,10 +93,10 @@ export default function LabDashboard() {
 
 
   const handleBatchTestSubmit = async (patientId: string) => {
-    // Get all tests for this patient that are ordered, sample collected, or in progress
+    // Get all tests for this patient that are pending, ordered, sample collected, or in progress
     const patientTests = labTests.filter(
       test => test.patient_id === patientId && 
-      (test.status === 'Ordered' || test.status === 'Sample Collected' || test.status === 'In Progress')
+      (test.status === 'Pending' || test.status === 'Ordered' || test.status === 'Sample Collected' || test.status === 'In Progress')
     );
     
     if (patientTests.length === 0) {
@@ -150,23 +162,50 @@ export default function LabDashboard() {
         return;
       }
 
-      // Insert all results and update test statuses
+      // Insert all results
       await api.post('/labs/results/batch', {
         results: resultsToInsert,
         testIds: testsToUpdate
       });
 
+      // Explicitly update each test status to 'Completed'
+      await Promise.all(
+        testsToUpdate.map(testId =>
+          api.put(`/labs/${testId}`, {
+            status: 'Completed',
+            completed_date: new Date().toISOString()
+          })
+        )
+      );
+
       // Update patient workflow
+      let patientId = null;
       if (selectedPatientTests.length > 0) {
-        const patientId = selectedPatientTests[0].patient_id;
+        patientId = selectedPatientTests[0].patient_id;
         await updatePatientWorkflow(patientId);
       }
 
       toast.success(`${resultsToInsert.length} test results submitted successfully`);
+      
+      // Update local state immediately to remove completed tests
+      if (patientId) {
+        setGroupedTests(prev => {
+          const updated = { ...prev };
+          delete updated[patientId];
+          return updated;
+        });
+        setLabTests(prev => prev.filter(t => t.patient_id !== patientId));
+      }
+      
+      // Close dialog and reset
       setBatchDialogOpen(false);
       setSelectedPatientTests([]);
       setBatchResults({});
-      fetchData();
+      
+      // Refresh data after a delay to ensure backend has processed
+      setTimeout(() => {
+        fetchData();
+      }, 1000);
     } catch (error) {
       console.error('Error submitting batch results:', error);
       toast.error('Failed to submit batch results');
@@ -367,9 +406,9 @@ export default function LabDashboard() {
                   Lab Tests Queue
                   <Badge variant="default" className="bg-blue-600">
                     {Object.entries(groupedTests).filter(([_, tests]) => 
-                      tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
+                      tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
                     ).length} patient{Object.entries(groupedTests).filter(([_, tests]) => 
-                      tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
+                      tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
                     ).length !== 1 ? 's' : ''}
                   </Badge>
                 </CardTitle>
@@ -393,16 +432,18 @@ export default function LabDashboard() {
                 </TableHeader>
                 <TableBody>
                   {Object.entries(groupedTests)
-                    .filter(([_, tests]) => tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress'))
+                    .filter(([_, tests]) => tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress'))
                     .map(([patientId, tests]) => {
                       const pendingCount = tests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected').length;
                       const inProgressCount = tests.filter(t => t.status === 'In Progress').length;
                       const completedCount = tests.filter(t => t.status === 'Completed').length;
                       const hasSTAT = tests.some(t => t.priority === 'STAT');
                       const hasUrgent = tests.some(t => t.priority === 'Urgent');
-                      const latestTest = tests.sort((a, b) => 
-                        new Date(b.ordered_date).getTime() - new Date(a.ordered_date).getTime()
-                      )[0];
+                      const latestTest = tests.sort((a, b) => {
+                        const dateA = a.ordered_date ? new Date(a.ordered_date).getTime() : 0;
+                        const dateB = b.ordered_date ? new Date(b.ordered_date).getTime() : 0;
+                        return dateB - dateA;
+                      })[0];
 
                       return (
                         <TableRow key={patientId} className="hover:bg-blue-50/50">
@@ -457,7 +498,9 @@ export default function LabDashboard() {
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">
-                              {format(new Date(latestTest.ordered_date), 'MMM dd, HH:mm')}
+                              {latestTest.ordered_date && !isNaN(new Date(latestTest.ordered_date).getTime())
+                                ? format(new Date(latestTest.ordered_date), 'MMM dd, HH:mm')
+                                : 'N/A'}
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
@@ -493,7 +536,7 @@ export default function LabDashboard() {
                       );
                     })}
                   {Object.entries(groupedTests).filter(([_, tests]) => 
-                    tests.some(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
+                    tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
                   ).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
@@ -565,7 +608,9 @@ export default function LabDashboard() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm bg-blue-50 p-2 rounded border border-blue-200">
                         <Clock className="h-4 w-4 text-blue-600" />
-                        <span><strong>Ordered:</strong> {format(new Date(test.ordered_date), 'MMM dd, yyyy HH:mm')}</span>
+                        <span><strong>Ordered:</strong> {test.ordered_date && !isNaN(new Date(test.ordered_date).getTime())
+                          ? format(new Date(test.ordered_date), 'MMM dd, yyyy HH:mm')
+                          : 'N/A'}</span>
                       </div>
                       {test.notes && (
                         <div className="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
@@ -609,12 +654,12 @@ export default function LabDashboard() {
                 Submit Results for {selectedPatientTests[0]?.patient?.full_name}
               </DialogTitle>
               <DialogDescription>
-                Enter results for {selectedPatientTests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress').length} test(s)
+                Enter results for {selectedPatientTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress').length} test(s)
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               {selectedPatientTests
-                .filter(test => test.status === 'Ordered' || test.status === 'Sample Collected' || test.status === 'In Progress')
+                .filter(test => test.status === 'Pending' || test.status === 'Ordered' || test.status === 'Sample Collected' || test.status === 'In Progress')
                 .map((test, index) => (
                 <Card key={test.id} className="border-2">
                   <div className="p-4 space-y-4">

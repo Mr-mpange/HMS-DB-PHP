@@ -18,7 +18,7 @@ return new class extends Migration
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->string('phone', 20)->nullable();
-            $table->enum('role', ['admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'lab_technician'])->default('receptionist');
+            $table->enum('role', ['admin', 'doctor', 'nurse', 'receptionist', 'pharmacist', 'lab_technician', 'billing', 'patient'])->default('patient');
             $table->boolean('is_active')->default(true);
             $table->rememberToken();
             $table->timestamps();
@@ -295,10 +295,29 @@ return new class extends Migration
             $table->timestamps();
             $table->index('setting_key');
         });
+        
+        // Settings (simplified key-value store)
+        Schema::create('settings', function (Blueprint $table) {
+            $table->string('key', 100)->primary();
+            $table->text('value')->nullable();
+            $table->text('description')->nullable();
+            $table->timestamps();
+        });
+        
+        // Department Fees
+        Schema::create('department_fees', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->uuid('department_id')->unique();
+            $table->decimal('fee_amount', 10, 2)->default(0);
+            $table->timestamps();
+            $table->foreign('department_id')->references('id')->on('departments')->onDelete('cascade');
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('department_fees');
+        Schema::dropIfExists('settings');
         Schema::dropIfExists('system_settings');
         Schema::dropIfExists('activity_logs');
         Schema::dropIfExists('insurance_claims');

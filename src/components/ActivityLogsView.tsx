@@ -24,6 +24,7 @@ interface ActivityLog {
   details: any;
   created_at: string;
   user?: {
+    name?: string;
     full_name?: string;
     email?: string;
   };
@@ -136,17 +137,11 @@ export default function ActivityLogsView() {
       const logsData = data.logs || [];
       console.log('Fetched logs count:', logsData.length);
       console.log('First log:', logsData[0]);
+      console.log('First log user:', logsData[0]?.user);
       
-      // Logs already include user info from the backend (email, full_name)
-      const enrichedLogs = logsData.map((log: any) => ({
-        ...log,
-        user: {
-          full_name: log.full_name,
-          email: log.email
-        }
-      }));
-
-      setLogs(enrichedLogs);
+      // Logs already include user info from the backend in the 'user' relationship
+      // No need to enrich - just use the data as-is from the API
+      setLogs(logsData);
       
       // Fetch counts for each time period using API
       const now = new Date();
@@ -231,7 +226,7 @@ export default function ActivityLogsView() {
       ...filteredLogs.map(log => [
         format(new Date(log.created_at), 'yyyy-MM-dd HH:mm:ss'),
         log.action,
-        log.user?.full_name || log.user_email || 'Unknown',
+        log.user?.name || log.user?.email || 'Unknown',
         JSON.stringify(log.details || {})
       ].join(','))
     ].join('\n');
@@ -250,7 +245,7 @@ export default function ActivityLogsView() {
     // Search filter
     const matchesSearch = searchQuery === '' || 
       log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (log.user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
+      (log.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
       (log.user_email?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false) ||
       (typeof log.details === 'string' && log.details.toLowerCase().includes(searchQuery.toLowerCase()));
     
@@ -598,7 +593,7 @@ export default function ActivityLogsView() {
                           <div className="text-sm text-muted-foreground">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium text-foreground">
-                                {log.user?.full_name || 'Unknown User'}
+                                {log.user?.name || (log.user as any)?.full_name || 'Unknown User'}
                               </span>
                               <span className="text-xs">•</span>
                               <span>{format(new Date(log.created_at), 'MMM dd, yyyy')}</span>
@@ -639,7 +634,7 @@ export default function ActivityLogsView() {
                                 <div>
                                   <Label className="text-xs text-muted-foreground">User</Label>
                                   <div className="mt-1 font-medium">
-                                    {log.user?.full_name || 'Unknown User'}
+                                    {log.user?.name || (log.user as any)?.full_name || 'Unknown User'}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {log.user?.email || log.user_email || 'No email'}

@@ -126,7 +126,7 @@ export default function AdminReports() {
       const appointmentsData = appointmentsRes.status === 'fulfilled' ? (appointmentsRes.value.data.appointments || []) : [];
       const visitsData = visitsRes.status === 'fulfilled' ? (visitsRes.value.data.visits || []) : [];
       const prescriptionsData = prescriptionsRes.status === 'fulfilled' ? (prescriptionsRes.value.data.prescriptions || []) : [];
-      const labTestsData = labTestsRes.status === 'fulfilled' ? (labTestsRes.value.data.tests || []) : [];
+      const labTestsData = labTestsRes.status === 'fulfilled' ? (labTestsRes.value.data.labTests || labTestsRes.value.data.tests || []) : [];
       const invoicesData = invoicesRes.status === 'fulfilled' ? (invoicesRes.value.data.invoices || []) : [];
 
       console.log('Prescriptions Data:', prescriptionsData);

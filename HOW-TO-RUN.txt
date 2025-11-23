@@ -1,0 +1,259 @@
+🚀 HOW TO RUN THE BUILD & CREATE UPDATE PACKAGE
+================================================
+
+METHOD 1: EASIEST - DOUBLE CLICK (Windows)
+-------------------------------------------
+
+Step 1: Create Update Package
+   📁 Find this file in your project folder:
+      create-update-package.bat
+   
+   👆 Double-click it
+   
+   ✅ It will:
+      - Create "hostinger-update" folder
+      - Copy only changed files
+      - Show you what was copied
+      - Pause so you can read the output
+
+Step 2: Upload to Hostinger
+   📁 Open the "hostinger-update" folder
+   📤 Upload its contents to Hostinger
+
+
+METHOD 2: FULL BUILD + UPDATE PACKAGE
+--------------------------------------
+
+If you also need to rebuild the frontend:
+
+Step 1: Build Everything
+   📁 Find this file:
+      deploy.bat
+   
+   👆 Double-click it
+   
+   ✅ It will:
+      - Build React frontend (npm run build)
+      - Create complete-deploy folder
+      - Copy all files
+      - Take 2-3 minutes
+
+Step 2: Create Update Package
+   👆 Double-click: create-update-package.bat
+   
+   ✅ Creates hostinger-update folder with only changed files
+
+
+METHOD 3: COMMAND LINE (Windows)
+---------------------------------
+
+Option A: Just Update Package
+   1. Open Command Prompt or PowerShell
+   2. Navigate to your project:
+      cd C:\Users\Administrator\Desktop\one-two\HMS-DB
+   
+   3. Run:
+      create-update-package.bat
+
+Option B: Full Build First
+   1. Open Command Prompt or PowerShell
+   2. Navigate to your project:
+      cd C:\Users\Administrator\Desktop\one-two\HMS-DB
+   
+   3. Build everything:
+      deploy.bat
+   
+   4. Create update package:
+      create-update-package.bat
+
+
+METHOD 4: POWERSHELL DIRECTLY
+------------------------------
+
+1. Right-click on your project folder
+2. Select "Open PowerShell window here"
+3. Run:
+   powershell -ExecutionPolicy Bypass -File .\create-update-package.ps1
+
+
+METHOD 5: MANUAL (If scripts don't work)
+-----------------------------------------
+
+1. Build Frontend (if needed):
+   npm run build
+
+2. Manually copy these files from complete-deploy/api/ to hostinger-update/api/:
+   
+   ✅ routes/api.php
+   ✅ app/Http/Controllers/AuthController.php
+   ✅ app/Http/Controllers/InvoiceController.php
+   ✅ app/Http/Controllers/LabTestController.php
+   ✅ app/Models/User.php
+   ✅ app/Models/Setting.php
+   ✅ app/Models/DepartmentFee.php
+   ✅ app/Models/InsuranceCompany.php
+   ✅ database/migrations/2024_01_01_000001_create_hospital_tables.php
+
+
+WHAT HAPPENS WHEN YOU RUN IT?
+------------------------------
+
+create-update-package.bat will:
+
+1. ✅ Create "hostinger-update" folder
+2. ✅ Copy 9 backend files that changed
+3. ✅ Copy frontend files (if they exist)
+4. ✅ Create UPDATE-INSTRUCTIONS.txt
+5. ✅ Create FILE-LIST.txt
+6. ✅ Show you a summary
+7. ✅ Pause so you can read it
+
+Output looks like:
+   ========================================
+   CREATING UPDATE PACKAGE
+   ========================================
+   
+   Creating update package with only changed files...
+   
+   Copying backend files...
+     ✓ routes/api.php
+     ✓ AuthController.php (UPDATED)
+     ✓ InvoiceController.php (NEW)
+     ✓ LabTestController.php (NEW)
+     ✓ User.php (UPDATED)
+     ✓ Setting.php (NEW)
+     ✓ DepartmentFee.php (NEW)
+     ✓ InsuranceCompany.php (NEW)
+     ✓ create_hospital_tables.php (UPDATED)
+   
+   ========================================
+   ✅ UPDATE PACKAGE CREATED!
+   ========================================
+   
+   Location: hostinger-update/
+   
+   Ready to upload to Hostinger! 🚀
+
+
+TROUBLESHOOTING
+---------------
+
+Problem: "Cannot run scripts"
+Solution: 
+   Right-click create-update-package.bat
+   Select "Run as Administrator"
+
+Problem: "npm not found"
+Solution:
+   You don't need npm for update package!
+   Just run: create-update-package.bat
+   (It only copies files, doesn't build)
+
+Problem: "File not found"
+Solution:
+   Make sure you're in the project folder:
+   cd C:\Users\Administrator\Desktop\one-two\HMS-DB
+
+Problem: Script window closes immediately
+Solution:
+   That's normal! Check if "hostinger-update" folder was created
+
+Problem: PowerShell execution policy error
+Solution:
+   Run PowerShell as Administrator:
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+
+QUICK REFERENCE
+---------------
+
+📁 Project Location:
+   C:\Users\Administrator\Desktop\one-two\HMS-DB
+
+📄 Files to Run:
+   create-update-package.bat  ← For update package only
+   deploy.bat                 ← For full build + package
+
+📂 Output Folders:
+   complete-deploy/           ← Full deployment package
+   hostinger-update/          ← Only changed files (for update)
+
+⏱️ Time Required:
+   Update package: 5 seconds
+   Full build: 2-3 minutes
+
+
+STEP-BY-STEP VISUAL GUIDE
+--------------------------
+
+1. Open File Explorer
+   └─ Navigate to: C:\Users\Administrator\Desktop\one-two\HMS-DB
+
+2. Find the file: create-update-package.bat
+   └─ It has a gear/cog icon ⚙️
+
+3. Double-click it
+   └─ A black window opens
+
+4. Wait 5 seconds
+   └─ Window shows progress
+
+5. Read the output
+   └─ Shows what was copied
+
+6. Press any key to close
+   └─ Window closes
+
+7. Check the folder: hostinger-update
+   └─ Contains files to upload
+
+8. Upload to Hostinger!
+   └─ See QUICK-UPDATE-GUIDE.txt
+
+
+WHAT YOU NEED
+-------------
+
+✅ Windows computer
+✅ Project folder (HMS-DB)
+✅ complete-deploy folder (already exists)
+✅ 5 seconds of time
+
+❌ Don't need:
+   - Node.js (for update package)
+   - npm (for update package)
+   - Git
+   - Special permissions
+
+
+NEXT STEPS
+----------
+
+After running create-update-package.bat:
+
+1. ✅ Check hostinger-update folder was created
+2. ✅ Read: hostinger-update/UPDATE-INSTRUCTIONS.txt
+3. ✅ Upload files to Hostinger
+4. ✅ Run migrations via SSH
+5. ✅ Test your site
+
+
+NEED HELP?
+----------
+
+If scripts don't work:
+   → Use METHOD 5 (Manual copy)
+   → Or ask for help with specific error message
+
+If you need to rebuild frontend too:
+   → Run deploy.bat first
+   → Then run create-update-package.bat
+
+If you just want to update backend:
+   → Just run create-update-package.bat
+   → No need to rebuild frontend
+
+
+Last Updated: November 21, 2025
+Difficulty: Very Easy ⭐☆☆☆☆
+Time: 5 seconds

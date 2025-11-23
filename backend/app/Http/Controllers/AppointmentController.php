@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Appointment;
+use App\Events\AppointmentUpdated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -48,11 +49,18 @@ class AppointmentController extends Controller
             'doctor_id' => 'required|exists:users,id',
             'department_id' => 'nullable|uuid|exists:departments,id',
             'appointment_date' => 'required|date',
+            'appointment_time' => 'nullable|string', // Accept time separately
             'duration' => 'nullable|integer',
             'type' => 'nullable|string|max:50',
             'reason' => 'nullable|string',
             'notes' => 'nullable|string',
         ]);
+
+        // Combine date and time if time is provided
+        if (isset($validated['appointment_time'])) {
+            $validated['appointment_date'] = $validated['appointment_date'] . ' ' . $validated['appointment_time'];
+            unset($validated['appointment_time']); // Remove the separate time field
+        }
 
         $validated['id'] = (string) Str::uuid();
         $validated['status'] = 'Scheduled';
@@ -76,6 +84,9 @@ class AppointmentController extends Controller
         ]);
 
         $appointment->update($validated);
+
+        // Broadcast real-time update via WebSocket
+        broadcast(new AppointmentUpdated($appointment, 'updated'))->toOthers();
 
         return response()->json(['appointment' => $appointment->load(['patient', 'doctor', 'department'])]);
     }

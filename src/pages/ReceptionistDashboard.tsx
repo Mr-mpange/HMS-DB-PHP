@@ -15,6 +15,7 @@ import { AppointmentsCard } from '@/components/AppointmentsCard';
 import { PatientsCard } from '@/components/PatientsCard';
 import { QuickServiceDialog } from '@/components/QuickServiceDialog';
 import { StatCardSkeleton, AppointmentsCardSkeleton, PatientsCardSkeleton } from '@/components/DashboardSkeleton';
+import { mobilePaymentService, MobilePaymentRequest } from '@/lib/mobilePaymentService';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { logActivity } from '@/lib/utils';
@@ -42,6 +43,7 @@ export default function ReceptionistDashboard() {
   const [patients, setPatients] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
+  const [insuranceCompanies, setInsuranceCompanies] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -90,6 +92,8 @@ export default function ReceptionistDashboard() {
     email: '',
     blood_group: '',
     address: '',
+    insurance_company_id: '',
+    insurance_number: '',
   });
   
   const [registerWithAppointment, setRegisterWithAppointment] = useState(false);
@@ -154,9 +158,11 @@ export default function ReceptionistDashboard() {
     try {
       const today = new Date().toISOString().split('T')[0];
 
-      // First, get appointments with basic info (get all appointments for better data handling)
+      // First, get appointments with basic info (exclude cancelled appointments)
       const appointmentsRes = await api.get('/appointments?order=appointment_time.asc');
-      const appointmentsBasic = appointmentsRes.data.appointments || [];
+      const appointmentsBasic = (appointmentsRes.data.appointments || []).filter(
+        apt => apt.status !== 'Cancelled'
+      );
 
       // Fetch departments first
       let departmentsData = [];
@@ -254,12 +260,29 @@ export default function ReceptionistDashboard() {
       }
 
       // Fetch patient visits to get accurate workflow stats
+      // Note: We need to check both patient_visits and visits tables
       let patientVisits = [];
+      let appointmentVisits = [];
+      
       try {
+        console.log('🔍 Fetching visits from API...');
         const visitsRes = await api.get('/visits?overall_status=Active');
         patientVisits = visitsRes.data.visits || [];
+        console.log('✅ Patient visits fetched:', patientVisits.length, 'visits');
+        console.log('📊 Patient visits data:', patientVisits);
       } catch (visitsError) {
-        console.error('Error fetching patient visits:', visitsError);
+        console.error('❌ Error fetching patient visits:', visitsError);
+        console.error('Error details:', visitsError.response?.data || visitsError.message);
+      }
+      
+      // Also fetch from the visits table for appointment-based workflow
+      try {
+        console.log('🔍 Fetching appointment visits...');
+        const aptVisitsRes = await api.get('/appointment-visits?overall_status=Active');
+        appointmentVisits = aptVisitsRes.data.visits || [];
+        console.log('✅ Appointment visits fetched:', appointmentVisits.length, 'visits');
+      } catch (error) {
+        console.log('ℹ️ Could not fetch appointment visits:', error);
       }
 
       // Ensure appointmentsData is an array before filtering
@@ -269,20 +292,52 @@ export default function ReceptionistDashboard() {
       const pendingAppointments = appointmentsArray.filter(a => a.status === 'Scheduled').length;
       const confirmedAppointments = appointmentsArray.filter(a => a.status === 'Confirmed').length;
 
-      // Calculate nurse queue patients (from new registrations)
+      // Calculate nurse queue patients (from new registrations in patient_visits table)
+      // Include NULL, empty, or 'Pending' status as these all mean waiting for vitals
       const nurseQueuePatients = patientVisits?.filter(v =>
-        v.current_stage === 'nurse' && v.nurse_status === 'Pending'
+        v.current_stage === 'nurse' && (!v.nurse_status || v.nurse_status === 'Pending' || v.nurse_status === '')
       ).length || 0;
 
-      // Calculate reception queue patients (from appointments waiting for check-in)
-      const receptionQueuePatients = patientVisits?.filter(v =>
-        v.current_stage === 'reception' && v.reception_status === 'Pending'
+      // Calculate reception queue patients (from appointments in visits table)
+      // These are appointments that need check-in
+      const receptionQueueFromAppointments = appointmentVisits?.filter(v =>
+        v.current_stage === 'reception' && (!v.reception_status || v.reception_status === 'Pending' || v.reception_status === '')
       ).length || 0;
+      
+      // Also check patient_visits table for reception queue
+      const receptionQueueFromPatientVisits = patientVisits?.filter(v =>
+        v.current_stage === 'reception' && (!v.reception_status || v.reception_status === 'Pending' || v.reception_status === '')
+      ).length || 0;
+      
+      const receptionQueuePatients = receptionQueueFromAppointments + receptionQueueFromPatientVisits;
+
+      console.log('📈 Queue calculations:', {
+        totalPatientVisits: patientVisits?.length || 0,
+        totalAppointmentVisits: appointmentVisits?.length || 0,
+        nurseQueuePatients,
+        receptionQueueFromAppointments,
+        receptionQueueFromPatientVisits,
+        receptionQueueTotal: receptionQueuePatients,
+        visitsByStage: patientVisits?.reduce((acc, v) => {
+          acc[v.current_stage || 'empty'] = (acc[v.current_stage || 'empty'] || 0) + 1;
+          return acc;
+        }, {})
+      });
+
+      // Fetch insurance companies
+      let insuranceData = [];
+      try {
+        const insuranceRes = await api.get('/insurance/companies');
+        insuranceData = insuranceRes.data.companies || [];
+      } catch (error) {
+        console.warn('Could not fetch insurance companies:', error);
+      }
 
       setAppointments(appointmentsArray);
       setPatients(patientsData || []);
       setDepartments(departmentsData || []);
       setDoctors(doctorsData || []);
+      setInsuranceCompanies(insuranceData || []);
 
       // Debug logging
       console.log('Dashboard data loaded:', {
@@ -469,14 +524,14 @@ export default function ReceptionistDashboard() {
         const response = await api.get(`/departments/${appointmentDepartmentId}/doctors`);
         const assignedDoctors = response.data.doctors || [];
         
-        // Filter only doctors that are assigned to this department
-        const activeDoctors = assignedDoctors.filter((doc: any) => doc.assignment_id);
+        console.log('Doctors for department:', appointmentDepartmentId, assignedDoctors);
         
-        setDepartmentDoctors(activeDoctors);
+        // Doctors are already filtered by department_id in the backend
+        setDepartmentDoctors(assignedDoctors);
         
         // Auto-select if only one doctor
-        if (activeDoctors.length === 1) {
-          setAppointmentDoctorId(activeDoctors[0].id);
+        if (assignedDoctors.length === 1) {
+          setAppointmentDoctorId(assignedDoctors[0].id);
         } else {
           setAppointmentDoctorId('');
         }
@@ -522,22 +577,31 @@ export default function ReceptionistDashboard() {
   };
 
   const handleInitiateCheckIn = async (appointment: any) => {
-    // Check if patient already paid today
+    // Check if patient already paid for consultation today
     try {
       const today = new Date().toISOString().split('T')[0];
       const paymentsRes = await api.get(`/payments?patient_id=${appointment.patient_id}&date=${today}`);
       const todayPayments = paymentsRes.data.payments || [];
       
-      if (todayPayments.length > 0) {
-        // Patient already paid today - skip payment
+      // Check if there's a consultation fee payment today
+      const consultationPayment = todayPayments.find(p => 
+        p.payment_type === 'Consultation Fee' && 
+        p.status === 'Completed'
+      );
+      
+      if (consultationPayment) {
+        // Patient already paid consultation fee today - skip payment
         const confirmSkip = window.confirm(
-          `This patient already paid TSh ${todayPayments[0].amount} today. Skip payment and check in directly?`
+          `This patient already paid consultation fee (TSh ${consultationPayment.amount}) today. Skip payment and check in directly?`
         );
         
         if (confirmSkip) {
           await handleCheckIn(appointment.id);
-          toast.success('Patient checked in (payment already received today)');
+          toast.success('Patient checked in (consultation fee already paid today)');
           return;
+        } else {
+          // User wants to collect payment again (maybe different appointment/service)
+          toast.info('Proceeding with payment collection');
         }
       }
     } catch (error) {
@@ -564,7 +628,71 @@ export default function ReceptionistDashboard() {
     }
 
     try {
-      // Create payment record
+      // Handle Mobile Money Payment
+      if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method)) {
+        console.log('Mobile Money payment detected for appointment check-in');
+        const phoneInput = document.getElementById('apt_mobile_phone') as HTMLInputElement;
+        const phoneNumber = phoneInput?.value;
+        
+        if (!phoneNumber) {
+          toast.error('Please enter mobile money phone number');
+          return;
+        }
+        
+        // Validate phone number
+        const phoneRegex = /^0[67][0-9]{8}$/;
+        if (!phoneRegex.test(phoneNumber)) {
+          toast.error('Invalid phone number format. Use 07xxxxxxxx or 06xxxxxxxx');
+          return;
+        }
+        
+        try {
+          toast.info(`Initiating ${paymentForm.payment_method} payment...`);
+          
+          // Use mobilePaymentService
+          const paymentRequest: MobilePaymentRequest = {
+            phoneNumber,
+            amount: amountPaid,
+            invoiceId: selectedAppointmentForPayment.id, // Use appointment ID
+            paymentMethod: paymentForm.payment_method as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
+            description: `Consultation fee for appointment ${selectedAppointmentForPayment.id}`
+          };
+
+          const response = await mobilePaymentService.initiatePayment(paymentRequest);
+
+          if (response.success && response.transactionId) {
+            toast.success(
+              `📱 ${paymentForm.payment_method} payment request sent to ${phoneNumber}!\n` +
+              `Transaction ID: ${response.transactionId.slice(-8)}\n` +
+              `Patient will receive payment prompt on their phone.\n` +
+              `Check-in will complete automatically once payment is confirmed.`,
+              { duration: 6000 }
+            );
+            
+            // Payment is pending - webhook will confirm it and complete check-in
+            console.log('Mobile payment initiated for appointment:', {
+              transactionId: response.transactionId,
+              orderId: response.orderId,
+              appointmentId: selectedAppointmentForPayment.id
+            });
+            
+            // Close dialog - webhook will handle the rest
+            setShowPaymentDialog(false);
+            setSelectedAppointmentForPayment(null);
+            return; // Exit here for mobile payments
+          } else {
+            toast.error(response.message || 'Failed to initiate mobile payment');
+            return;
+          }
+          
+        } catch (error) {
+          console.error('Mobile money payment error:', error);
+          toast.error('Failed to initiate mobile money payment');
+          return;
+        }
+      }
+
+      // For non-mobile payments: Create payment record immediately
       const paymentData = {
         patient_id: selectedAppointmentForPayment.patient_id,
         amount: amountPaid,
@@ -633,7 +761,9 @@ export default function ReceptionistDashboard() {
           overall_status: 'Active'
         };
         
+        console.log('🏥 Reception - Creating visit:', visitData);
         const visitRes = await api.post('/visits', visitData);
+        console.log('✅ Visit created:', visitRes.data);
         if (visitRes.status !== 200 || visitRes.data.error) {
           // If error is duplicate, just update the existing one
           // In this case, we'll assume the visit was created and try to update it
@@ -666,12 +796,28 @@ export default function ReceptionistDashboard() {
       const updateRes = await api.put(`/appointments/${appointmentId}`, { status: 'Cancelled' });
       if (updateRes.status !== 200 || updateRes.data.error) throw new Error(updateRes.data.error || 'Failed to update appointment');
 
-      // Update patient visit workflow
-      const visitRes = await api.put(`/visits?appointment_id=${appointmentId}`, {
-        overall_status: 'Cancelled',
-        reception_status: 'Cancelled'
-      });
-      if (visitRes.status !== 200 || visitRes.data.error) throw new Error(visitRes.data.error || 'Failed to update visit');
+      // Try to update patient visit workflow if it exists
+      try {
+        // First, find the visit for this appointment
+        const visitsRes = await api.get(`/visits?appointment_id=${appointmentId}&limit=1`);
+        const visits = visitsRes.data.visits || [];
+        
+        if (visits.length > 0) {
+          const visit = visits[0];
+          // Update the visit status
+          await api.put(`/visits/${visit.id}`, {
+            overall_status: 'Cancelled',
+            reception_status: 'Cancelled',
+            updated_at: new Date().toISOString()
+          });
+          console.log('Visit cancelled for appointment:', appointmentId);
+        } else {
+          console.log('No visit found for appointment:', appointmentId);
+        }
+      } catch (visitError) {
+        console.warn('Could not update visit (may not exist yet):', visitError);
+        // Don't fail the cancellation if visit update fails
+      }
 
       toast.success('Appointment cancelled');
       logActivity('appointment.cancel', { appointment_id: appointmentId });
@@ -693,6 +839,8 @@ export default function ReceptionistDashboard() {
       email: '',
       blood_group: '',
       address: '',
+      insurance_company_id: '',
+      insurance_number: '',
     });
     setRegisterWithAppointment(false);
     setAppointmentDepartmentId('');
@@ -773,19 +921,28 @@ export default function ReceptionistDashboard() {
         return;
       }
 
-      // Check if patient already paid today
+      // Check if patient already paid consultation fee today
       const paymentsRes = await api.get(`/payments?patient_id=${patient.id}&date=${today}`);
       const todayPayments = paymentsRes.data.payments || [];
       
-      if (todayPayments.length > 0) {
-        // Patient already paid today - skip payment
+      // Check if there's a consultation fee payment today
+      const consultationPayment = todayPayments.find(p => 
+        p.payment_type === 'Consultation Fee' && 
+        p.status === 'Completed'
+      );
+      
+      if (consultationPayment) {
+        // Patient already paid consultation fee today - skip payment
         const confirmSkip = window.confirm(
-          `${patient.full_name} already paid TSh ${todayPayments[0].amount} today. Skip payment and create visit directly?`
+          `${patient.full_name} already paid consultation fee (TSh ${consultationPayment.amount}) today. Skip payment and create visit directly?`
         );
         
         if (confirmSkip) {
           await createVisitForReturningPatient(patient);
           return;
+        } else {
+          // User wants to collect payment again (maybe for a different visit/service)
+          toast.info('Proceeding with payment collection');
         }
       }
 
@@ -815,7 +972,78 @@ export default function ReceptionistDashboard() {
     try {
       setLoading(true);
 
-      // Create payment record
+      // Handle Mobile Money Payment
+      if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method)) {
+        console.log('Mobile Money payment detected for returning patient');
+        const phoneInput = document.getElementById('ret_mobile_phone') as HTMLInputElement;
+        const phoneNumber = phoneInput?.value;
+        
+        if (!phoneNumber) {
+          toast.error('Please enter mobile money phone number');
+          setLoading(false);
+          return;
+        }
+        
+        // Validate phone number
+        const phoneRegex = /^0[67][0-9]{8}$/;
+        if (!phoneRegex.test(phoneNumber)) {
+          toast.error('Invalid phone number format. Use 07xxxxxxxx or 06xxxxxxxx');
+          setLoading(false);
+          return;
+        }
+        
+        try {
+          toast.info(`Initiating ${paymentForm.payment_method} payment...`);
+          
+          // Use mobilePaymentService
+          const paymentRequest: MobilePaymentRequest = {
+            phoneNumber,
+            amount: amountPaid,
+            invoiceId: selectedReturningPatient.id, // Use patient ID
+            paymentMethod: paymentForm.payment_method as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
+            description: `Consultation fee for ${selectedReturningPatient.full_name}`
+          };
+
+          const response = await mobilePaymentService.initiatePayment(paymentRequest);
+
+          if (response.success && response.transactionId) {
+            toast.success(
+              `📱 ${paymentForm.payment_method} payment request sent to ${phoneNumber}!\n` +
+              `Transaction ID: ${response.transactionId.slice(-8)}\n` +
+              `Patient will receive payment prompt on their phone.\n` +
+              `Visit will be created automatically once payment is confirmed.`,
+              { duration: 6000 }
+            );
+            
+            // Payment is pending - webhook will confirm it and create visit
+            console.log('Mobile payment initiated for returning patient:', {
+              transactionId: response.transactionId,
+              orderId: response.orderId,
+              patientId: selectedReturningPatient.id
+            });
+            
+            // Close dialog - webhook will handle the rest
+            setShowReturningPatientPaymentDialog(false);
+            setSelectedReturningPatient(null);
+            setReturningPatientSearch('');
+            setReturningPatientResults([]);
+            setLoading(false);
+            return; // Exit here for mobile payments
+          } else {
+            toast.error(response.message || 'Failed to initiate mobile payment');
+            setLoading(false);
+            return;
+          }
+          
+        } catch (error) {
+          console.error('Mobile money payment error:', error);
+          toast.error('Failed to initiate mobile money payment');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // For non-mobile payments: Create payment record and visit immediately
       const paymentData = {
         patient_id: selectedReturningPatient.id,
         amount: amountPaid,
@@ -855,7 +1083,9 @@ export default function ReceptionistDashboard() {
       overall_status: 'Active'
     };
 
+    console.log('🏥 Reception - Creating walk-in visit:', visitData);
     const visitRes = await api.post('/visits', visitData);
+    console.log('✅ Walk-in visit created:', visitRes.data);
     if ((visitRes.status !== 200 && visitRes.status !== 201) || visitRes.data.error) {
       throw new Error(visitRes.data.error || 'Failed to create visit');
     }
@@ -921,9 +1151,13 @@ export default function ReceptionistDashboard() {
 
     // Close registration dialog and show payment dialog
     setShowRegisterDialog(false);
+    
+    // Check if patient has insurance - auto-select Insurance payment
+    const paymentMethod = registerForm.insurance_company_id ? 'Insurance' : 'Cash';
+    
     setPaymentForm({
       amount_paid: feeToCharge.toString(),
-      payment_method: 'Cash'
+      payment_method: paymentMethod
     });
     setShowRegistrationPaymentDialog(true);
   };
@@ -935,8 +1169,10 @@ export default function ReceptionistDashboard() {
       return;
     }
 
+    console.log('Payment method selected:', paymentForm.payment_method);
+    
     try {
-      // Insert patient
+      // First, create the patient record
       const patientData = {
         full_name: registerForm.full_name,
         date_of_birth: registerForm.date_of_birth,
@@ -945,6 +1181,8 @@ export default function ReceptionistDashboard() {
         email: registerForm.email || null,
         blood_group: registerForm.blood_group || null,
         address: registerForm.address || null,
+        insurance_company_id: registerForm.insurance_company_id || null,
+        insurance_number: registerForm.insurance_number || null,
         status: 'Active',
       };
       
@@ -958,14 +1196,91 @@ export default function ReceptionistDashboard() {
         return;
       }
 
-      // Get the patient ID from response
-      const patientId = patientRes.data.patientId;
+      // Get the patient ID from response (backend returns patient object)
+      const patientId = patientRes.data.patient?.id || patientRes.data.patientId;
       if (!patientId) {
+        console.error('Patient response:', patientRes.data);
         toast.error('Patient registered but ID not returned');
         return;
       }
 
-      // Create payment record
+      // Handle Mobile Money Payment - Initiate payment after patient is created
+      if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method)) {
+        console.log('Mobile Money payment detected - initiating payment flow');
+        const phoneInput = document.getElementById('mobile_phone') as HTMLInputElement;
+        const phoneNumber = phoneInput?.value;
+        
+        if (!phoneNumber) {
+          toast.error('Please enter mobile money phone number');
+          return;
+        }
+        
+        // Validate phone number
+        const phoneRegex = /^0[67][0-9]{8}$/;
+        if (!phoneRegex.test(phoneNumber)) {
+          toast.error('Invalid phone number format. Use 07xxxxxxxx or 06xxxxxxxx');
+          return;
+        }
+        
+        try {
+          toast.info(`Initiating ${paymentForm.payment_method} payment...`);
+          
+          // Use mobilePaymentService (same as BillingDashboard)
+          const paymentRequest: MobilePaymentRequest = {
+            phoneNumber,
+            amount: amountPaid,
+            invoiceId: patientId, // Use patient ID as invoice ID for now
+            paymentMethod: paymentForm.payment_method as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
+            description: `Consultation fee for ${registerForm.full_name}`
+          };
+
+          const response = await mobilePaymentService.initiatePayment(paymentRequest);
+
+          if (response.success && response.transactionId) {
+            toast.success(
+              `📱 ${paymentForm.payment_method} payment request sent to ${phoneNumber}!\n` +
+              `Transaction ID: ${response.transactionId.slice(-8)}\n` +
+              `Patient will receive payment prompt on their phone.\n` +
+              `Registration will complete automatically once payment is confirmed.`,
+              { duration: 6000 }
+            );
+            
+            // Payment is pending - webhook will confirm it and complete registration
+            console.log('Mobile payment initiated:', {
+              transactionId: response.transactionId,
+              orderId: response.orderId,
+              patientId: patientId,
+              status: response.status
+            });
+            
+            // Close dialog - webhook will handle the rest
+            setShowRegistrationPaymentDialog(false);
+            setRegisterForm({
+              full_name: '',
+              date_of_birth: '',
+              gender: '',
+              phone: '',
+              email: '',
+              blood_group: '',
+              address: '',
+              insurance_company_id: '',
+              insurance_number: ''
+            });
+            fetchData(false);
+            return; // Exit here for mobile payments
+          } else {
+            toast.error(response.message || 'Failed to initiate mobile payment');
+            return;
+          }
+          
+        } catch (error) {
+          console.error('Mobile money payment error:', error);
+          toast.error('Failed to initiate mobile money payment');
+          return;
+        }
+      }
+
+      // For non-mobile payments: Create payment record and complete registration immediately
       const paymentData = {
         patient_id: patientId,
         amount: amountPaid,
@@ -1030,7 +1345,9 @@ export default function ReceptionistDashboard() {
         phone: '',
         email: '',
         blood_group: '',
-        address: ''
+        address: '',
+        insurance_company_id: '',
+        insurance_number: ''
       });
       
       // Refresh the dashboard data to show the new patient
@@ -1511,6 +1828,39 @@ export default function ReceptionistDashboard() {
               <Input id="address" required value={registerForm.address} onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })} placeholder="Street, City" />
             </div>
             
+            {/* Insurance Information */}
+            <div className="border-t pt-4 mt-4">
+              <h4 className="font-medium mb-3 text-sm text-gray-700">Insurance Information (Optional)</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="insurance_company_id">Insurance Company</Label>
+                  <select
+                    id="insurance_company_id"
+                    className="w-full p-2 border rounded-md"
+                    value={registerForm.insurance_company_id}
+                    onChange={(e) => setRegisterForm({ ...registerForm, insurance_company_id: e.target.value })}
+                  >
+                    <option value="">No Insurance</option>
+                    {insuranceCompanies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="insurance_number">Insurance Number</Label>
+                  <Input 
+                    id="insurance_number" 
+                    value={registerForm.insurance_number} 
+                    onChange={(e) => setRegisterForm({ ...registerForm, insurance_number: e.target.value })} 
+                    placeholder="e.g., NHIF-123456"
+                    disabled={!registerForm.insurance_company_id}
+                  />
+                </div>
+              </div>
+            </div>
+            
             {/* Option to book with appointment */}
             <div className="border-t pt-4 mt-4">
               <div className="flex items-center space-x-2 mb-3">
@@ -1569,7 +1919,7 @@ export default function ReceptionistDashboard() {
                       </option>
                       {departmentDoctors.map((doc) => (
                         <option key={doc.id} value={doc.id}>
-                          Dr. {doc.full_name}
+                          Dr. {doc.name || doc.full_name}
                         </option>
                       ))}
                     </select>
@@ -1922,11 +2272,32 @@ export default function ReceptionistDashboard() {
                 value={paymentForm.payment_method}
                 onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
               >
-                <option value="Cash">Cash</option>
-                <option value="Mobile Money">Mobile Money</option>
-                <option value="Card">Card</option>
+                <option value="Cash">💵 Cash</option>
+                <option value="Card">💳 Card</option>
+                <option value="M-Pesa">📱 M-Pesa</option>
+                <option value="Airtel Money">📱 Airtel Money</option>
+                <option value="Tigo Pesa">📱 Tigo Pesa</option>
+                <option value="Halopesa">📱 Halopesa</option>
               </select>
             </div>
+
+            {/* Mobile Money Phone Number Input */}
+            {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method) && (
+              <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <Label htmlFor="apt_mobile_phone">Mobile Money Phone Number *</Label>
+                <Input
+                  id="apt_mobile_phone"
+                  type="tel"
+                  placeholder="0712345678"
+                  pattern="^0[67][0-9]{8}$"
+                  title="Enter valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)"
+                  required
+                />
+                <p className="text-xs text-blue-600">
+                  📱 Payment request will be sent to this number
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="amount_paid">Amount Paid</Label>
@@ -2003,17 +2374,54 @@ export default function ReceptionistDashboard() {
 
             <div className="space-y-2">
               <Label htmlFor="reg_payment_method">Payment Method</Label>
-              <select
-                id="reg_payment_method"
-                className="w-full p-2 border rounded-md"
-                value={paymentForm.payment_method}
-                onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
-              >
-                <option value="Cash">Cash</option>
-                <option value="Mobile Money">Mobile Money</option>
-                <option value="Card">Card</option>
-              </select>
+              {registerForm.insurance_company_id ? (
+                <>
+                  <select
+                    id="reg_payment_method"
+                    className="w-full p-2 border rounded-md bg-blue-50"
+                    value="Insurance"
+                    disabled
+                  >
+                    <option value="Insurance">🛡️ Insurance (Patient has insurance)</option>
+                  </select>
+                  <p className="text-sm text-blue-600">
+                    ℹ️ This patient has insurance. Payment will be processed through insurance claim.
+                  </p>
+                </>
+              ) : (
+                <select
+                  id="reg_payment_method"
+                  className="w-full p-2 border rounded-md"
+                  value={paymentForm.payment_method}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+                >
+                  <option value="Cash">💵 Cash</option>
+                  <option value="Card">💳 Card</option>
+                  <option value="M-Pesa">📱 M-Pesa</option>
+                  <option value="Airtel Money">📱 Airtel Money</option>
+                  <option value="Tigo Pesa">📱 Tigo Pesa</option>
+                  <option value="Halopesa">📱 Halopesa</option>
+                </select>
+              )}
             </div>
+
+            {/* Mobile Money Phone Number Input */}
+            {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method) && !registerForm.insurance_company_id && (
+              <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <Label htmlFor="mobile_phone">Mobile Money Phone Number *</Label>
+                <Input
+                  id="mobile_phone"
+                  type="tel"
+                  placeholder="0712345678"
+                  pattern="^0[67][0-9]{8}$"
+                  title="Enter valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)"
+                  required
+                />
+                <p className="text-xs text-blue-600">
+                  📱 Payment request will be sent to this number
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="reg_amount_paid">Amount Paid</Label>
@@ -2096,11 +2504,32 @@ export default function ReceptionistDashboard() {
                 value={paymentForm.payment_method}
                 onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
               >
-                <option value="Cash">Cash</option>
-                <option value="Mobile Money">Mobile Money</option>
-                <option value="Card">Card</option>
+                <option value="Cash">💵 Cash</option>
+                <option value="Card">💳 Card</option>
+                <option value="M-Pesa">📱 M-Pesa</option>
+                <option value="Airtel Money">📱 Airtel Money</option>
+                <option value="Tigo Pesa">📱 Tigo Pesa</option>
+                <option value="Halopesa">📱 Halopesa</option>
               </select>
             </div>
+
+            {/* Mobile Money Phone Number Input */}
+            {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method) && (
+              <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <Label htmlFor="ret_mobile_phone">Mobile Money Phone Number *</Label>
+                <Input
+                  id="ret_mobile_phone"
+                  type="tel"
+                  placeholder="0712345678"
+                  pattern="^0[67][0-9]{8}$"
+                  title="Enter valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)"
+                  required
+                />
+                <p className="text-xs text-blue-600">
+                  📱 Payment request will be sent to this number
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="ret_amount_paid">Amount Paid</Label>

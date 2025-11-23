@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -5,23 +6,44 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+
+// Eager load critical routes (login/landing)
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
-import AdminDashboard from "./pages/AdminDashboard";
-import DoctorDashboard from "./pages/DoctorDashboard";
-import PatientDashboard from "./pages/PatientDashboard";
-import LabDashboard from "./pages/LabDashboard";
-import PharmacyDashboard from "./pages/PharmacyDashboard";
-import BillingDashboard from "./pages/BillingDashboard";
-import NurseDashboard from "./pages/NurseDashboard";
-import ReceptionistDashboard from "./pages/ReceptionistDashboard";
-import DischargeDashboard from "./pages/DischargeDashboard";
-import MedicalServicesDashboard from "./pages/MedicalServicesDashboard";
-import ActivityLogs from "./pages/ActivityLogs";
-import PaymentSuccess from "./pages/PaymentSuccess";
-import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+// Lazy load dashboard routes for better initial load
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const DoctorDashboard = lazy(() => import("./pages/DoctorDashboard"));
+const PatientDashboard = lazy(() => import("./pages/PatientDashboard"));
+const LabDashboard = lazy(() => import("./pages/LabDashboard"));
+const PharmacyDashboard = lazy(() => import("./pages/PharmacyDashboard"));
+const BillingDashboard = lazy(() => import("./pages/BillingDashboard"));
+const NurseDashboard = lazy(() => import("./pages/NurseDashboard"));
+const ReceptionistDashboard = lazy(() => import("./pages/ReceptionistDashboard"));
+const DischargeDashboard = lazy(() => import("./pages/DischargeDashboard"));
+const MedicalServicesDashboard = lazy(() => import("./pages/MedicalServicesDashboard"));
+const ActivityLogs = lazy(() => import("./pages/ActivityLogs"));
+const PaymentSuccess = lazy(() => import("./pages/PaymentSuccess"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Optimized query client configuration
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30000, // 30 seconds
+      gcTime: 60000, // 1 minute (formerly cacheTime)
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+// Loading fallback component
+const LoadingFallback = () => (
+  <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+    <div className="animate-pulse text-lg text-gray-600">Loading...</div>
+  </div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -35,7 +57,8 @@ const App = () => (
         }}
       >
         <AuthProvider>
-          <Routes>
+          <Suspense fallback={<LoadingFallback />}>
+            <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route
@@ -131,6 +154,7 @@ const App = () => (
               element={<PaymentSuccess />}
             />
           </Routes>
+          </Suspense>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

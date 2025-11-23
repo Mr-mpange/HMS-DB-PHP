@@ -1,0 +1,87 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\LabTest;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+
+class LabTestController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = LabTest::with(['patient', 'doctor']);
+        
+        if ($request->has('patient_id')) {
+            $query->where('patient_id', $request->patient_id);
+        }
+        
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+        
+        if ($request->has('from')) {
+            $query->where('created_at', '>=', $request->from);
+        }
+        
+        if ($request->has('to')) {
+            $query->where('created_at', '<=', $request->to);
+        }
+        
+        $labTests = $query->orderBy('created_at', 'desc')->get();
+        
+        return response()->json(['labTests' => $labTests]);
+    }
+    
+    public function show($id)
+    {
+        $labTest = LabTest::with(['patient', 'doctor'])->findOrFail($id);
+        return response()->json(['labTest' => $labTest]);
+    }
+    
+    public function store(Request $request)
+    {
+        $request->validate([
+            'patient_id' => 'required|exists:patients,id',
+            'test_name' => 'required|string',
+            'test_type' => 'required|string',
+            'doctor_id' => 'required|exists:users,id',
+            'test_date' => 'required|date',
+        ]);
+        
+        $labTest = LabTest::create([
+            'id' => Str::uuid(),
+            'patient_id' => $request->patient_id,
+            'test_name' => $request->test_name,
+            'test_type' => $request->test_type,
+            'doctor_id' => $request->doctor_id,
+            'test_date' => $request->test_date,
+            'status' => $request->status ?? 'Pending',
+            'notes' => $request->notes,
+        ]);
+        
+        return response()->json(['labTest' => $labTest], 201);
+    }
+    
+    public function update(Request $request, $id)
+    {
+        $labTest = LabTest::findOrFail($id);
+        
+        $labTest->update($request->only([
+            'status',
+            'results',
+            'notes',
+            'completed_at'
+        ]));
+        
+        return response()->json(['labTest' => $labTest]);
+    }
+    
+    public function destroy($id)
+    {
+        $labTest = LabTest::findOrFail($id);
+        $labTest->delete();
+        
+        return response()->json(['message' => 'Lab test deleted successfully']);
+    }
+}

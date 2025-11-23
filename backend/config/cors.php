@@ -22,7 +22,13 @@ return [
     'allowed_origins' => [
         'https://hasetcompany.or.tz',
         'https://www.hasetcompany.or.tz',
-        'http://localhost:5173', // For local development
+        'http://localhost:5173', // Vite default
+        'http://localhost:8080', // Vite alternative
+        'http://localhost:8081', // Vite alternative
+        'http://localhost:3000', // React default
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:8080',
+        'http://127.0.0.1:8081',
     ],
 
     'allowed_origins_patterns' => [],

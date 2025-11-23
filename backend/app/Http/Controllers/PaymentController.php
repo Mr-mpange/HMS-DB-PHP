@@ -21,8 +21,23 @@ class PaymentController extends Controller
             $query->whereDate('payment_date', $request->date);
         }
 
+        // Support date range filtering
+        if ($request->has('from')) {
+            $fromDate = date('Y-m-d', strtotime($request->from));
+            $query->whereRaw('DATE(payment_date) >= ?', [$fromDate]);
+            \Log::info('Payment filter FROM:', ['from' => $request->from, 'parsed' => $fromDate]);
+        }
+
+        if ($request->has('to')) {
+            $toDate = date('Y-m-d', strtotime($request->to));
+            $query->whereRaw('DATE(payment_date) <= ?', [$toDate]);
+            \Log::info('Payment filter TO:', ['to' => $request->to, 'parsed' => $toDate]);
+        }
+
         $payments = $query->orderBy('payment_date', 'desc')
                          ->paginate($request->get('limit', 50));
+
+        \Log::info('Payments query result:', ['count' => $payments->count(), 'total' => $payments->total()]);
 
         return response()->json(['payments' => $payments->items(), 'total' => $payments->total()]);
     }
@@ -47,12 +62,12 @@ class PaymentController extends Controller
         ]);
 
         $validated['id'] = (string) Str::uuid();
-        $validated['status'] = 'Completed';
+        $validated['status'] = $request->status ?? 'Completed';
         
         $payment = Payment::create($validated);
 
         // Update invoice if linked
-        if ($validated['invoice_id']) {
+        if (isset($validated['invoice_id']) && $validated['invoice_id']) {
             $invoice = Invoice::find($validated['invoice_id']);
             if ($invoice) {
                 $invoice->paid_amount += $validated['amount'];

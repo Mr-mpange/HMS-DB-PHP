@@ -10,12 +10,17 @@ class PrescriptionItem extends Model
     use HasUuids;
 
     protected $fillable = [
-        'prescription_id', 'medication_name', 'dosage', 
+        'prescription_id', 'medication_id', 'medication_name', 'dosage', 
         'frequency', 'duration', 'quantity', 'instructions'
     ];
 
     public function prescription()
     {
         return $this->belongsTo(Prescription::class);
+    }
+
+    public function medication()
+    {
+        return $this->belongsTo(Medication::class);
     }
 }

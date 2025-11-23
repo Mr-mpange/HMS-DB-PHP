@@ -1,0 +1,260 @@
+🔄 QUICK UPDATE GUIDE FOR HOSTINGER
+====================================
+
+WHAT NEEDS TO BE UPDATED:
+--------------------------
+
+Only these files have changed:
+
+1. backend/routes/api.php
+   - Added missing routes (pharmacy, labs, consultations, etc.)
+   - Added activity logs routes
+   - Added prescriptions batch route
+   - Added patient search route
+
+2. backend/app/Http/Controllers/
+   - InvoiceController.php (NEW)
+   - LabTestController.php (NEW)
+   - AuthController.php (UPDATED)
+
+3. backend/app/Models/
+   - User.php (UPDATED - added UUID support)
+   - Setting.php (NEW)
+   - DepartmentFee.php (NEW)
+   - InsuranceCompany.php (NEW)
+
+4. backend/database/migrations/
+   - 2024_01_01_000001_create_hospital_tables.php (UPDATED)
+
+5. Frontend (if you rebuilt)
+   - src/contexts/AuthContext.tsx (UPDATED)
+   - dist/ folder (rebuilt frontend)
+
+OPTION 1: UPDATE VIA FILE MANAGER (Recommended)
+------------------------------------------------
+
+Step 1: Backup Current Files
+1. Login to Hostinger File Manager
+2. Navigate to public_html/api/
+3. Download these files as backup:
+   - routes/api.php
+   - app/Http/Controllers/AuthController.php
+
+Step 2: Upload Updated Backend Files
+1. From your local complete-deploy/api/ folder
+2. Upload to public_html/api/ (replace existing):
+
+   Routes:
+   ✅ routes/api.php
+
+   Controllers (NEW):
+   ✅ app/Http/Controllers/InvoiceController.php
+   ✅ app/Http/Controllers/LabTestController.php
+
+   Controllers (UPDATED):
+   ✅ app/Http/Controllers/AuthController.php
+
+   Models (NEW):
+   ✅ app/Models/Setting.php
+   ✅ app/Models/DepartmentFee.php
+   ✅ app/Models/InsuranceCompany.php
+
+   Models (UPDATED):
+   ✅ app/Models/User.php
+
+   Migrations (UPDATED):
+   ✅ database/migrations/2024_01_01_000001_create_hospital_tables.php
+
+Step 3: Upload Updated Frontend (if rebuilt)
+1. From your local complete-deploy/ folder
+2. Upload to public_html/ (replace existing):
+   ✅ index.html
+   ✅ assets/ folder (entire folder)
+
+Step 4: Run New Migrations (SSH)
+ssh into your server:
+```bash
+cd public_html/api
+php artisan migrate --force
+```
+
+This will create the new tables:
+- settings
+- department_fees
+
+Step 5: Clear Cache (SSH)
+```bash
+cd public_html/api
+php artisan config:clear
+php artisan cache:clear
+php artisan route:clear
+```
+
+Step 6: Test
+Visit: https://hasetcompany.or.tz/api/health
+Should return: {"status":"ok","database":"connected"}
+
+OPTION 2: UPDATE VIA FTP
+-------------------------
+
+Use FileZilla or any FTP client:
+
+1. Connect to your Hostinger FTP
+2. Navigate to public_html/api/
+3. Upload the same files listed in Option 1
+4. Follow Steps 4-6 above
+
+OPTION 3: FULL RE-UPLOAD (If you want to be safe)
+--------------------------------------------------
+
+1. Backup your current .env file:
+   - Download public_html/api/.env
+
+2. Delete everything in public_html/ EXCEPT:
+   - Keep nothing (we'll restore .env)
+
+3. Upload entire complete-deploy/ folder contents to public_html/
+
+4. Restore your .env:
+   - Upload your backed up .env to public_html/api/.env
+
+5. Run migrations:
+```bash
+cd public_html/api
+php artisan migrate --force
+```
+
+6. Clear cache:
+```bash
+php artisan config:clear
+php artisan cache:clear
+php artisan route:clear
+```
+
+QUICK FILE LIST TO UPLOAD:
+---------------------------
+
+Backend Files (to public_html/api/):
+├── routes/api.php
+├── app/Http/Controllers/
+│   ├── InvoiceController.php (NEW)
+│   ├── LabTestController.php (NEW)
+│   └── AuthController.php (UPDATED)
+├── app/Models/
+│   ├── User.php (UPDATED)
+│   ├── Setting.php (NEW)
+│   ├── DepartmentFee.php (NEW)
+│   └── InsuranceCompany.php (NEW)
+└── database/migrations/
+    └── 2024_01_01_000001_create_hospital_tables.php (UPDATED)
+
+Frontend Files (to public_html/):
+├── index.html (if rebuilt)
+└── assets/ (if rebuilt)
+
+VERIFICATION CHECKLIST:
+-----------------------
+
+After uploading, verify:
+
+✅ API Health Check:
+   https://hasetcompany.or.tz/api/health
+
+✅ Login Works:
+   https://hasetcompany.or.tz
+   Login with: admin@hasetcompany.or.tz / Admin@123
+
+✅ New Routes Work:
+   - Settings: GET /api/settings/consultation_fee
+   - Activity Logs: GET /api/activity
+   - Pharmacy: GET /api/pharmacy/medications
+   - Labs: GET /api/labs
+   - Consultations: POST /api/consultations
+
+✅ No Errors in Browser Console
+
+✅ All Dashboards Load:
+   - Admin Dashboard
+   - Doctor Dashboard
+   - Pharmacy Dashboard
+   - Lab Dashboard
+   - Receptionist Dashboard
+
+TROUBLESHOOTING:
+----------------
+
+If you see 500 errors:
+1. Check Laravel logs:
+   public_html/api/storage/logs/laravel.log
+
+2. Check file permissions:
+   - Folders: 755
+   - Files: 644
+
+3. Clear cache again:
+   php artisan config:clear
+   php artisan cache:clear
+   php artisan route:clear
+
+If routes not found:
+1. Verify api.php was uploaded correctly
+2. Check .htaccess exists in public_html/
+3. Clear route cache: php artisan route:clear
+
+If database errors:
+1. Run migrations: php artisan migrate --force
+2. Check .env database credentials
+3. Verify database exists in Hostinger panel
+
+ROLLBACK (If something goes wrong):
+------------------------------------
+
+1. Restore your backed up files
+2. Or re-upload from your previous deployment
+3. Run: php artisan migrate:rollback
+4. Then: php artisan migrate
+
+ESTIMATED TIME:
+---------------
+
+Option 1 (File Manager): 10-15 minutes
+Option 2 (FTP): 10-15 minutes
+Option 3 (Full Re-upload): 20-30 minutes
+
+RECOMMENDED APPROACH:
+---------------------
+
+Use Option 1 (File Manager) for quick updates
+- Fastest
+- Most precise
+- Less chance of errors
+- Only updates what changed
+
+IMPORTANT NOTES:
+----------------
+
+✅ Always backup .env before updating
+✅ Test on a staging environment first (if available)
+✅ Update during low-traffic hours
+✅ Keep a backup of working files
+✅ Clear cache after updating
+✅ Test all major features after update
+
+SUPPORT:
+--------
+
+If you encounter issues:
+1. Check Laravel logs
+2. Check browser console
+3. Verify all files uploaded correctly
+4. Ensure migrations ran successfully
+5. Clear all caches
+
+Need help? Check:
+- complete-deploy/ARCHITECTURE-NOTES.txt
+- complete-deploy/API-ENDPOINTS-VERIFIED.txt
+- complete-deploy/FINAL-DEPLOYMENT-CHECKLIST.txt
+
+Last Updated: November 21, 2025
+Update Type: Backend Routes + Controllers + Models
+Status: Ready to Deploy ✅

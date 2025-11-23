@@ -30,20 +30,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [rolesLoaded, setRolesLoaded] = useState(false);
   const navigate = useNavigate();
 
-  const fetchUserRoles = async (userId: string) => {
-    try {
-      console.log('Fetching user roles for user:', userId);
-      const { data } = await api.get('/auth/me');
-      console.log('User roles data received:', data);
-      if (data && data.user && data.user.roles) {
-        setRoles(data.user.roles as AppRole[]);
-        setPrimaryRole(data.user.primaryRole as AppRole || data.user.roles[0]);
-      }
-    } catch (error) {
-      console.error('Failed to fetch user roles:', error);
-    } finally {
-      setRolesLoaded(true); // Always set rolesLoaded
-    }
+  // Helper function to normalize role names
+  const normalizeRole = (role: string): AppRole => {
+    // Map backend role names to frontend role names
+    const roleMap: Record<string, AppRole> = {
+      'lab_technician': 'lab_tech',
+      'lab technician': 'lab_tech',
+      'labtechnician': 'lab_tech',
+      'labtech': 'lab_tech',
+    };
+    
+    const normalizedRole = roleMap[role.toLowerCase()] || role.toLowerCase();
+    return normalizedRole as AppRole;
   };
 
   useEffect(() => {
@@ -68,12 +66,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             console.log('User profile data received:', data);
             
             if (data && data.user) {
+              // Normalize the role name to handle backend inconsistencies
+              const userRole = normalizeRole(data.user.role);
+              
+              console.log('Original role from backend:', data.user.role);
+              console.log('Normalized role:', userRole);
+              
               const user: User = {
                 id: data.user.id,
                 email: data.user.email,
                 user_metadata: {
-                  full_name: data.user.full_name,
-                  role: data.user.role,
+                  full_name: data.user.name, // Laravel uses 'name' not 'full_name'
+                  role: userRole,
                 },
               };
               
@@ -85,9 +89,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               setUser(user);
               setSession(session);
               
-              // Fetch roles
-              console.log('Fetching user roles...');
-              await fetchUserRoles(data.user.id);
+              // Set roles (convert single role to array)
+              setRoles([userRole]);
+              setPrimaryRole(userRole);
+              setRolesLoaded(true);
             } else {
               // Invalid token
               console.log('Invalid token, removing from localStorage');
@@ -136,13 +141,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         // Store token
         localStorage.setItem('auth_token', data.token);
         
+        // Laravel returns 'role' (singular) and 'name', not 'roles' and 'full_name'
+        // Normalize the role name to handle backend inconsistencies
+        const userRole = normalizeRole(data.user.role);
+        
+        console.log('Original role from backend:', data.user.role);
+        console.log('Normalized role:', userRole);
+        
         // Set user and session
         const user: User = {
           id: data.user.id,
           email: data.user.email,
           user_metadata: {
-            full_name: data.user.full_name,
-            role: data.user.primaryRole || data.user.roles[0],
+            full_name: data.user.name, // Laravel uses 'name' not 'full_name'
+            role: userRole,
           },
         };
         
@@ -154,12 +166,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(user);
         setSession(session);
         
-        // Set roles from login response
-        setRoles(data.user.roles as AppRole[]);
-        setPrimaryRole(data.user.primaryRole as AppRole || data.user.roles[0]);
+        // Set roles from login response (convert single role to array)
+        setRoles([userRole]);
+        setPrimaryRole(userRole);
         setRolesLoaded(true);
         
         console.log('Login successful, user:', user);
+        console.log('User role set to:', userRole);
         return { error: null };
       }
       
@@ -217,8 +230,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const refreshRoles = async () => {
+    // Roles are now fetched with the user data, no separate fetch needed
     if (user) {
-      await fetchUserRoles(user.id);
+      try {
+        const { data } = await api.get('/auth/me');
+        if (data && data.user) {
+          // Normalize the role name
+          const userRole = normalizeRole(data.user.role);
+          console.log('Refreshed role - Original:', data.user.role, 'Normalized:', userRole);
+          setRoles([userRole]);
+          setPrimaryRole(userRole);
+        }
+      } catch (error) {
+        console.error('Failed to refresh roles:', error);
+      }
     }
   };
 

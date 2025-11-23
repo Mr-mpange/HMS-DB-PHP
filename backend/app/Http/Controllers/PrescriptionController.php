@@ -12,7 +12,7 @@ class PrescriptionController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Prescription::with(['patient', 'doctor', 'items']);
+        $query = Prescription::with(['patient', 'doctor', 'items.medication']);
 
         if ($request->has('patient_id')) {
             $query->where('patient_id', $request->patient_id);
@@ -30,7 +30,7 @@ class PrescriptionController extends Controller
 
     public function show($id)
     {
-        $prescription = Prescription::with(['patient', 'doctor', 'visit', 'items'])
+        $prescription = Prescription::with(['patient', 'doctor', 'visit', 'items.medication'])
                                    ->findOrFail($id);
         return response()->json(['prescription' => $prescription]);
     }
@@ -45,6 +45,7 @@ class PrescriptionController extends Controller
             'diagnosis' => 'nullable|string',
             'notes' => 'nullable|string',
             'items' => 'required|array',
+            'items.*.medication_id' => 'nullable|uuid|exists:medications,id',
             'items.*.medication_name' => 'required|string',
             'items.*.dosage' => 'required|string',
             'items.*.frequency' => 'required|string',

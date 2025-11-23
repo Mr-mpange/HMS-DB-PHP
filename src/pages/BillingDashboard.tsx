@@ -41,6 +41,9 @@ export default function BillingDashboard() {
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [claimInvoiceId, setClaimInvoiceId] = useState<string>('');
+  const [claimInsuranceId, setClaimInsuranceId] = useState<string>('');
+  const [claimAmount, setClaimAmount] = useState<string>('');
   const [paymentStatus, setPaymentStatus] = useState<string>('');
   const [transactionId, setTransactionId] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('');
@@ -267,7 +270,16 @@ export default function BillingDashboard() {
 
   const handleOpenPaymentDialog = (invoice: any) => {
     setSelectedInvoice(invoice);
-    setPaymentMethod('');
+    
+    // Check if patient has insurance - auto-select Insurance payment method
+    const patient = patients.find(p => p.id === invoice.patient_id);
+    if (patient?.insurance_company_id) {
+      setPaymentMethod('Insurance');
+      toast.info('Patient has insurance - Insurance payment method selected');
+    } else {
+      setPaymentMethod('');
+    }
+    
     setPaymentStatus('');
     setTransactionId('');
     setMobilePaymentProcessing(false);
@@ -311,10 +323,8 @@ export default function BillingDashboard() {
       setDialogOpen(false);
       setSelectedPatientId('');
       
-      // Wait a moment then refresh to ensure data is committed
-      setTimeout(() => {
-        fetchData();
-      }, 500);
+      // Add new invoice to local state
+      setRawInvoicesData(prev => [...prev, createdInvoice]);
     } catch (error: any) {
       console.error('Error creating invoice:', error);
       toast.error(`Failed to create invoice: ${error.message}`);
@@ -534,17 +544,21 @@ export default function BillingDashboard() {
 
     const paymentData = {
       invoice_id: selectedInvoice.id,
+      patient_id: selectedInvoice.patient_id,
       amount,
       payment_method: paymentMethod,
+      payment_date: new Date().toISOString(),
       reference_number: formData.get('referenceNumber') as string || null,
       notes: formData.get('notes') as string || null,
-      status: 'completed',
+      status: 'Completed',
     };
 
     try {
       await api.post('/payments', paymentData);
-    } catch (error) {
-      toast.error('Failed to record payment');
+    } catch (error: any) {
+      console.error('Payment error:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to record payment';
+      toast.error(errorMessage);
       return;
     }
 
@@ -559,6 +573,7 @@ export default function BillingDashboard() {
 
     const newPaidAmount = Number(selectedInvoice.paid_amount) + amount;
     const totalAmount = Number(selectedInvoice.total_amount);
+    const newBalance = totalAmount - newPaidAmount;
     const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
 
     try {
@@ -661,7 +676,13 @@ export default function BillingDashboard() {
     setPaymentDialogOpen(false);
     setSelectedInvoice(null);
     setPaymentMethod('');
-    fetchData();
+    
+    // Update local state instead of full refresh
+    setRawInvoicesData(prev => prev.map(inv => 
+      inv.id === selectedInvoice.id 
+        ? { ...inv, paid_amount: newPaidAmount, balance: newBalance, status: newStatus }
+        : inv
+    ));
   };
 
   if (loading) {
@@ -817,8 +838,9 @@ export default function BillingDashboard() {
 
         {/* Main Content with Tabs */}
         <Tabs defaultValue="invoices" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="invoices">Invoices & Payments</TabsTrigger>
+            <TabsTrigger value="payments">Today's Payments</TabsTrigger>
             <TabsTrigger value="insurance">Insurance Claims</TabsTrigger>
           </TabsList>
 
@@ -903,6 +925,102 @@ export default function BillingDashboard() {
                     </TableBody>
                   </Table>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Today's Payments Tab */}
+          <TabsContent value="payments" className="space-y-4">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <CardTitle>Today's Payments</CardTitle>
+                <CardDescription>
+                  All payments received today - {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {rawPaymentsData.length === 0 ? (
+                  <div className="text-center py-12">
+                    <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground font-medium">No payments received today</p>
+                    <p className="text-sm text-muted-foreground mt-1">Payments will appear here as they are processed</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-green-700 font-medium">Total Revenue Today</p>
+                          <p className="text-3xl font-bold text-green-800">TSh {stats.todayRevenue.toLocaleString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-green-700">Total Payments</p>
+                          <p className="text-2xl font-bold text-green-800">{rawPaymentsData.length}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Time</TableHead>
+                            <TableHead>Patient</TableHead>
+                            <TableHead>Phone</TableHead>
+                            <TableHead>Amount</TableHead>
+                            <TableHead>Payment Method</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Reference</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rawPaymentsData
+                            .sort((a, b) => {
+                              // Sort by created_at descending (newest first)
+                              const dateA = new Date(a.created_at || a.payment_date);
+                              const dateB = new Date(b.created_at || b.payment_date);
+                              return dateB.getTime() - dateA.getTime();
+                            })
+                            .map((payment) => (
+                            <TableRow key={payment.id}>
+                              <TableCell className="text-sm">
+                                {format(new Date(payment.created_at || payment.payment_date), 'h:mm a')}
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {payment.patient?.full_name || 'Unknown'}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {payment.patient?.phone || '-'}
+                              </TableCell>
+                              <TableCell className="font-semibold text-green-600">
+                                TSh {Number(payment.amount).toLocaleString()}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {payment.payment_method === 'M-Pesa' && '📱 M-Pesa'}
+                                  {payment.payment_method === 'Airtel Money' && '📱 Airtel Money'}
+                                  {payment.payment_method === 'Tigo Pesa' && '📱 Tigo Pesa'}
+                                  {payment.payment_method === 'Halopesa' && '📱 Halopesa'}
+                                  {payment.payment_method === 'Cash' && '💵 Cash'}
+                                  {payment.payment_method === 'Card' && '💳 Card'}
+                                  {payment.payment_method === 'Bank Transfer' && '🏦 Bank Transfer'}
+                                  {payment.payment_method === 'Insurance' && '🛡️ Insurance'}
+                                  {!['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa', 'Cash', 'Card', 'Bank Transfer', 'Insurance'].includes(payment.payment_method) && payment.payment_method}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {payment.payment_type || 'General'}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-mono">
+                                {payment.reference_number || '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1149,25 +1267,51 @@ export default function BillingDashboard() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
-                <Select name="paymentMethod" value={paymentMethod} onValueChange={setPaymentMethod} required>
-                  <SelectTrigger className={paymentMethod ? 'border-green-500' : 'border-red-500'}>
-                    <SelectValue placeholder="Select payment method" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Cash">💵 Cash</SelectItem>
-                    <SelectItem value="Card">💳 Debit/Credit Card</SelectItem>
-                    <SelectItem value="M-Pesa">📱 M-Pesa</SelectItem>
-                    <SelectItem value="Airtel Money">📱 Airtel Money</SelectItem>
-                    <SelectItem value="Tigo Pesa">📱 Tigo Pesa</SelectItem>
-                    <SelectItem value="Halopesa">📱 Halopesa</SelectItem>
-                    <SelectItem value="Bank Transfer">🏦 Bank Transfer</SelectItem>
-                    <SelectItem value="Cheque">📄 Cheque</SelectItem>
-                    <SelectItem value="Insurance">🛡️ Insurance</SelectItem>
-                  </SelectContent>
-                </Select>
-                {!paymentMethod && (
-                  <p className="text-sm text-red-600">Please select a payment method</p>
-                )}
+                {(() => {
+                  const patient = patients.find(p => p.id === selectedInvoice?.patient_id);
+                  const hasInsurance = patient?.insurance_company_id;
+                  
+                  return (
+                    <>
+                      <Select 
+                        name="paymentMethod" 
+                        value={paymentMethod} 
+                        onValueChange={setPaymentMethod} 
+                        required
+                        disabled={hasInsurance}
+                      >
+                        <SelectTrigger className={paymentMethod ? 'border-green-500' : 'border-red-500'}>
+                          <SelectValue placeholder="Select payment method" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hasInsurance ? (
+                            <SelectItem value="Insurance">🛡️ Insurance (Patient has insurance)</SelectItem>
+                          ) : (
+                            <>
+                              <SelectItem value="Cash">💵 Cash</SelectItem>
+                              <SelectItem value="Card">💳 Debit/Credit Card</SelectItem>
+                              <SelectItem value="M-Pesa">📱 M-Pesa</SelectItem>
+                              <SelectItem value="Airtel Money">📱 Airtel Money</SelectItem>
+                              <SelectItem value="Tigo Pesa">📱 Tigo Pesa</SelectItem>
+                              <SelectItem value="Halopesa">📱 Halopesa</SelectItem>
+                              <SelectItem value="Bank Transfer">🏦 Bank Transfer</SelectItem>
+                              <SelectItem value="Cheque">📄 Cheque</SelectItem>
+                              <SelectItem value="Insurance">🛡️ Insurance</SelectItem>
+                            </>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {hasInsurance && (
+                        <p className="text-sm text-blue-600">
+                          ℹ️ This patient has insurance. Payment must be processed through insurance claim.
+                        </p>
+                      )}
+                      {!paymentMethod && !hasInsurance && (
+                        <p className="text-sm text-red-600">Please select a payment method</p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Mobile Money Fields */}
@@ -1379,10 +1523,14 @@ export default function BillingDashboard() {
 
                 // Save claim to database
                 try {
-                  await api.post('/insurance/claims', claimData);
+                  const response = await api.post('/insurance/claims', claimData);
                   toast.success('Insurance claim submitted successfully');
                   setClaimDialogOpen(false);
-                  fetchData();
+                  
+                  // Add new claim to local state
+                  if (response.data.claim) {
+                    setRawClaimsData(prev => [...prev, response.data.claim]);
+                  }
                 } catch (error: any) {
                   console.error('Database error:', error);
                   toast.error(`Failed to save claim: ${error.message}`);
@@ -1396,13 +1544,41 @@ export default function BillingDashboard() {
             }} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="invoiceId">Invoice</Label>
-                <Select name="invoiceId" required>
+                <Select name="invoiceId" value={claimInvoiceId} onValueChange={(value) => {
+                  setClaimInvoiceId(value);
+                  // Auto-fill claim amount with invoice total
+                  console.log('Selected invoice ID:', value);
+                  console.log('All invoices:', invoices);
+                  
+                  const selectedInvoice = invoices
+                    .flatMap(pd => pd.invoices || [])
+                    .find(inv => inv.id === value);
+                  
+                  console.log('Found invoice:', selectedInvoice);
+                  
+                  if (selectedInvoice) {
+                    const amount = Number(selectedInvoice.total_amount || 0).toString();
+                    console.log('Setting claim amount to:', amount);
+                    setClaimAmount(amount);
+                  }
+                }} required>
                   <SelectTrigger>
                     <SelectValue placeholder="Select invoice" />
                   </SelectTrigger>
                   <SelectContent>
-                    {invoices.filter(patientData => patientData.patient?.insurance_company_id && patientData.status !== 'Paid')
-                      .map((patientData, index) => (
+                    {(() => {
+                      const eligibleInvoices = invoices.filter(patientData => 
+                        patientData.patient?.insurance_company_id && patientData.status !== 'Paid'
+                      );
+                      
+                      console.log('Eligible patients for claims:', eligibleInvoices.length);
+                      console.log('Sample patient data:', eligibleInvoices[0]);
+                      
+                      if (eligibleInvoices.length === 0) {
+                        return <SelectItem value="no-invoices" disabled>No eligible invoices (patients must have insurance)</SelectItem>;
+                      }
+                      
+                      return eligibleInvoices.map((patientData, index) => (
                         <Fragment key={patientData.patient.id || index}>
                           {patientData.invoices
                             .filter(inv => inv.status !== 'Paid')
@@ -1412,13 +1588,14 @@ export default function BillingDashboard() {
                               </SelectItem>
                             ))}
                         </Fragment>
-                      ))}
+                      ));
+                    })()}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="insuranceCompanyId">Insurance Company</Label>
-                <Select name="insuranceCompanyId" required>
+                <Select name="insuranceCompanyId" value={claimInsuranceId} onValueChange={setClaimInsuranceId} required>
                   <SelectTrigger>
                     <SelectValue placeholder="Select insurance company" />
                   </SelectTrigger>
@@ -1430,7 +1607,7 @@ export default function BillingDashboard() {
                         </SelectItem>
                       ))
                     ) : (
-                      <SelectItem value="" disabled>
+                      <SelectItem value="no-insurance" disabled>
                         No insurance companies available
                       </SelectItem>
                     )}
@@ -1444,8 +1621,15 @@ export default function BillingDashboard() {
                   name="claimAmount"
                   type="number"
                   step="0.01"
+                  value={claimAmount}
+                  readOnly
+                  disabled
+                  className="bg-gray-100"
                   required
                 />
+                <p className="text-xs text-muted-foreground">
+                  Auto-filled from invoice total (read-only).
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="notes">Notes</Label>
