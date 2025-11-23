@@ -56,7 +56,8 @@ export default function NurseDashboard() {
     pendingVitals: 0,
     completedTasks: 0
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Initial load only
+  const [refreshing, setRefreshing] = useState(false); // Background refresh
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [pendingVisits, setPendingVisits] = useState<any[]>([]);
@@ -270,12 +271,14 @@ export default function NurseDashboard() {
     };
   }, [user]);
 
-  const fetchData = async (showLoadingIndicator = true) => {
+  const fetchData = async (isInitialLoad = true) => {
     if (!user) return;
 
     try {
-      if (showLoadingIndicator) {
+      if (isInitialLoad) {
         setLoading(true);
+      } else {
+        setRefreshing(true);
       }
 
       // Fetch visits waiting for nurse - don't filter by nurse_status in API call
@@ -347,6 +350,7 @@ export default function NurseDashboard() {
       toast.error(`Failed to load dashboard data: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -367,6 +371,16 @@ export default function NurseDashboard() {
   return (
     <DashboardLayout title="Nurse Dashboard">
       <div className="space-y-8">
+        {/* Background Refresh Indicator */}
+        {refreshing && (
+          <div className="fixed top-4 right-4 z-50 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 shadow-sm animate-in slide-in-from-right-2">
+            <div className="flex items-center gap-2 text-sm text-blue-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Updating...</span>
+            </div>
+          </div>
+        )}
+
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200">
           <div className="flex items-center gap-3">

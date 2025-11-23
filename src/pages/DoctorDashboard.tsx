@@ -61,7 +61,8 @@ export default function DoctorDashboard() {
   const [pendingVisits, setPendingVisits] = useState<any[]>([]);
   const [completedVisits, setCompletedVisits] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalAppointments: 0, todayAppointments: 0, totalPatients: 0, pendingConsultations: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // Initial load only
+  const [refreshing, setRefreshing] = useState(false); // Background refresh
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showLabResults, setShowLabResults] = useState(false);
   const [showPrescriptions, setShowPrescriptions] = useState(false);
@@ -1552,7 +1553,7 @@ export default function DoctorDashboard() {
     }
   };
 
-  const fetchData = async (showLoader = false) => {
+  const fetchData = async (isInitialLoad = false) => {
     if (!user) {
       console.log('No user found, skipping data fetch');
       return;
@@ -1560,9 +1561,11 @@ export default function DoctorDashboard() {
 
     console.log('Fetching doctor dashboard data for user:', user.id);
     
-    // Only show loading spinner on initial load, not on polling updates
-    if (showLoader) {
+    // Only show full loading screen on initial load
+    if (isInitialLoad) {
       setLoading(true);
+    } else {
+      setRefreshing(true);
     }
 
     try {
@@ -1757,6 +1760,7 @@ export default function DoctorDashboard() {
       toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
       setIsInitialLoad(false);
     }
   };
@@ -1822,6 +1826,16 @@ export default function DoctorDashboard() {
   return (
     <DashboardLayout title="Doctor Dashboard">
       <div className="space-y-8">
+        {/* Background Refresh Indicator */}
+        {refreshing && (
+          <div className="fixed top-4 right-4 z-50 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 shadow-sm animate-in slide-in-from-right-2">
+            <div className="flex items-center gap-2 text-sm text-blue-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Updating...</span>
+            </div>
+          </div>
+        )}
+
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-4">
           <Card className="border-primary/20 shadow-lg">

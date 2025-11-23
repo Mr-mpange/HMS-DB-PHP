@@ -74,7 +74,8 @@ export default function PharmacyDashboard() {
 
   const [medications, setMedications] = useState<Medication[]>([]);
   const [stats, setStats] = useState({ pendingPrescriptions: 0, lowStock: 0, totalMedications: 0 });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Initial load only
+  const [refreshing, setRefreshing] = useState(false); // Background refresh
   const [medicationDialogOpen, setMedicationDialogOpen] = useState<boolean>(false);
   const [editingMedication, setEditingMedication] = useState<Medication | null>(null);
   const [stockDialogOpen, setStockDialogOpen] = useState<boolean>(false);
@@ -97,18 +98,20 @@ export default function PharmacyDashboard() {
     doctor_profile: UserProfile | null;
   }
 
-  const loadPharmacyData = async (showToast = true) => {
+  const loadPharmacyData = async (isInitialLoad = true) => {
     if (!user) {
       const errorMsg = 'User not authenticated';
       setLoadError(errorMsg);
-      if (showToast) toast.error(errorMsg);
+      if (isInitialLoad) toast.error(errorMsg);
       return;
     }
 
     try {
-      // Only show loading spinner on initial load, not on background refresh
-      if (showToast) {
+      // Only show full loading screen on initial load
+      if (isInitialLoad) {
         setLoading(true);
+      } else {
+        setRefreshing(true);
       }
       setLoadError(null);
 
@@ -163,16 +166,17 @@ export default function PharmacyDashboard() {
       const errorMsg = error instanceof Error ? error.message : 'Failed to load pharmacy data';
       setLoadError(errorMsg);
       
-      if (showToast) {
+      if (isInitialLoad) {
         toast.error(errorMsg, {
           action: {
             label: 'Retry',
-            onClick: () => loadPharmacyData()
+            onClick: () => loadPharmacyData(true)
           }
         });
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -180,11 +184,11 @@ export default function PharmacyDashboard() {
   useEffect(() => {
     if (!user) return;
     
-    loadPharmacyData();
+    loadPharmacyData(true); // Initial load with loading screen
 
     // Set up polling instead of real-time subscriptions (every 30 seconds)
     const intervalId = setInterval(() => {
-      loadPharmacyData(false); // Refresh without toast
+      loadPharmacyData(false); // Background refresh without loading screen
     }, 30000);
 
     // Cleanup interval on unmount
@@ -571,7 +575,7 @@ export default function PharmacyDashboard() {
     toast.success('Stock updated successfully');
     setStockDialogOpen(false);
     setSelectedMedication(null);
-    loadPharmacyData();
+    loadPharmacyData(false); // Background refresh
   };
 
   const handleSaveMedication = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -625,7 +629,7 @@ export default function PharmacyDashboard() {
     toast.success(`Medication ${editingMedication ? 'updated' : 'added'} successfully`);
     setMedicationDialogOpen(false);
     setEditingMedication(null);
-    loadPharmacyData();
+    loadPharmacyData(false); // Background refresh
   };
 
   const openStockDialog = (medication: any) => {
@@ -759,7 +763,7 @@ export default function PharmacyDashboard() {
       setImportDialogOpen(false);
       setImportFile(null);
       setImportPreview([]);
-      loadPharmacyData();
+      loadPharmacyData(false); // Background refresh
     } catch (error: any) {
       console.error('Bulk import error:', error);
       toast.error(`Failed to import medications: ${error.message}`);
@@ -935,6 +939,16 @@ export default function PharmacyDashboard() {
   return (
     <DashboardLayout title="Pharmacy Dashboard">
       <div className="space-y-6">
+        {/* Background Refresh Indicator */}
+        {refreshing && (
+          <div className="fixed top-4 right-4 z-50 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 shadow-sm animate-in slide-in-from-right-2">
+            <div className="flex items-center gap-2 text-sm text-blue-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Updating...</span>
+            </div>
+          </div>
+        )}
+
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>

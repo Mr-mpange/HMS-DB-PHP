@@ -17,24 +17,31 @@ import { format } from 'date-fns';
 export default function LabDashboard() {
   const [labTests, setLabTests] = useState<any[]>([]);
   const [stats, setStats] = useState({ pending: 0, inProgress: 0, completed: 0 });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Initial load only
+  const [refreshing, setRefreshing] = useState(false); // Background refresh
   const [selectedPatientTests, setSelectedPatientTests] = useState<any[]>([]);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchResults, setBatchResults] = useState<Record<string, any>>({});
   const [groupedTests, setGroupedTests] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
-    fetchData();
+    fetchData(true); // Initial load with loading screen
 
     // Use polling instead of realtime subscriptions
-    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
+    const interval = setInterval(() => fetchData(false), 30000); // Background refresh every 30 seconds
 
     return () => {
       clearInterval(interval);
     };
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (isInitialLoad = true) => {
+    if (isInitialLoad) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+    
     try {
       const { data } = await api.get('/labs?limit=50');
       const testsData = data.labTests || data.tests || [];
@@ -87,6 +94,7 @@ export default function LabDashboard() {
       toast.error('Failed to load lab tests');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -363,6 +371,16 @@ export default function LabDashboard() {
   return (
     <DashboardLayout title="Laboratory Dashboard">
       <div className="space-y-8">
+        {/* Background Refresh Indicator */}
+        {refreshing && (
+          <div className="fixed top-4 right-4 z-50 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 shadow-sm animate-in slide-in-from-right-2">
+            <div className="flex items-center gap-2 text-sm text-blue-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Updating...</span>
+            </div>
+          </div>
+        )}
+
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="border-yellow-200 shadow-lg">

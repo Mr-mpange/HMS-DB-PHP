@@ -46,7 +46,8 @@ export default function ReceptionistDashboard() {
   const [insuranceCompanies, setInsuranceCompanies] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true); // Initial load only
+  const [refreshing, setRefreshing] = useState<boolean>(false); // Background refresh
   const [stats, setStats] = useState<{
     todayAppointments: number;
     pendingAppointments: number;
@@ -135,12 +136,12 @@ export default function ReceptionistDashboard() {
   useEffect(() => {
     if (!user) return;
     
-    fetchData();
+    fetchData(true); // Initial load with loading screen
     fetchConsultationFee();
 
     // Set up polling instead of real-time subscriptions (every 30 seconds)
     const intervalId = setInterval(() => {
-      fetchData(false); // Background refresh without loading indicator
+      fetchData(false); // Background refresh without loading screen
     }, 30000);
 
     // Cleanup interval on unmount
@@ -149,11 +150,13 @@ export default function ReceptionistDashboard() {
     };
   }, [user]);
 
-  const fetchData = async (showLoadingIndicator = true) => {
+  const fetchData = async (isInitialLoad = true) => {
     if (!user) return;
 
-    if (showLoadingIndicator) {
+    if (isInitialLoad) {
       setLoading(true);
+    } else {
+      setRefreshing(true);
     }
     try {
       const today = new Date().toISOString().split('T')[0];
@@ -387,6 +390,7 @@ export default function ReceptionistDashboard() {
       toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -1464,6 +1468,16 @@ export default function ReceptionistDashboard() {
     <>
       <DashboardLayout title="Receptionist Dashboard">
         <div className="space-y-8">
+          {/* Background Refresh Indicator */}
+          {refreshing && (
+            <div className="fixed top-4 right-4 z-50 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 shadow-sm animate-in slide-in-from-right-2">
+              <div className="flex items-center gap-2 text-sm text-blue-700">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <span>Updating...</span>
+              </div>
+            </div>
+          )}
+
 
           {/* Welcome Section */}
           <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-lg border border-green-200">
