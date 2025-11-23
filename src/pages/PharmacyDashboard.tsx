@@ -20,7 +20,8 @@ import api from '@/lib/api';
 interface Medication {
   id: string;
   name: string;
-  quantity_in_stock: number;
+  stock_quantity: number;
+  quantity_in_stock?: number; // Legacy field for compatibility
   reorder_level: number;
   [key: string]: any;
 }
@@ -145,7 +146,7 @@ export default function PharmacyDashboard() {
       setMedications(medicationsData || []);
 
       const pending = (prescriptionsData || []).filter(p => p.status === 'Active' || p.status === 'Pending').length;
-      const lowStock = (medicationsData || []).filter(m => m.quantity_in_stock <= m.reorder_level).length;
+      const lowStock = (medicationsData || []).filter(m => (m.stock_quantity || m.quantity_in_stock || 0) <= m.reorder_level).length;
 
       setStats({
         pendingPrescriptions: pending,
@@ -390,7 +391,8 @@ export default function PharmacyDashboard() {
       // STEP 2: Update medication stock
       for (const medDetail of medicationDetails) {
         const dispensedQuantity = medDetail.prescribed_quantity;
-        const newStock = medDetail.quantity_in_stock - dispensedQuantity;
+        const currentStock = medDetail.stock_quantity || medDetail.quantity_in_stock || 0;
+        const newStock = currentStock - dispensedQuantity;
         
         if (newStock < 0) {
           toast.error(`Insufficient stock for ${medDetail.name}`);
@@ -399,14 +401,15 @@ export default function PharmacyDashboard() {
             medication_id: medDetail.id,
             medication_name: medDetail.name,
             required: dispensedQuantity,
-            available: medDetail.quantity_in_stock
+            available: currentStock
           });
           return;
         }
         
         try {
           await api.put(`/pharmacy/medications/${medDetail.id}`, {
-            quantity_in_stock: newStock
+            stock_quantity: newStock,
+            quantity_in_stock: newStock // Send both for compatibility
           });
         } catch (error: any) {
           console.error('Error updating stock:', error);
@@ -555,7 +558,10 @@ export default function PharmacyDashboard() {
     }
 
     try {
-      await api.put(`/pharmacy/medications/${selectedMedication.id}`, { quantity_in_stock: newQuantity });
+      await api.put(`/pharmacy/medications/${selectedMedication.id}`, { 
+        stock_quantity: newQuantity,
+        quantity_in_stock: newQuantity 
+      });
     } catch (error: any) {
       toast.error('Failed to update stock');
       return;

@@ -6,10 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class Setting extends Model
 {
-    protected $fillable = [
-        'key',
-        'value',
-        'description',
+    protected $fillable = ['key', 'value', 'description'];
+    
+    protected $casts = [
+        'value' => 'string',
     ];
     
     public $incrementing = false;

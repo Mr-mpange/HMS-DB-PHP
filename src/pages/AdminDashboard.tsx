@@ -33,7 +33,8 @@ import {
   FileSearch,
   CheckCircle,
   Stethoscope as StethoscopeIcon,
-  FileText as FileTextIcon
+  FileText as FileTextIcon,
+  Image as ImageIcon
 } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -1082,6 +1083,10 @@ export default function AdminDashboard() {
   
   // Settings state
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showLogoDialog, setShowLogoDialog] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [departments, setDepartments] = useState<any[]>([]);
   const [systemSettings, setSystemSettings] = useState({
     consultation_fee: '50000',
@@ -1111,6 +1116,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     fetchData();
     fetchSettings();
+    fetchLogo();
     
     // Real-time updates would be implemented with Socket.io
     // For now, we'll use polling or manual refresh
@@ -1179,10 +1185,13 @@ export default function AdminDashboard() {
       
       // Fetch settings from backend
       try {
+        console.log('🔄 Fetching settings from API...');
         const settingsRes = await api.get('/settings');
+        console.log('📦 Settings API response:', settingsRes.data);
         
         // Backend returns settings as an array
         const settingsArray = settingsRes.data.settings || [];
+        console.log('📋 Settings array:', settingsArray);
         
         // Start with defaults
         const settingsObj: any = {
@@ -1198,16 +1207,21 @@ export default function AdminDashboard() {
         
         // Convert array to object, overwriting defaults
         if (Array.isArray(settingsArray) && settingsArray.length > 0) {
+          console.log(`✅ Processing ${settingsArray.length} settings...`);
           settingsArray.forEach((setting: any) => {
             if (setting && setting.key) {
+              console.log(`  - ${setting.key}: "${setting.value}"`);
               settingsObj[setting.key] = setting.value || '';
             }
           });
+        } else {
+          console.warn('⚠️ Settings array is empty or not an array');
         }
         
         setSystemSettings(settingsObj);
         console.log('✓ Settings loaded:', settingsObj);
       } catch (error) {
+        console.error('❌ Error fetching settings:', error);
         console.warn('Settings not found, using defaults');
         // Use defaults if settings don't exist yet
         setSystemSettings({
@@ -1239,6 +1253,74 @@ export default function AdminDashboard() {
     } catch (error) {
       console.error('Error fetching settings:', error);
       toast.error('Failed to load settings');
+    }
+  };
+
+  const fetchLogo = async () => {
+    try {
+      const response = await api.get('/settings/logo');
+      if (response.data.logo_url) {
+        setLogoUrl(response.data.logo_url);
+        setLogoPreview(response.data.logo_url);
+      }
+    } catch (error) {
+      console.log('No custom logo set');
+    }
+  };
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image size must be less than 2MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setLogoPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleLogoUpload = async () => {
+    if (!logoPreview) {
+      toast.error('Please select an image first');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      await api.post('/settings/logo', { logo: logoPreview });
+      setLogoUrl(logoPreview);
+      
+      // Update favicon immediately
+      let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.head.appendChild(link);
+      }
+      link.href = logoPreview;
+      
+      toast.success('Logo updated successfully!');
+      setShowLogoDialog(false);
+      
+      // Reload page to update logo everywhere
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+    } catch (error: any) {
+      console.error('Error uploading logo:', error);
+      toast.error('Failed to upload logo');
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -2107,10 +2189,20 @@ export default function AdminDashboard() {
                 </CardTitle>
                 <CardDescription>Configure consultation fees and system preferences</CardDescription>
               </div>
-              <Button onClick={() => setShowSettingsDialog(true)} className="gap-2">
-                <Edit className="h-4 w-4" />
-                Manage Settings
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline"
+                  onClick={() => setShowLogoDialog(true)} 
+                  className="gap-2"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                  Logo & Branding
+                </Button>
+                <Button onClick={() => setShowSettingsDialog(true)} className="gap-2">
+                  <Edit className="h-4 w-4" />
+                  Manage Settings
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -2691,6 +2783,31 @@ export default function AdminDashboard() {
             </DialogHeader>
 
             <div className="space-y-6 py-4 overflow-y-auto flex-1 px-6 -mx-6">
+              {/* Logo Upload Link */}
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <ImageIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-blue-900">Hospital Logo & Branding</h4>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Upload your hospital logo to customize the system appearance
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => {
+                        setShowSettingsDialog(false);
+                        setShowLogoDialog(true);
+                      }}
+                    >
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                      Manage Logo
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              
               {/* General Settings */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2">General Settings</h3>
@@ -2930,6 +3047,102 @@ export default function AdminDashboard() {
                   <>
                     <DollarSign className="h-4 w-4 mr-2" />
                     Save Settings
+                  </>
+                )}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Logo Upload Dialog */}
+        <Dialog open={showLogoDialog} onOpenChange={setShowLogoDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5" />
+                Hospital Logo & Branding
+              </DialogTitle>
+              <DialogDescription>
+                Upload your hospital logo. It will be displayed throughout the system.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              {/* Current Logo */}
+              {logoUrl && (
+                <div>
+                  <Label>Current Logo</Label>
+                  <div className="mt-2 p-6 border rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+                    <div className="relative">
+                      <img 
+                        src={logoUrl} 
+                        alt="Hospital Logo" 
+                        className="h-32 w-32 object-cover rounded-full shadow-lg border-4 border-white ring-2 ring-gray-200"
+                      />
+                      <div className="absolute -bottom-2 -right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full shadow">
+                        Active
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Preview */}
+              {logoPreview && logoPreview !== logoUrl && (
+                <div>
+                  <Label>Preview</Label>
+                  <div className="mt-2 p-6 border-2 border-dashed border-blue-300 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
+                    <div className="relative">
+                      <img 
+                        src={logoPreview} 
+                        alt="Logo Preview" 
+                        className="h-32 w-32 object-cover rounded-full shadow-lg border-4 border-white ring-2 ring-blue-300 animate-pulse"
+                      />
+                      <div className="absolute -bottom-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full shadow">
+                        Preview
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Upload */}
+              <div className="space-y-2">
+                <Label htmlFor="logo-upload">Upload New Logo</Label>
+                <Input
+                  id="logo-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoFileChange}
+                  disabled={uploadingLogo}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Supported formats: JPG, PNG, SVG. Max size: 2MB
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowLogoDialog(false)}
+                disabled={uploadingLogo}
+              >
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleLogoUpload} 
+                disabled={uploadingLogo || !logoPreview || logoPreview === logoUrl}
+              >
+                {uploadingLogo ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    Upload Logo
                   </>
                 )}
               </Button>

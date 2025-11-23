@@ -11,7 +11,7 @@ class Medication extends Model
 
     protected $fillable = [
         'name', 'generic_name', 'category', 'dosage_form', 'strength',
-        'manufacturer', 'unit_price', 'stock_quantity', 'quantity_in_stock', 'reorder_level',
+        'manufacturer', 'unit_price', 'stock_quantity', 'reorder_level',
         'expiry_date', 'batch_number', 'is_active'
     ];
 

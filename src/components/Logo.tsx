@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import api from '@/lib/api';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -7,6 +8,8 @@ interface LogoProps {
 }
 
 const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '' }) => {
+  const [customLogo, setCustomLogo] = useState<string | null>(null);
+  
   const sizeClasses = {
     sm: 'h-8 w-8',
     md: 'h-12 w-12',
@@ -21,11 +24,34 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '
     xl: 'text-4xl'
   };
 
+  useEffect(() => {
+    // Fetch custom logo from settings
+    const fetchLogo = async () => {
+      try {
+        const response = await api.get('/settings/logo');
+        if (response.data.logo_url) {
+          setCustomLogo(response.data.logo_url);
+        }
+      } catch (error) {
+        // Silently fail - use default logo
+        console.log('Using default logo');
+      }
+    };
+    fetchLogo();
+  }, []);
+
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      {/* Logo SVG */}
+      {/* Logo - Custom or Default SVG */}
       <div className={`${sizeClasses[size]} flex-shrink-0`}>
-        <svg viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+        {customLogo ? (
+          <img 
+            src={customLogo} 
+            alt="Hospital Logo" 
+            className="w-full h-full object-cover rounded-full shadow-md border-2 border-white"
+          />
+        ) : (
+          <svg viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
           {/* Circle border */}
           <circle cx="512" cy="512" r="450" stroke="#2D7A5F" strokeWidth="40" fill="none"/>
           
@@ -45,6 +71,7 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '
           <text x="512" y="800" fontFamily="Arial, sans-serif" fontSize="120" fontWeight="bold" 
                 fill="white" textAnchor="middle" dominantBaseline="middle">HASET</text>
         </svg>
+        )}
       </div>
       
       {/* Optional text */}

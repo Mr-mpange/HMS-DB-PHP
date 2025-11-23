@@ -28,6 +28,15 @@ Route::get('/health', function () {
     }
 });
 
+// Public logo endpoint (no auth required)
+Route::get('/settings/logo', function() {
+    $logo = \App\Models\Setting::where('key', 'hospital_logo')->first();
+    if ($logo && $logo->value) {
+        return response()->json(['logo_url' => $logo->value]);
+    }
+    return response()->json(['logo_url' => null]);
+});
+
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     // Auth
@@ -412,6 +421,59 @@ Route::middleware('auth:sanctum')->group(function () {
         return response()->json(['companies' => $companies]);
     });
     
+    // Settings Management
+    Route::get('/settings', function(Request $request) {
+        // Return as array of objects for frontend compatibility
+        $settings = \App\Models\Setting::all()->map(function($setting) {
+            return [
+                'key' => $setting->key,
+                'value' => $setting->value,
+                'description' => $setting->description
+            ];
+        });
+        return response()->json(['settings' => $settings]);
+    });
+    
+    Route::post('/settings/logo', function(Request $request) {
+        $request->validate([
+            'logo' => 'required|string', // Base64 encoded image or URL
+        ]);
+        
+        $setting = \App\Models\Setting::updateOrCreate(
+            ['key' => 'hospital_logo'],
+            ['value' => $request->logo]
+        );
+        
+        return response()->json(['success' => true, 'logo_url' => $setting->value]);
+    });
+    
+    Route::post('/settings', function(Request $request) {
+        $request->validate([
+            'key' => 'required|string',
+            'value' => 'required',
+        ]);
+        
+        $setting = \App\Models\Setting::updateOrCreate(
+            ['key' => $request->key],
+            ['value' => $request->value]
+        );
+        
+        return response()->json(['success' => true, 'setting' => $setting], 201);
+    });
+    
+    Route::put('/settings/{key}', function(Request $request, $key) {
+        $request->validate([
+            'value' => 'required',
+        ]);
+        
+        $setting = \App\Models\Setting::updateOrCreate(
+            ['key' => $key],
+            ['value' => $request->value]
+        );
+        
+        return response()->json(['success' => true, 'setting' => $setting]);
+    });
+    
     // Mobile Money Payments
     Route::post('/mobile-money/initiate', [App\Http\Controllers\MobileMoneyController::class, 'initiatePayment']);
     Route::get('/mobile-money/status/{paymentId}', [App\Http\Controllers\MobileMoneyController::class, 'checkStatus']);
@@ -519,7 +581,7 @@ Route::middleware('auth:sanctum')->group(function () {
             'generic_name' => $request->generic_name,
             'dosage_form' => $request->dosage_form,
             'strength' => $request->strength,
-            'quantity_in_stock' => $request->quantity_in_stock,
+            'stock_quantity' => $request->quantity_in_stock ?? $request->stock_quantity ?? 0,
             'unit_price' => $request->unit_price,
             'manufacturer' => $request->manufacturer,
             'expiry_date' => $request->expiry_date,
@@ -550,13 +612,10 @@ Route::middleware('auth:sanctum')->group(function () {
             ]);
             
             // Handle both quantity_in_stock and stock_quantity
-            // If quantity_in_stock is provided, also update stock_quantity
+            // Convert quantity_in_stock to stock_quantity (SQLite only has stock_quantity)
             if (isset($validated['quantity_in_stock'])) {
                 $validated['stock_quantity'] = $validated['quantity_in_stock'];
-            }
-            // If stock_quantity is provided, also update quantity_in_stock
-            if (isset($validated['stock_quantity'])) {
-                $validated['quantity_in_stock'] = $validated['stock_quantity'];
+                unset($validated['quantity_in_stock']); // Remove to avoid column error
             }
             
             $medication->update($validated);
