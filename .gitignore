@@ -62,9 +62,10 @@ backend/compare-*.php
 **/check-*.php
 **/debug-*.php
 
-# Documentation files (optional - remove if you want to commit them)
+# Documentation files (keep only README.md)
+*.md
+!README.md
 *.md.backup
-MOBILE_PAYMENT_UPDATE.md
 
 # Laravel specific
 backend/storage/framework/cache/*
