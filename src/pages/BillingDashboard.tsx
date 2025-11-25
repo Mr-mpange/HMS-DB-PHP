@@ -453,20 +453,20 @@ export default function BillingDashboard() {
       const response = await mobilePaymentService.initiatePayment(paymentRequest);
 
       if (response.success && response.transactionId) {
-        setTransactionId(response.transactionId);
-        setPaymentStatus('pending');
-
-        toast.success(`📱 ${paymentMethod} payment request sent to ${phoneNumber}. Waiting for confirmation...`);
+        toast.success(`📱 ${paymentMethod} payment request sent to ${phoneNumber}. Payment will be processed automatically.`);
 
         // Payment record is created by backend ZenoPay controller
-        // No need to create it here - webhook will handle completion
+        // Webhook will handle completion in background
 
-        // Close dialog but keep status visible
+        // Close dialog
         setPaymentDialogOpen(false);
-
-        toast.info('Payment is pending. It will be confirmed automatically when customer completes payment on their phone.', {
-          duration: 5000
-        });
+        setSelectedInvoice(null);
+        setPaymentMethod('');
+        
+        // Refresh data after a short delay to show updated payment
+        setTimeout(() => {
+          fetchData(false);
+        }, 2000);
 
       } else {
         setPaymentStatus('failed');
@@ -818,47 +818,7 @@ export default function BillingDashboard() {
           </div>
         )}
 
-        {/* Payment Status Notification */}
-        {paymentStatus && (
-          <div className={`fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg max-w-sm animate-in slide-in-from-right-2 ${
-            paymentStatus === 'completed' ? 'bg-green-100 border border-green-500' :
-            paymentStatus === 'failed' ? 'bg-red-100 border border-red-500' :
-            'bg-blue-100 border border-blue-500'
-          }`}>
-            <div className="flex items-center space-x-3">
-              {paymentStatus === 'completed' && <CheckCircle className="h-6 w-6 text-green-600" />}
-              {paymentStatus === 'failed' && <XCircle className="h-6 w-6 text-red-600" />}
-              {paymentStatus === 'pending' && <Loader2 className="h-6 w-6 text-blue-600 animate-spin" />}
 
-              <div className="flex-1">
-                <p className={`text-sm font-medium ${
-                  paymentStatus === 'completed' ? 'text-green-800' :
-                  paymentStatus === 'failed' ? 'text-red-800' :
-                  'text-blue-800'
-                }`}>
-                  {paymentStatus === 'completed' && '✅ Payment Completed Successfully!'}
-                  {paymentStatus === 'failed' && '❌ Payment Failed'}
-                  {paymentStatus === 'pending' && '⏳ Payment Request Sent - Waiting for Confirmation'}
-                  {paymentStatus === 'processing' && '🔄 Processing Payment...'}
-                </p>
-                {transactionId && (
-                  <p className={`text-xs mt-1 ${
-                    paymentStatus === 'completed' ? 'text-green-600' :
-                    paymentStatus === 'failed' ? 'text-red-600' :
-                    'text-blue-600'
-                  }`}>
-                    Transaction ID: {transactionId.slice(-8)}
-                  </p>
-                )}
-                {paymentStatus === 'pending' && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    Customer will receive payment request on their phone
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
         <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-destructive/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">

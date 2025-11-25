@@ -1059,9 +1059,9 @@ export default function DoctorDashboard() {
         
         setSelectedVisit({ ...visit, ...updateData });
         setConsultationForm({
-          diagnosis: '',
-          notes: '',
-          treatment_plan: ''
+          diagnosis: visit.doctor_diagnosis || '',
+          notes: visit.doctor_notes || '',
+          treatment_plan: visit.treatment_plan || ''
         });
         
         setShowConsultationDialog(true);
@@ -1152,12 +1152,14 @@ export default function DoctorDashboard() {
         ? `${consultationForm.notes}\n\nTreatment Plan:\n${consultationForm.treatment_plan}`
         : consultationForm.notes;
 
-      // Save consultation notes but keep status as "In Consultation"
+      // Save consultation notes and set status to "In Consultation"
       // Doctor must order lab tests or write prescription to complete
       const response = await api.put(`/visits/${selectedVisit.id}`, {
         doctor_diagnosis: consultationForm.diagnosis,
         doctor_notes: combinedNotes,
+        treatment_plan: consultationForm.treatment_plan,
         doctor_status: 'In Consultation',
+        doctor_consultation_saved_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });
 
@@ -1177,6 +1179,7 @@ export default function DoctorDashboard() {
               ...v, 
               doctor_diagnosis: consultationForm.diagnosis, 
               doctor_notes: combinedNotes,
+              treatment_plan: consultationForm.treatment_plan,
               doctor_status: 'In Consultation'
             }
           : v
@@ -2432,7 +2435,7 @@ export default function DoctorDashboard() {
                             View Results
                           </Button>
                         )}
-                        {!visit.doctor_notes ? (
+                        {(!visit.doctor_diagnosis && visit.doctor_status !== 'In Progress' && visit.doctor_status !== 'In Consultation') ? (
                           <Button
                             variant="default"
                             size="sm"
@@ -2450,7 +2453,7 @@ export default function DoctorDashboard() {
                             className="flex items-center gap-1 opacity-50"
                           >
                             <CheckCircle className="h-3 w-3" />
-                            Consultation Started
+                            Consultation In Progress
                           </Button>
                         )}
                         <Button
