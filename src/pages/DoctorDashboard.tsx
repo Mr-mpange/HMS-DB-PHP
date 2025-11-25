@@ -1034,35 +1034,43 @@ export default function DoctorDashboard() {
 
   // Handler for starting consultation
   const handleStartConsultation = async (visit: any) => {
-    setSelectedVisit(visit);
-    setConsultationForm({
-      diagnosis: '',
-      notes: '',
-      treatment_plan: ''
-    });
-    
-    // If this patient came from lab, mark lab results as reviewed
-    if (visit.lab_completed_at && !visit.lab_results_reviewed) {
-      try {
-        const response = await api.put(`/visits/${visit.id}`, {
-          lab_results_reviewed: true,
-          lab_results_reviewed_at: new Date().toISOString()
+    try {
+      // Update visit status to "In Progress" in database
+      const updateData: any = {
+        doctor_status: 'In Progress',
+        doctor_started_at: new Date().toISOString()
+      };
+      
+      // If this patient came from lab, mark lab results as reviewed
+      if (visit.lab_completed_at && !visit.lab_results_reviewed) {
+        updateData.lab_results_reviewed = true;
+        updateData.lab_results_reviewed_at = new Date().toISOString();
+      }
+      
+      const response = await api.put(`/visits/${visit.id}`, updateData);
+      
+      if (response.status === 200) {
+        // Update local state
+        setPendingVisits(prev => prev.map(v => 
+          v.id === visit.id 
+            ? { ...v, ...updateData }
+            : v
+        ));
+        
+        setSelectedVisit({ ...visit, ...updateData });
+        setConsultationForm({
+          diagnosis: '',
+          notes: '',
+          treatment_plan: ''
         });
         
-        if (response.status === 200) {
-          // Update local state
-          setPendingVisits(prev => prev.map(v => 
-            v.id === visit.id 
-              ? { ...v, lab_results_reviewed: true, lab_results_reviewed_at: new Date().toISOString() }
-              : v
-          ));
-        }
-      } catch (error) {
-        console.error('Error marking lab results as reviewed:', error);
+        setShowConsultationDialog(true);
+        toast.success('Consultation started');
       }
+    } catch (error) {
+      console.error('Error starting consultation:', error);
+      toast.error('Failed to start consultation');
     }
-    
-    setShowConsultationDialog(true);
   };
 
   // Handler for ordering lab tests
