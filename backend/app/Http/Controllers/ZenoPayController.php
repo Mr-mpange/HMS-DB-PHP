@@ -216,6 +216,13 @@ class ZenoPayController extends Controller
      */
     public function handleCallback(Request $request)
     {
+        // Log all webhook data for debugging
+        Log::info('ZenoPay webhook received:', [
+            'headers' => $request->headers->all(),
+            'body' => $request->all(),
+            'raw_body' => $request->getContent()
+        ]);
+
         try {
             // Verify webhook signature
             $signature = $request->header('X-ZenoPay-Signature');
@@ -230,10 +237,16 @@ class ZenoPayController extends Controller
             }
 
             $data = $request->all();
-            $reference = $data['reference'] ?? null;
-            $status = $data['status'] ?? null;
+            $reference = $data['reference'] ?? $data['order_id'] ?? null;
+            $status = $data['status'] ?? $data['payment_status'] ?? null;
+
+            Log::info('Processing webhook:', [
+                'reference' => $reference,
+                'status' => $status
+            ]);
 
             if (!$reference) {
+                Log::error('Webhook missing reference');
                 return response()->json(['error' => 'Missing reference'], 400);
             }
 
@@ -241,9 +254,18 @@ class ZenoPayController extends Controller
             $payment = Payment::where('reference_number', $reference)->first();
 
             if (!$payment) {
-                Log::warning('Payment not found for reference: ' . $reference);
+                Log::warning('Payment not found for reference: ' . $reference, [
+                    'all_recent_payments' => Payment::orderBy('created_at', 'desc')->limit(5)->pluck('reference_number')
+                ]);
                 return response()->json(['error' => 'Payment not found'], 404);
             }
+
+            Log::info('Payment found:', [
+                'payment_id' => $payment->id,
+                'current_status' => $payment->status,
+                'payment_type' => $payment->payment_type,
+                'patient_id' => $payment->patient_id
+            ]);
 
             // Update payment status
             if ($status === 'success' || $status === 'completed') {
