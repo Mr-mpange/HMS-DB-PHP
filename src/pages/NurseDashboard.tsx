@@ -359,7 +359,7 @@ export default function NurseDashboard() {
       <DashboardLayout title="Nurse Dashboard">
         <div className="space-y-8">
           <div className="h-20 bg-gray-200 animate-pulse rounded-lg"></div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {[1,2,3,4].map(i => <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>)}
           </div>
           <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
@@ -395,7 +395,7 @@ export default function NurseDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-blue-200 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">My Patients</CardTitle>
@@ -581,7 +581,7 @@ export default function NurseDashboard() {
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
                 Body Measurements
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="weight" className="text-sm font-medium">Weight</Label>
                   <div className="flex gap-2">

@@ -535,9 +535,9 @@ Route::middleware('auth:sanctum')->group(function () {
         return response()->json(['claim' => $claim], 201);
     });
     
-    // Appointment Visits (from visits table - for appointment-based workflow)
+    // Appointment Visits (from patient_visits table - for appointment-based workflow)
     Route::get('/appointment-visits', function(Request $request) {
-        $query = DB::table('visits');
+        $query = DB::table('patient_visits');
         
         if ($request->has('overall_status')) {
             $query->where('overall_status', $request->overall_status);
@@ -553,7 +553,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Patient Visits (alternative endpoint - legacy)
     Route::get('/patient-visits', function(Request $request) {
-        $query = DB::table('visits');
+        $query = DB::table('patient_visits');
         
         if ($request->has('status')) {
             $query->where('overall_status', $request->status);

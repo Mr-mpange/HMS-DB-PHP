@@ -23,6 +23,11 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
+  // Payment fields
+  const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
+  const [amountPaid, setAmountPaid] = useState<string>('');
+  const [mobilePhone, setMobilePhone] = useState<string>('');
+  
   // Walk-in patient fields
   const [isWalkIn, setIsWalkIn] = useState(false);
   const [walkInData, setWalkInData] = useState({
@@ -77,9 +82,30 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       return;
     }
 
+    // Validate payment
+    const service = services.find(s => s.id === selectedService);
+    const totalAmount = service.base_price * quantity;
+    
+    if (!amountPaid || parseFloat(amountPaid) < totalAmount) {
+      toast.error(`Payment required: TSh ${totalAmount.toLocaleString()}`);
+      return;
+    }
+
+    // Validate mobile money phone if needed
+    if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod)) {
+      if (!mobilePhone) {
+        toast.error('Please enter mobile money phone number');
+        return;
+      }
+      const phoneRegex = /^0[67][0-9]{8}$/;
+      if (!phoneRegex.test(mobilePhone)) {
+        toast.error('Invalid phone number format. Use 07xxxxxxxx or 06xxxxxxxx');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
-      const service = services.find(s => s.id === selectedService);
       let patientId = patient?.id;
 
       // Register walk-in patient first if needed
@@ -105,9 +131,34 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         service_id: selectedService,
         quantity: quantity,
         unit_price: service.base_price,
-        total_price: service.base_price * quantity,
+        total_price: totalAmount,
         service_date: new Date().toISOString().split('T')[0],
-        status: 'Pending'
+        status: 'Completed' // Mark as completed since payment is made upfront
+      });
+
+      // Create invoice for the service
+      const invoiceRes = await api.post('/invoices', {
+        patient_id: patientId,
+        invoice_date: new Date().toISOString().split('T')[0],
+        total_amount: totalAmount,
+        paid_amount: parseFloat(amountPaid),
+        balance: 0, // Fully paid
+        status: 'Paid',
+        notes: `Quick Service: ${service.service_name} (Qty: ${quantity})`
+      });
+
+      const invoiceId = invoiceRes.data.invoice?.id || invoiceRes.data.invoiceId;
+
+      // Create payment record linked to invoice
+      await api.post('/payments', {
+        patient_id: patientId,
+        invoice_id: invoiceId,
+        amount: parseFloat(amountPaid),
+        payment_method: paymentMethod,
+        payment_type: 'Quick Service',
+        status: 'Completed',
+        payment_date: new Date().toISOString(),
+        notes: `Payment for ${service.service_name} (Qty: ${quantity})`
       });
 
       // Create a visit for quick service (nurse → doctor → billing, NO lab)
@@ -124,11 +175,23 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       });
 
       const patientName = isWalkIn ? walkInData.full_name : patient.full_name;
-      toast.success(`${service.service_name} assigned to ${patientName}. Patient sent to nurse.`);
+      const change = parseFloat(amountPaid) - totalAmount;
+      
+      if (change > 0) {
+        toast.success(`${service.service_name} assigned to ${patientName}. Change: TSh ${change.toLocaleString()}. Patient sent to nurse.`, { duration: 5000 });
+      } else {
+        toast.success(`${service.service_name} assigned to ${patientName}. Payment received. Patient sent to nurse.`);
+      }
+      
       onSuccess();
       onOpenChange(false);
+      
+      // Reset form
       setSelectedService('');
       setQuantity(1);
+      setPaymentMethod('Cash');
+      setAmountPaid('');
+      setMobilePhone('');
       setWalkInData({
         full_name: '',
         phone: '',
@@ -280,6 +343,68 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
                     TSh {(selectedServiceData.base_price * quantity).toLocaleString()}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Payment Section */}
+            {selectedServiceData && (
+              <div className="space-y-3 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
+                <h4 className="font-semibold text-blue-900">Payment Details</h4>
+                
+                <div className="space-y-2">
+                  <Label>Payment Method *</Label>
+                  <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Cash">💵 Cash</SelectItem>
+                      <SelectItem value="Card">💳 Card</SelectItem>
+                      <SelectItem value="M-Pesa">📱 M-Pesa</SelectItem>
+                      <SelectItem value="Airtel Money">📱 Airtel Money</SelectItem>
+                      <SelectItem value="Tigo Pesa">📱 Tigo Pesa</SelectItem>
+                      <SelectItem value="Halopesa">📱 Halopesa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod) && (
+                  <div className="space-y-2">
+                    <Label>Mobile Money Phone Number *</Label>
+                    <Input
+                      type="tel"
+                      placeholder="0712345678"
+                      value={mobilePhone}
+                      onChange={(e) => setMobilePhone(e.target.value)}
+                      pattern="^0[67][0-9]{8}$"
+                    />
+                    <p className="text-xs text-blue-600">
+                      📱 Payment request will be sent to this number
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Amount Paid *</Label>
+                  <Input
+                    type="number"
+                    placeholder="Enter amount"
+                    value={amountPaid}
+                    onChange={(e) => setAmountPaid(e.target.value)}
+                    min={selectedServiceData.base_price * quantity}
+                  />
+                </div>
+
+                {amountPaid && parseFloat(amountPaid) > (selectedServiceData.base_price * quantity) && (
+                  <div className="p-2 bg-green-100 rounded-md">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-green-800">Change:</span>
+                      <span className="text-sm font-bold text-green-700">
+                        TSh {(parseFloat(amountPaid) - (selectedServiceData.base_price * quantity)).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

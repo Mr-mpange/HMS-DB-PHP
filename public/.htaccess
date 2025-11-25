@@ -1,67 +1,60 @@
-# Apache configuration for React Router
-# This file should be uploaded to your Hostinger public_html folder
+# Apache configuration for React Frontend + Laravel Backend
+# Backend is now inside public_html/api/
 
 <IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteBase /
-  
-  # Don't rewrite files or directories
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  
-  # Rewrite everything else to index.html
-  RewriteRule . /index.html [L]
+RewriteEngine On
+RewriteBase /
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Route API requests to Laravel backend (now in public_html/api/)
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^api/(.*)$ api/public/index.php/$1 [L,QSA]
+
+# CRITICAL: Don't rewrite if file or directory exists
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Route everything else to React
+RewriteRule . /index.html [L]
+</IfModule>
+
+# Set correct MIME types
+<IfModule mod_mime.c>
+AddType application/javascript .js .mjs
+AddType text/javascript .js
+AddType application/json .json
+AddType text/css .css
 </IfModule>
 
 # Security Headers
 <IfModule mod_headers.c>
-  # Prevent clickjacking
-  Header always set X-Frame-Options "SAMEORIGIN"
-  
-  # Prevent MIME type sniffing
-  Header always set X-Content-Type-Options "nosniff"
-  
-  # Enable XSS protection
-  Header always set X-XSS-Protection "1; mode=block"
-  
-  # Referrer Policy
-  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-XSS-Protection "1; mode=block"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
 
 # Compression
 <IfModule mod_deflate.c>
-  AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
 </IfModule>
 
 # Browser Caching
 <IfModule mod_expires.c>
-  ExpiresActive On
-  
-  # Images
-  ExpiresByType image/jpeg "access plus 1 year"
-  ExpiresByType image/png "access plus 1 year"
-  ExpiresByType image/gif "access plus 1 year"
-  ExpiresByType image/svg+xml "access plus 1 year"
-  ExpiresByType image/x-icon "access plus 1 year"
-  
-  # CSS and JavaScript
-  ExpiresByType text/css "access plus 1 month"
-  ExpiresByType application/javascript "access plus 1 month"
-  
-  # Fonts
-  ExpiresByType font/woff2 "access plus 1 year"
-  ExpiresByType font/woff "access plus 1 year"
-  ExpiresByType font/ttf "access plus 1 year"
-  
-  # HTML
-  ExpiresByType text/html "access plus 0 seconds"
+ExpiresActive On
+ExpiresByType image/jpeg "access plus 1 year"
+ExpiresByType image/png "access plus 1 year"
+ExpiresByType text/css "access plus 1 month"
+ExpiresByType application/javascript "access plus 1 month"
+ExpiresByType text/html "access plus 0 seconds"
 </IfModule>
 
-# Disable directory browsing
 Options -Indexes
 
-# Protect sensitive files
-<FilesMatch "\.(env|json|md|log)$">
-  Order allow,deny
-  Deny from all
+<FilesMatch "\.(env|md|log)$">
+Order allow,deny
+Deny from all
 </FilesMatch>

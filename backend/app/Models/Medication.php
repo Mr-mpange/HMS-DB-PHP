@@ -20,4 +20,12 @@ class Medication extends Model
         'expiry_date' => 'date',
         'is_active' => 'boolean',
     ];
+
+    protected $appends = ['quantity_in_stock'];
+
+    // Accessor for backward compatibility
+    public function getQuantityInStockAttribute()
+    {
+        return $this->stock_quantity;
+    }
 }

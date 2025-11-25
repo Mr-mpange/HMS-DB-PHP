@@ -748,7 +748,7 @@ export default function BillingDashboard() {
       <DashboardLayout title="Billing Dashboard">
         <div className="space-y-8">
           {/* Stats Cards Skeleton */}
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <Card key={i} className="border-destructive/20 shadow-lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -895,7 +895,7 @@ export default function BillingDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                TSh {stats.totalRevenue.toLocaleString()}
+                TSh {stats.todayRevenue.toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -1212,7 +1212,7 @@ export default function BillingDashboard() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div className="p-4 bg-white rounded-lg border border-blue-100">
                     <div className="text-sm text-muted-foreground">Total Claims</div>
                     <div className="text-2xl font-bold text-blue-600">{insuranceClaims.length}</div>

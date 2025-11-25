@@ -23,6 +23,7 @@ export default function LabDashboard() {
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [batchResults, setBatchResults] = useState<Record<string, any>>({});
   const [groupedTests, setGroupedTests] = useState<Record<string, any[]>>({});
+  const [isViewMode, setIsViewMode] = useState(false); // Track if dialog is in view-only mode
 
   useEffect(() => {
     fetchData(true); // Initial load with loading screen
@@ -51,6 +52,13 @@ export default function LabDashboard() {
         index === self.findIndex(t => t.id === test.id)
       ) || [];
 
+      // Calculate stats from ALL tests (before filtering)
+      const pending = uniqueTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length;
+      const inProgress = uniqueTests.filter(t => t.status === 'In Progress').length;
+      const completed = uniqueTests.filter(t => t.status === 'Completed').length;
+
+      setStats({ pending, inProgress, completed });
+
       // Filter to only show tests that are NOT completed
       // Completed tests should not appear in the lab queue
       const activeTests = uniqueTests.filter(t => 
@@ -61,6 +69,7 @@ export default function LabDashboard() {
         raw: testsData?.length || 0,
         unique: uniqueTests.length,
         active: activeTests.length,
+        completed: completed,
         filtered: uniqueTests.length - activeTests.length,
         timestamp: new Date().toISOString(),
         sample: activeTests.slice(0, 3).map(t => ({ 
@@ -83,12 +92,6 @@ export default function LabDashboard() {
         return acc;
       }, {});
       setGroupedTests(grouped);
-
-      const pending = activeTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length;
-      const inProgress = activeTests.filter(t => t.status === 'In Progress').length;
-      const completed = activeTests.filter(t => t.status === 'Completed').length;
-
-      setStats({ pending, inProgress, completed });
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load lab tests');
@@ -124,6 +127,7 @@ export default function LabDashboard() {
     }
 
     setSelectedPatientTests(patientTests);
+    setIsViewMode(false); // Set to edit mode
     // Initialize batch results with empty values
     const initialResults: Record<string, any> = {};
     patientTests.forEach(test => {
@@ -209,6 +213,7 @@ export default function LabDashboard() {
       setBatchDialogOpen(false);
       setSelectedPatientTests([]);
       setBatchResults({});
+      setIsViewMode(false);
       
       // Refresh data after a delay to ensure backend has processed
       setTimeout(() => {
@@ -360,7 +365,7 @@ export default function LabDashboard() {
     return (
       <DashboardLayout title="Laboratory Dashboard">
         <div className="space-y-8">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {[1,2,3].map(i => <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>)}
           </div>
           <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
@@ -382,7 +387,7 @@ export default function LabDashboard() {
         )}
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           <Card className="border-yellow-200 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Pending Tests</CardTitle>
@@ -527,11 +532,13 @@ export default function LabDashboard() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
+                                  console.log('View Tests clicked for patient:', patientId);
                                   // Only show ordered, sample collected, and in-progress tests
                                   const activeTests = tests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress');
+                                  console.log('Active tests to view:', activeTests.length);
                                   setSelectedPatientTests(activeTests);
-                                  // Don't initialize batch results - this opens read-only view
-                                  setBatchResults({});
+                                  setIsViewMode(true); // Set view mode
+                                  setBatchResults({}); // Clear results
                                   setBatchDialogOpen(true);
                                 }}
                                 className="flex items-center gap-1"
@@ -572,10 +579,11 @@ export default function LabDashboard() {
 
 
         {/* View Tests Dialog - Read Only (What needs to be tested) */}
-        <Dialog open={batchDialogOpen && selectedPatientTests.length > 0 && Object.keys(batchResults).length === 0} onOpenChange={(open) => {
+        <Dialog open={batchDialogOpen && isViewMode && selectedPatientTests.length > 0} onOpenChange={(open) => {
           if (!open) {
             setBatchDialogOpen(false);
             setSelectedPatientTests([]);
+            setIsViewMode(false);
           }
         }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -649,6 +657,7 @@ export default function LabDashboard() {
                 <Button variant="outline" onClick={() => {
                   setBatchDialogOpen(false);
                   setSelectedPatientTests([]);
+                  setIsViewMode(false);
                 }}>
                   Close
                 </Button>
@@ -658,11 +667,12 @@ export default function LabDashboard() {
         </Dialog>
 
         {/* Submit Results Dialog - With Form */}
-        <Dialog open={batchDialogOpen && selectedPatientTests.length > 0 && Object.keys(batchResults).length > 0} onOpenChange={(open) => {
+        <Dialog open={batchDialogOpen && !isViewMode && selectedPatientTests.length > 0} onOpenChange={(open) => {
           if (!open) {
             setBatchDialogOpen(false);
             setSelectedPatientTests([]);
             setBatchResults({});
+            setIsViewMode(false);
           }
         }}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -773,6 +783,7 @@ export default function LabDashboard() {
                   setBatchDialogOpen(false);
                   setSelectedPatientTests([]);
                   setBatchResults({});
+                  setIsViewMode(false);
                 }}>
                   Cancel
                 </Button>

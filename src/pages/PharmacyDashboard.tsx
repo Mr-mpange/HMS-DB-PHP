@@ -891,7 +891,7 @@ export default function PharmacyDashboard() {
     return (
       <DashboardLayout title="Pharmacy Dashboard">
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {[1,2,3].map(i => <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-lg"></div>)}
           </div>
           <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
@@ -914,7 +914,7 @@ export default function PharmacyDashboard() {
         )}
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Pending Prescriptions</CardTitle>

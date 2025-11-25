@@ -62,9 +62,10 @@ backend/compare-*.php
 **/check-*.php
 **/debug-*.php
 
-# Documentation files (keep only README.md)
+# Documentation files (keep only README.md and DEPLOYMENT.md)
 *.md
 !README.md
+!DEPLOYMENT.md
 *.md.backup
 
 # Laravel specific

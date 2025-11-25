@@ -1,444 +1,196 @@
-# 🏥 Hospital Management System (HMS)
+# Hospital Management System
 
-Complete, production-ready hospital management system with integrated mobile money payments.
+A comprehensive hospital management system built with React (Frontend) and Laravel (Backend).
 
-## ✨ Features
+## Features
 
-### Patient Management
-- ✅ Patient registration with insurance support
-- ✅ Medical records & history
-- ✅ Appointment scheduling
-- ✅ Visit workflow tracking (Reception → Nurse → Doctor → Lab → Pharmacy → Billing)
+- **Multi-Role Dashboard**: Admin, Doctor, Nurse, Receptionist, Pharmacist, Lab Technician, Billing, Patient
+- **Patient Management**: Registration, appointments, medical records
+- **Appointment System**: Booking, scheduling, and tracking
+- **Pharmacy Management**: Medication inventory, dispensing, stock tracking
+- **Laboratory**: Test ordering, results management
+- **Billing & Payments**: Invoice generation, payment processing, insurance claims
+- **Mobile Money Integration**: ZenoPay payment gateway support
+- **Workflow Management**: Patient journey tracking from registration to discharge
 
-### Clinical Operations
-- ✅ Electronic prescriptions
-- ✅ Lab test ordering & results
-- ✅ Pharmacy inventory management
-- ✅ Medical services catalog
-- ✅ Vital signs recording
+## Tech Stack
 
-### Financial Management
-- ✅ Billing & invoicing
-- ✅ **Mobile Money Payments** (M-Pesa, Airtel Money, Tigo Pesa, Halopesa)
-- ✅ Insurance claims processing
-- ✅ Payment tracking & reports
-- ✅ Revenue analytics
+### Frontend
+- React 18 with TypeScript
+- Vite for build tooling
+- TailwindCSS for styling
+- Shadcn/ui components
+- React Query for data fetching
+- React Router for navigation
 
-### Administration
-- ✅ User management (role-based access)
-- ✅ Department management
-- ✅ Activity logging
-- ✅ System settings
-- ✅ Logo customization
-- ✅ Reports & analytics
-
-## 🛠️ Technology Stack
-
-**Frontend:**
-- React 18 + TypeScript
-- Vite (build tool)
-- Tailwind CSS + shadcn/ui
-- Axios (API client)
-
-**Backend:**
-- Laravel 11 + PHP 8.2
+### Backend
+- Laravel 11
 - SQLite/MySQL database
-- Laravel Sanctum (authentication)
-- RESTful API
+- Sanctum for authentication
+- RESTful API architecture
 
-**Payments:**
-- ZenoPay API integration
-- Secure backend payment processing
-- Webhook support for payment confirmation
-
-## 🚀 Quick Start (Development)
+## Installation
 
 ### Prerequisites
 - Node.js 18+ and npm
 - PHP 8.2+
 - Composer
-- SQLite (included) or MySQL
+- SQLite or MySQL
 
-### Installation
+### Frontend Setup
 
-1. **Clone the repository**
 ```bash
-git clone <repository-url>
-cd HMS-DB
-```
-
-2. **Install frontend dependencies**
-```bash
+# Install dependencies
 npm install
+
+# Create .env file
+cp .env.example .env
+
+# Update .env with your API URL
+VITE_API_URL=http://localhost:8000/api
+
+# Run development server
+npm run dev
+
+# Build for production
+npm run build
 ```
 
-3. **Install backend dependencies**
+### Backend Setup
+
 ```bash
 cd backend
-composer install
-```
 
-4. **Configure backend**
-```bash
-# Copy environment file
+# Install dependencies
+composer install
+
+# Create .env file
 cp .env.example .env
 
 # Generate application key
 php artisan key:generate
 
-# Run migrations (creates all tables)
+# Run migrations
 php artisan migrate
 
-# Seed initial data (optional)
+# Seed database (optional)
 php artisan db:seed
+
+# Start development server
+php artisan serve
 ```
 
-5. **Start development servers**
+## Development
 
-Terminal 1 (Frontend):
-```bash
-npm run dev
-```
+### Running Locally
 
-Terminal 2 (Backend):
+1. Start the backend server:
 ```bash
 cd backend
 php artisan serve
 ```
 
-6. **Access the application**
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:8000
-
-### Default Login Credentials
-
-**Admin:**
-- Email: `admin@hospital.com`
-- Password: `Admin@123`
-
-**Doctor:**
-- Email: `doctor@hospital.com`
-- Password: `Doctor@123`
-
-**Nurse:**
-- Email: `nurse@hospital.com`
-- Password: `Nurse@123`
-
-**Receptionist:**
-- Email: `receptionist@hospital.com`
-- Password: `Receptionist@123`
-
-⚠️ **Change these passwords immediately in production!**
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-**Backend (`backend/.env`):**
-```env
-# Application
-APP_NAME="Hospital Management System"
-APP_ENV=local
-APP_DEBUG=true
-APP_URL=http://localhost:8000
-
-# Database (SQLite by default)
-DB_CONNECTION=sqlite
-# Or use MySQL:
-# DB_CONNECTION=mysql
-# DB_HOST=127.0.0.1
-# DB_PORT=3306
-# DB_DATABASE=hospital_db
-# DB_USERNAME=root
-# DB_PASSWORD=
-
-# Frontend URL
-FRONTEND_URL=http://localhost:5173
-
-# ZenoPay Payment Gateway (SECURE - Backend Only)
-ZENOPAY_API_KEY=your_api_key_here
-ZENOPAY_MERCHANT_ID=your_merchant_id
-ZENOPAY_API_URL=https://zenoapi.com
-ZENOPAY_CALLBACK_URL=http://localhost:8000/api/payments/zenopay/callback
-ZENOPAY_WEBHOOK_SECRET=your_webhook_secret
-
-# Test Mode (set to true for development)
-ZENOPAY_TEST_MODE=true
-```
-
-**Frontend (`.env`):**
-```env
-# Backend API URL
-VITE_API_URL=http://localhost:8000/api
-
-# Application URL
-VITE_APP_URL=http://localhost:5173
-```
-
-### ZenoPay Setup
-
-1. **Get API Credentials** from ZenoPay dashboard
-2. **Add to backend/.env** (NEVER in frontend!)
-3. **Configure webhook URL** in ZenoPay:
-   ```
-   http://your-domain.com/api/payments/zenopay/callback
-   ```
-4. **Test Mode:** Set `ZENOPAY_TEST_MODE=true` for development
-5. **Production:** Set `ZENOPAY_TEST_MODE=false` and use live credentials
-
-## 🔒 Security Features
-
-### Authentication & Authorization
-- ✅ Laravel Sanctum (token-based auth)
-- ✅ Role-based access control (RBAC)
-- ✅ Password hashing (bcrypt)
-- ✅ Session management
-
-### Data Protection
-- ✅ SQL injection prevention (Eloquent ORM)
-- ✅ XSS protection
-- ✅ CSRF protection
-- ✅ Input validation & sanitization
-
-### Payment Security
-- ✅ **API keys stored on backend only** (never exposed to browser)
-- ✅ Webhook signature verification
-- ✅ Secure payment processing
-- ✅ Transaction logging
-
-### Monitoring
-- ✅ Activity logging (all user actions)
-- ✅ Error logging
-- ✅ Audit trails
-
-### Best Practices
-⚠️ **Important Security Checklist:**
-- [ ] Change all default passwords
-- [ ] Use strong passwords (min 12 characters)
-- [ ] Never commit `.env` files to git
-- [ ] Enable HTTPS in production
-- [ ] Set `APP_DEBUG=false` in production
-- [ ] Configure regular database backups
-- [ ] Keep dependencies updated
-- [ ] Review activity logs regularly
-
-## 📊 System Requirements
-
-### Development
-- **Node.js:** 18+ with npm
-- **PHP:** 8.2+
-- **Composer:** Latest version
-- **Database:** SQLite (default) or MySQL 5.7+
-- **OS:** Windows, macOS, or Linux
-
-### Production
-- **Web Server:** Apache or Nginx
-- **PHP:** 8.2+ with extensions (pdo, mbstring, openssl, etc.)
-- **Database:** MySQL 5.7+ or MariaDB 10.3+
-- **SSL Certificate:** Required for HTTPS
-- **Memory:** 512MB minimum, 1GB recommended
-- **Storage:** 1GB minimum
-
-### Browser Support
-- Chrome 90+
-- Firefox 88+
-- Safari 14+
-- Edge 90+
-- Mobile browsers (iOS Safari, Chrome Mobile)
-
-## 🎯 User Roles
-
-- **Admin** - Full system access
-- **Doctor** - Patient consultations, prescriptions
-- **Nurse** - Vitals, patient care
-- **Receptionist** - Check-in, appointments
-- **Pharmacist** - Medication dispensing
-- **Lab Technician** - Lab tests
-
-## 💳 Payment Methods
-
-### Supported Payment Options
-- 💵 **Cash** - Traditional cash payments
-- 💳 **Card** - Credit/Debit card payments
-- 📱 **M-Pesa** - Mobile money (via ZenoPay)
-- 📱 **Airtel Money** - Mobile money (via ZenoPay)
-- 📱 **Tigo Pesa** - Mobile money (via ZenoPay)
-- 📱 **Halopesa** - Mobile money (via ZenoPay)
-- 🛡️ **Insurance** - Direct insurance billing
-
-### Mobile Money Integration
-- **Provider:** ZenoPay API
-- **Security:** Backend-only API key storage
-- **Features:** 
-  - Real-time USSD push notifications
-  - Automatic payment confirmation via webhooks
-  - Transaction tracking & receipts
-  - Test mode for development
-
-## 📁 Project Structure
-
-```
-HMS-DB/
-├── src/                    # Frontend React application
-│   ├── components/         # Reusable UI components
-│   ├── pages/             # Dashboard pages
-│   ├── lib/               # Utilities & services
-│   └── contexts/          # React contexts (Auth, etc.)
-├── backend/               # Laravel API
-│   ├── app/              # Application code
-│   │   ├── Http/Controllers/  # API controllers
-│   │   └── Models/       # Database models
-│   ├── database/         # Migrations & seeders
-│   ├── routes/           # API routes
-│   └── storage/          # Logs & uploads
-├── public/               # Static assets
-├── dist/                 # Built frontend (production)
-├── .env                  # Frontend environment
-├── backend/.env          # Backend environment (SECURE)
-└── README.md            # This file
-```
-
-## 🔄 Maintenance
-
-### Update Dependencies
+2. Start the frontend dev server:
 ```bash
-# Frontend
-npm update
-
-# Backend
-cd backend
-composer update
+npm run dev
 ```
 
-### Clear Cache
+3. Access the application at `http://localhost:5173`
+
+### Default Test Users
+
+After seeding, you can login with:
+- **Admin**: admin@hospital.com / password
+- **Doctor**: doctor@hospital.com / password
+- **Nurse**: nurse@hospital.com / password
+- **Receptionist**: receptionist@hospital.com / password
+- **Pharmacist**: pharmacist@hospital.com / password
+
+## Deployment
+
+### Production Build
+
 ```bash
-cd public_html/api
-php artisan cache:clear
-php artisan config:clear
-php artisan route:clear
+# Build frontend
+npm run build
+
+# The dist/ folder contains the production build
 ```
 
-### Check Logs
-```bash
-# Backend logs
-tail -f storage/logs/laravel.log
+### Server Requirements
 
-# Browser console
-Press F12 in browser
-```
+- Apache/Nginx web server
+- PHP 8.2+
+- MySQL 5.7+ or SQLite
+- Composer
+- Node.js (for building)
 
-## ✅ Production Checklist
-
-Before going live:
-- [ ] Database credentials configured
-- [ ] ZenoPay credentials added
-- [ ] APP_DEBUG=false
-- [ ] Admin password changed
-- [ ] HTTPS enabled
-- [ ] Backups configured
-- [ ] All features tested
-- [ ] Staff trained
-
-## 📁 Project Structure
+### Deployment Structure
 
 ```
-HMS-DB/
-├── src/              # Frontend React code
-├── backend/          # Laravel API
-├── dist/             # Built frontend
-├── public/           # Public assets
-└── deploy-complete.bat  # Deployment script
+public_html/
+├── index.html          # Frontend (from dist/)
+├── assets/             # Frontend assets
+├── .htaccess          # Apache config with API routing
+└── api/               # Backend (Laravel)
+    ├── app/
+    ├── public/
+    │   └── index.php
+    └── ...
 ```
 
-## 🆘 Troubleshooting
+### .htaccess Configuration
 
-### "500 Internal Server Error"
-- Check `.env` file exists
-- Run: `php artisan config:clear`
-- Check file permissions (755/644)
+The `.htaccess` file in `public/` is configured to route API requests to the Laravel backend:
 
-### "Database Connection Failed"
-- Verify credentials in `.env`
-- Check database exists in Hostinger
-- Test in phpMyAdmin
+```apache
+# Route API requests to Laravel
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^api/(.*)$ api/public/index.php/$1 [L,QSA]
 
-### "CORS Error"
-- Update `backend/config/cors.php`
-- Run: `php artisan config:clear`
+# Route everything else to React
+RewriteRule . /index.html [L]
+```
 
-### "Login Not Working"
-- Verify admin user exists
-- Clear browser cache
-- Check API endpoint
+## API Documentation
 
-## 📈 Performance
+The API follows RESTful conventions. Base URL: `/api`
 
-- Page load: < 3 seconds
-- API response: < 500ms
-- Supports 100+ concurrent users
-- Optimized database queries
+### Authentication
+- `POST /api/auth/login` - Login
+- `POST /api/auth/logout` - Logout
+- `GET /api/auth/me` - Get current user
 
-## 🎉 Ready to Deploy!
+### Patients
+- `GET /api/patients` - List patients
+- `POST /api/patients` - Create patient
+- `GET /api/patients/{id}` - Get patient
+- `PUT /api/patients/{id}` - Update patient
 
-Your complete hospital management system is ready for production on **hasetcompany.or.tz**!
+### Appointments
+- `GET /api/appointments` - List appointments
+- `POST /api/appointments` - Create appointment
+- `PUT /api/appointments/{id}` - Update appointment
 
-Run `deploy-complete.bat` and follow the steps above.
+### Pharmacy
+- `GET /api/pharmacy/medications` - List medications
+- `POST /api/pharmacy/medications` - Add medication
+- `PUT /api/pharmacy/medications/{id}` - Update medication stock
 
----
+See backend routes in `backend/routes/api.php` for complete API reference.
 
-**Version:** 1.0.0
-**Status:** Production Ready
-**Last Updated:** November 20, 2025
+## Contributing
 
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-#   H M S - D B - P H P 
- 
- 
+## License
 
+This project is licensed under the MIT License.
 
----
+## Support
 
-## 🎉 System Status
-
-**Version:** 1.0.0  
-**Status:** ✅ Production Ready  
-**Last Updated:** November 23, 2025
-
-### ✅ Completed Features
-- [x] Patient registration & management
-- [x] Appointment scheduling
-- [x] Complete visit workflow (Reception → Nurse → Doctor → Lab → Pharmacy → Billing)
-- [x] Electronic prescriptions
-- [x] Lab test management with automatic billing
-- [x] Pharmacy inventory & dispensing
-- [x] Billing & invoicing
-- [x] **Mobile money payments** (M-Pesa, Airtel, Tigo, Halopesa)
-- [x] Insurance claims processing
-- [x] User management (6 roles)
-- [x] Activity logging
-- [x] Reports & analytics
-- [x] Logo customization
-- [x] Real-time dashboard updates (no page refreshes)
-- [x] Secure payment processing (backend-only API keys)
-
-### 🔧 Development Notes
-
-**Mobile Payments:**
-- Currently in **TEST MODE** (`ZENOPAY_TEST_MODE=true`)
-- Payments are simulated for development
-- To enable real payments:
-  1. Contact ZenoPay support for correct API endpoint
-  2. Verify API credentials are active
-  3. Set `ZENOPAY_TEST_MODE=false` in `backend/.env`
-  4. Test with small amounts first
-
-**Security Checklist:**
-- ✅ All API keys stored securely on backend
-- ✅ Never expose credentials in frontend
-- ⚠️ Change default passwords before production
-- ⚠️ Enable HTTPS in production
-- ⚠️ Set `APP_DEBUG=false` in production
-
----
-
-**Built with ❤️ for modern healthcare management**
+For issues and questions, please open an issue on GitHub.

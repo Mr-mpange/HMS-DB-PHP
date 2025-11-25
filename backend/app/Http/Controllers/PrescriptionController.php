@@ -79,7 +79,14 @@ class PrescriptionController extends Controller
             return response()->json(['prescription' => $prescription->load(['items', 'patient', 'doctor'])], 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json(['error' => 'Failed to create prescription'], 500);
+            \Log::error('Prescription creation error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'data' => $validated
+            ]);
+            return response()->json([
+                'error' => 'Failed to create prescription',
+                'message' => $e->getMessage()
+            ], 500);
         }
     }
 

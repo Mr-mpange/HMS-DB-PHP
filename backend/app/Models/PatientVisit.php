@@ -28,6 +28,12 @@ class PatientVisit extends Model
     protected $casts = [
         'visit_date' => 'datetime',
         'vital_signs' => 'array',
+        'reception_completed_at' => 'datetime',
+        'nurse_completed_at' => 'datetime',
+        'doctor_completed_at' => 'datetime',
+        'lab_completed_at' => 'datetime',
+        'pharmacy_completed_at' => 'datetime',
+        'billing_completed_at' => 'datetime',
     ];
 
     public function patient()

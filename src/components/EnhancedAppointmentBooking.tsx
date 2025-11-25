@@ -30,9 +30,9 @@ const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppointment
 
   useEffect(() => {
     if (selectedDepartment) {
-      // In a real system, you'd filter doctors by department
-      // For now, we'll show all doctors
-      setFilteredDoctors(doctors);
+      // Filter doctors by selected department
+      const filtered = doctors.filter(doctor => doctor.department_id === selectedDepartment);
+      setFilteredDoctors(filtered);
     } else {
       setFilteredDoctors(doctors);
     }
@@ -40,10 +40,11 @@ const EnhancedAppointmentBooking = ({ patients, onSuccess }: EnhancedAppointment
 
   const fetchDepartments = async () => {
     try {
-      // Departments not yet implemented in backend
-      setDepartments([]);
+      const { data } = await api.get('/departments');
+      setDepartments(data.departments || []);
     } catch (error) {
       console.error('Error fetching departments:', error);
+      setDepartments([]);
     }
   };
 

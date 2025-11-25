@@ -243,7 +243,7 @@ const PatientDetailView: React.FC<PatientDetailViewProps> = ({
             </div>
           )}
           {!loading && activeTab === 'overview' && (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
               <Card>
                 <CardHeader className="pb-3">
                   <div className="flex items-center space-x-2">
@@ -605,7 +605,7 @@ const PatientView: React.FC<PatientViewProps> = ({
         Viewing {filteredPatients.length} {view !== 'all' ? viewLabels[view].toLowerCase() : 'total'} patients
       </CardDescription>
 
-      <div className="border rounded-lg overflow-hidden">
+      <div className="border rounded-lg overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -870,7 +870,7 @@ const BillingAnalysis = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         <Card className="border-green-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-green-700">
@@ -919,7 +919,7 @@ const BillingAnalysis = () => {
       {/* Recent Invoices */}
       <div>
         <h3 className="text-sm font-medium mb-3">Recent Invoices</h3>
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -2115,7 +2115,7 @@ export default function AdminDashboard() {
     return (
       <DashboardLayout title="Admin Dashboard">
         <div className="space-y-8">
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {[1,2,3,4].map(i => <div key={i} className="h-28 bg-gray-200 animate-pulse rounded-lg"></div>)}
           </div>
           <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
@@ -2167,7 +2167,7 @@ export default function AdminDashboard() {
             <CardDescription>Key metrics</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <StatCard title="Patients" value={stats.totalPatients} icon={Users} color="green" sub="Total registered" />
               <StatCard title="Appointments" value={stats.activeAppointments} icon={CalendarIcon} color="blue" sub="Active now" />
               <StatCard title="Users" value={stats.totalUsers} icon={User} color="purple" sub="Platform users" />
@@ -2204,7 +2204,7 @@ export default function AdminDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               <div className="p-4 border rounded-lg bg-blue-50/50">
                 <div className="text-sm text-muted-foreground mb-1">Default Consultation Fee</div>
                 <div className="text-2xl font-bold text-blue-600">
@@ -2259,13 +2259,13 @@ export default function AdminDashboard() {
                 </p>
               </div>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-lg overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Active Role</TableHead>
+                      <TableHead className="min-w-[150px]">Name</TableHead>
+                      <TableHead className="min-w-[200px]">Email</TableHead>
+                      <TableHead className="min-w-[120px]">Active Role</TableHead>
 
                       <TableHead className="w-[160px]">Actions</TableHead>
                     </TableRow>
@@ -2496,14 +2496,14 @@ export default function AdminDashboard() {
                 </Button>
               </div>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-lg overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="min-w-[150px]">Name</TableHead>
+                      <TableHead className="min-w-[200px]">Description</TableHead>
+                      <TableHead className="min-w-[120px]">Created</TableHead>
+                      <TableHead className="text-right min-w-[120px]">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2587,8 +2587,8 @@ export default function AdminDashboard() {
                   rows={3}
                 />
               </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowDepartmentDialog(false)}>
+              <div className="flex flex-col sm:flex-row justify-end gap-2">
+                <Button variant="outline" onClick={() => setShowDepartmentDialog(false)} className="w-full sm:w-auto">
                   Cancel
                 </Button>
                 <Button onClick={handleSaveDepartment}>
@@ -3023,7 +3023,7 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4 border-t sticky bottom-0 bg-white z-10 -mx-6 px-6 pb-2">
+            <div className="flex flex-col sm:flex-row justify-end gap-3 pt-4 border-t sticky bottom-0 bg-white z-10 -mx-6 px-6 pb-2">
               <Button 
                 variant="outline" 
                 onClick={() => setShowSettingsDialog(false)}
@@ -3120,9 +3120,10 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col sm:flex-row justify-end gap-2">
               <Button 
-                variant="outline" 
+                variant="outline"
+                className="w-full sm:w-auto" 
                 onClick={() => setShowLogoDialog(false)}
                 disabled={uploadingLogo}
               >

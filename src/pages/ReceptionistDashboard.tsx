@@ -291,7 +291,19 @@ export default function ReceptionistDashboard() {
       // Ensure appointmentsData is an array before filtering
       const appointmentsArray = Array.isArray(appointmentsData) ? appointmentsData : [];
       
-      const todayAppointments = appointmentsArray.filter(a => a.appointment_date === today).length;
+      // Fix date comparison - extract date from appointment_date
+      const todayAppointments = appointmentsArray.filter(a => {
+        if (!a.appointment_date) return false;
+        // Extract date part from appointment_date (handle both Date objects and strings)
+        let aptDate = '';
+        if (a.appointment_date instanceof Date) {
+          aptDate = a.appointment_date.toISOString().split('T')[0];
+        } else if (typeof a.appointment_date === 'string') {
+          aptDate = a.appointment_date.split('T')[0];
+        }
+        return aptDate === today;
+      }).length;
+      
       const pendingAppointments = appointmentsArray.filter(a => a.status === 'Scheduled').length;
       const confirmedAppointments = appointmentsArray.filter(a => a.status === 'Confirmed').length;
 
@@ -697,8 +709,22 @@ export default function ReceptionistDashboard() {
       }
 
       // For non-mobile payments: Create payment record immediately
+      // Create invoice first
+      const invoiceRes = await api.post('/invoices', {
+        patient_id: selectedAppointmentForPayment.patient_id,
+        invoice_date: new Date().toISOString().split('T')[0],
+        total_amount: amountPaid,
+        paid_amount: amountPaid,
+        balance: 0,
+        status: 'Paid',
+        notes: 'Consultation Fee'
+      });
+      
+      const invoiceId = invoiceRes.data.invoice?.id || invoiceRes.data.invoiceId;
+      
       const paymentData = {
         patient_id: selectedAppointmentForPayment.patient_id,
+        invoice_id: invoiceId,
         amount: amountPaid,
         payment_method: paymentForm.payment_method,
         payment_type: 'Consultation Fee',
@@ -1047,9 +1073,22 @@ export default function ReceptionistDashboard() {
         }
       }
 
-      // For non-mobile payments: Create payment record and visit immediately
+      // For non-mobile payments: Create invoice first, then payment record and visit
+      const invoiceRes = await api.post('/invoices', {
+        patient_id: selectedReturningPatient.id,
+        invoice_date: new Date().toISOString().split('T')[0],
+        total_amount: amountPaid,
+        paid_amount: amountPaid,
+        balance: 0,
+        status: 'Paid',
+        notes: 'Consultation Fee - Returning Patient'
+      });
+      
+      const invoiceId = invoiceRes.data.invoice?.id || invoiceRes.data.invoiceId;
+      
       const paymentData = {
         patient_id: selectedReturningPatient.id,
+        invoice_id: invoiceId,
         amount: amountPaid,
         payment_method: paymentForm.payment_method,
         payment_type: 'Consultation Fee',
@@ -1348,6 +1387,7 @@ export default function ReceptionistDashboard() {
             // Show specific error message from backend
             const errorMessage = response.message || 'Failed to initiate mobile payment';
             toast.error(errorMessage, { duration: 8000 });
+            setShowRegistrationPaymentDialog(false); // Close dialog on error
             setLoading(false); // Clear loading state on error
             return;
           }
@@ -1361,14 +1401,28 @@ export default function ReceptionistDashboard() {
                               'Failed to initiate mobile money payment';
           
           toast.error(errorMessage, { duration: 8000 });
+          setShowRegistrationPaymentDialog(false); // Close dialog on error
           setLoading(false); // Clear loading state on error
           return;
         }
       }
 
-      // For non-mobile payments: Create payment record and complete registration immediately
+      // For non-mobile payments: Create invoice first, then payment record and complete registration
+      const invoiceRes = await api.post('/invoices', {
+        patient_id: patientId,
+        invoice_date: new Date().toISOString().split('T')[0],
+        total_amount: amountPaid,
+        paid_amount: amountPaid,
+        balance: 0,
+        status: 'Paid',
+        notes: 'Registration Fee - New Patient'
+      });
+      
+      const invoiceId = invoiceRes.data.invoice?.id || invoiceRes.data.invoiceId;
+      
       const paymentData = {
         patient_id: patientId,
+        invoice_id: invoiceId,
         amount: amountPaid,
         payment_method: paymentForm.payment_method,
         payment_type: 'Consultation Fee',
@@ -1531,7 +1585,7 @@ export default function ReceptionistDashboard() {
       <DashboardLayout title="Receptionist Dashboard">
         <div className="space-y-8">
           {/* Skeleton stats */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {[1,2,3,4].map(i => (
               <StatCardSkeleton key={i} />
             ))}
@@ -1582,6 +1636,38 @@ export default function ReceptionistDashboard() {
             </div>
           </div>
 
+          {/* Stats Overview */}
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              title="Today's Appointments"
+              value={stats.todayAppointments}
+              icon={Calendar}
+              color="blue"
+              sub="Scheduled for today"
+            />
+            <StatCard
+              title="Pending Appointments"
+              value={stats.pendingAppointments}
+              icon={Clock}
+              color="orange"
+              sub="Awaiting confirmation"
+            />
+            <StatCard
+              title="Completed Check-ins"
+              value={stats.completedCheckins}
+              icon={CheckCircle}
+              color="green"
+              sub="Confirmed today"
+            />
+            <StatCard
+              title="Total Patients"
+              value={stats.totalPatients}
+              icon={Users}
+              color="purple"
+              sub="In system"
+            />
+          </div>
+
           {/* Workflow Queue Status */}
           <Card className="shadow-lg border-green-200 bg-green-50/30">
             <CardHeader className="bg-green-100/50">
@@ -1594,7 +1680,7 @@ export default function ReceptionistDashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
                 <div className="p-4 bg-white rounded-lg border border-green-200">
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="font-semibold text-green-800">Nurse Queue</h4>
@@ -1685,7 +1771,7 @@ export default function ReceptionistDashboard() {
                     <p>No appointments scheduled for today</p>
                   </div>
                 ) : (
-                  <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {doctorList.map((item, idx) => (
                       <div key={idx} className="p-4 border rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50">
                         <div className="flex items-start justify-between mb-2">
@@ -1731,7 +1817,7 @@ export default function ReceptionistDashboard() {
               <CardDescription>Common receptionist tasks</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleRegisterPatient}>
                   <UserPlus className="h-6 w-6" />
                   <span>Register New Patient</span>
@@ -1779,7 +1865,7 @@ export default function ReceptionistDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                 {departments.map((dept) => {
                   const deptAppointments = appointments.filter(a => a.department?.id === dept.id);
                   // Use local date to avoid timezone issues
@@ -1820,7 +1906,7 @@ export default function ReceptionistDashboard() {
                       </div>
                     )}
                   </div>
-                  <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                     {doctors.slice(0, 6).map((doctor) => {
                       // Use local date to avoid timezone issues
                       const now = new Date();
@@ -2354,7 +2440,7 @@ export default function ReceptionistDashboard() {
               Patient: {selectedAppointmentForPayment?.patient?.full_name || 'Unknown'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); handlePaymentSubmit(); }} className="space-y-4">
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex justify-between items-center">
                 <span className="font-medium">Consultation Fee:</span>
@@ -2430,13 +2516,13 @@ export default function ReceptionistDashboard() {
                 Cancel
               </Button>
               <Button 
-                onClick={handlePaymentSubmit}
+                type="submit"
                 disabled={Number(paymentForm.amount_paid) < consultationFee}
               >
                 Confirm Payment & Check In
               </Button>
             </div>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -2449,7 +2535,7 @@ export default function ReceptionistDashboard() {
               New Patient: {registerForm.full_name}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); completePatientRegistration(); }} className="space-y-4">
             {registerWithAppointment && appointmentDepartmentId && (
               <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
                 <p className="text-sm text-purple-800">
@@ -2568,8 +2654,7 @@ export default function ReceptionistDashboard() {
                       Back
                     </Button>
                     <Button 
-                      type="button"
-                      onClick={completePatientRegistration}
+                      type="submit"
                       disabled={Number(paymentForm.amount_paid) < requiredFee || loading}
                     >
                       {loading ? (
@@ -2585,7 +2670,7 @@ export default function ReceptionistDashboard() {
                 </>
               );
             })()}
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -2598,7 +2683,7 @@ export default function ReceptionistDashboard() {
               Returning Patient: {selectedReturningPatient?.full_name}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); completeReturningPatientVisit(); }} className="space-y-4">
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex justify-between items-center">
                 <span className="font-medium">Consultation Fee:</span>
@@ -2677,13 +2762,13 @@ export default function ReceptionistDashboard() {
                 Back
               </Button>
               <Button 
-                onClick={completeReturningPatientVisit}
+                type="submit"
                 disabled={Number(paymentForm.amount_paid) < consultationFee}
               >
                 Confirm Payment & Create Visit
               </Button>
             </div>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
 

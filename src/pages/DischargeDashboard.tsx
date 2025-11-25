@@ -199,7 +199,7 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
     return (
       <DashboardLayout title="Discharge Management">
         <div className="space-y-8">
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {[1,2,3].map(i => <div key={i} className="h-28 bg-gray-200 animate-pulse rounded-lg"></div>)}
           </div>
           <div className="h-96 bg-gray-200 animate-pulse rounded-lg"></div>
@@ -212,7 +212,7 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
     <DashboardLayout title="Discharge Management">
       <div className="space-y-8">
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           <Card className="border-blue-200 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Ready for Discharge</CardTitle>

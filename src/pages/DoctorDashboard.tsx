@@ -693,11 +693,16 @@ export default function DoctorDashboard() {
 
       toast.success('Consultation submitted successfully');
       setShowConsultationDialog(false);
+      
+      // Refresh appointments to get updated data
+      await fetchAppointments();
+      
+      // Keep selectedVisit so doctor can continue adding lab tests/prescriptions
+      // Don't clear it here - only clear when explicitly closing the patient view
     } catch (error) {
       console.error('Error submitting consultation:', error);
       toast.error('Failed to submit consultation');
     } finally {
-      setSelectedVisit(null);
       setConsultationForm({ diagnosis: '', notes: '', treatment_plan: '' });
     }
   };
@@ -1750,19 +1755,23 @@ export default function DoctorDashboard() {
       setPatients(patientsData || []);
       
       // Fetch completed visits for "Today's Patients" section
+      let completedVisitsData = [];
       try {
         const completedResponse = await api.get(`/visits?doctor_status=Completed&limit=50`);
         if (completedResponse.status === 200) {
-          setCompletedVisits(completedResponse.data.visits || []);
+          completedVisitsData = completedResponse.data.visits || [];
+          setCompletedVisits(completedVisitsData);
         }
       } catch (error) {
         console.error('Error fetching completed visits:', error);
         setCompletedVisits([]);
       }
-      // Calculate unique patients from visits and appointments
+      
+      // Calculate unique patients from ALL visits (active + completed) and appointments
       const uniquePatientIds = new Set([
-        ...activeVisits.map(v => v.patient_id),
-        ...appointmentsData.map(a => a.patient_id)
+        ...visitsWithLabTests.map(v => v.patient_id).filter(Boolean),
+        ...(appointmentsData || []).map(a => a.patient_id).filter(Boolean),
+        ...completedVisitsData.map(v => v.patient_id).filter(Boolean)
       ]);
       
       setStats({
@@ -1869,7 +1878,7 @@ export default function DoctorDashboard() {
         )}
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="border-primary/20 shadow-lg">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Today's Appointments</CardTitle>
@@ -2356,16 +2365,25 @@ export default function DoctorDashboard() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {visit.nurse_vitals ? (
-                        <div className="text-xs">
-                          <div>BP: {visit.nurse_vitals.blood_pressure}</div>
-                          <div className="text-muted-foreground">
-                            HR: {visit.nurse_vitals.heart_rate} | Temp: {visit.nurse_vitals.temperature}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No vitals</span>
-                      )}
+                      {(() => {
+                        try {
+                          // Parse vitals from nurse_notes (stored as JSON string)
+                          const vitals = visit.nurse_notes ? JSON.parse(visit.nurse_notes) : null;
+                          if (vitals && vitals.blood_pressure) {
+                            return (
+                              <div className="text-xs">
+                                <div>BP: {vitals.blood_pressure}</div>
+                                <div className="text-muted-foreground">
+                                  HR: {vitals.heart_rate} | Temp: {vitals.temperature}°C
+                                </div>
+                              </div>
+                            );
+                          }
+                        } catch (e) {
+                          console.error('Error parsing vitals:', e);
+                        }
+                        return <span className="text-xs text-muted-foreground">No vitals</span>;
+                      })()}
                     </TableCell>
                     <TableCell>
                       {hasLabResults ? (
