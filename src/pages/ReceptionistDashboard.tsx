@@ -382,10 +382,19 @@ export default function ReceptionistDashboard() {
         receptionQueuePatients
       });
 
+      // Fetch today's checked-in patients
+      let checkedInToday = [];
+      try {
+        const checkedInRes = await api.get(`/visits?reception_status=Checked In&reception_completed_at=${today}`);
+        checkedInToday = checkedInRes.data.visits || [];
+      } catch (error) {
+        console.warn('Could not fetch checked-in visits:', error);
+      }
+
       setStats({
         todayAppointments,
         pendingAppointments,
-        completedCheckins: confirmedAppointments, // Confirmed appointments that were checked in
+        completedCheckins: checkedInToday.length, // Count of checked-in patients today
         totalPatients: totalPatientsCount,
         nurseQueuePatients,
         receptionQueuePatients,
