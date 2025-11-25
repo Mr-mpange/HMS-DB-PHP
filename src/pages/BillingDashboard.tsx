@@ -606,7 +606,7 @@ export default function BillingDashboard() {
       amount,
       payment_method: paymentMethod,
       payment_date: new Date().toISOString(),
-      reference_number: formData.get('referenceNumber') as string || null,
+      reference_number: formData.get('referenceNumber') as string || selectedInvoice.invoice_number || null,
       notes: formData.get('notes') as string || null,
       status: 'Completed',
     };

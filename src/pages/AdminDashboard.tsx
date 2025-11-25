@@ -780,12 +780,12 @@ const BillingAnalysis = () => {
         samplePayments: payments.slice(0, 3).map(p => ({ amount: p.amount, date: p.payment_date, status: p.status }))
       });
 
-      // Calculate revenue from actual payments in the period
+      // Calculate revenue from actual payments in the period (only payments with invoices)
       const totalRevenue = payments
-        .filter(p => p.status === 'Completed')
+        .filter(p => p.status === 'Completed' && p.invoice_id)
         .reduce((sum, p) => sum + Number(p.amount || 0), 0);
       
-      console.log('Total Revenue Calculated:', totalRevenue);
+      console.log('Total Revenue Calculated:', totalRevenue, 'from', payments.filter(p => p.status === 'Completed' && p.invoice_id).length, 'payments with invoices');
 
       // Calculate unpaid amount from all invoices
       const unpaidAmount = invoices
