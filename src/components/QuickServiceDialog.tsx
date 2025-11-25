@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import { mobilePaymentService, MobilePaymentRequest } from '@/lib/mobilePaymentService';
 import { Loader2, Stethoscope } from 'lucide-react';
 
 interface QuickServiceDialogProps {
@@ -123,6 +124,38 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         
         patientId = registerRes.data.patient?.id || registerRes.data.patientId;
         toast.success(`Patient ${walkInData.full_name} registered`);
+      }
+
+      // Handle Mobile Money Payment
+      if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod)) {
+        toast.info(`Initiating ${paymentMethod} payment for Quick Service...`);
+        
+        const paymentRequest: MobilePaymentRequest = {
+          phoneNumber: mobilePhone,
+          amount: totalAmount,
+          patientId: patientId,
+          paymentType: 'Quick Service',
+          paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
+          description: `Quick Service: ${service.service_name}`
+        };
+
+        const response = await mobilePaymentService.initiatePayment(paymentRequest);
+
+        if (response.success && response.transactionId) {
+          toast.success(
+            `📱 ${paymentMethod} payment initiated!\n` +
+            `Transaction ID: ${response.transactionId.slice(-8)}\n` +
+            `Patient will receive payment prompt on their phone.`,
+            { duration: 6000 }
+          );
+          
+          // Close dialog and let webhook handle the rest
+          onSuccess();
+          onOpenChange(false);
+          return;
+        } else {
+          throw new Error(response.error || 'Mobile payment initiation failed');
+        }
       }
       
       // Create patient service
