@@ -210,7 +210,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Stethoscope className="h-5 w-5" />
@@ -226,7 +226,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto pr-2 flex-1">
             {isWalkIn ? (
               <div className="space-y-3 p-3 bg-blue-50 rounded-md">
                 <p className="text-sm font-medium text-blue-900">Walk-in Patient Registration</p>

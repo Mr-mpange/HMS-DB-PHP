@@ -15,6 +15,11 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Seed insurance companies
+        $this->call([
+            InsuranceCompaniesSeeder::class,
+        ]);
+
         // User::factory(10)->create();
 
         User::factory()->create([

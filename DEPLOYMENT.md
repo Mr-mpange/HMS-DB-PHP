@@ -64,6 +64,9 @@ composer install --no-dev --optimize-autoloader
 # Run migrations
 php artisan migrate --force
 
+# Seed insurance companies (optional but recommended)
+php artisan db:seed --class=InsuranceCompaniesSeeder
+
 # Cache configuration
 php artisan config:cache
 php artisan route:cache

@@ -5,7 +5,9 @@ Major fixes and improvements:
 Frontend:
 - Fixed receptionist dashboard appointment stats (date comparison issue)
 - Added stat cards display for Today's Appointments, Pending, Check-ins, Total Patients
+- Fixed Total Patients stat to show actual count instead of limited results (was always showing 10)
 - Added invoice reference numbers to payment records (fixes missing reference in cash payments)
+- Added scrolling to Quick Service dialog to prevent buttons from disappearing
 - Improved date handling across all dashboards
 - Enhanced appointment booking and service dialogs
 
@@ -15,6 +17,7 @@ Backend:
 - Updated API routes for proper medication stock updates
 - Added /invoices route aliases for backward compatibility (fixes 404 errors)
 - Auto-generate invoice numbers in InvoiceController if not provided (fixes 422 validation errors)
+- Created InsuranceCompaniesSeeder with Tanzanian insurance companies (NHIF, AAR, Jubilee, etc.)
 - Added new migrations for settings and prescription items
 
 Deployment:

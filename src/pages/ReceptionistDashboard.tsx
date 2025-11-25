@@ -207,6 +207,7 @@ export default function ReceptionistDashboard() {
 
       const patientsRes = await api.get('/patients?order=created_at.desc&limit=10');
       const patientsData = patientsRes.data.patients || [];
+      const totalPatientsCount = patientsRes.data.total || patientsData.length;
 
       // Fetch doctors - get profiles that have doctor role
       let doctorsData = [];
@@ -372,7 +373,7 @@ export default function ReceptionistDashboard() {
         todayAppointments,
         pendingAppointments,
         completedCheckins: confirmedAppointments, // Confirmed appointments that were checked in
-        totalPatients: patientsData?.length || 0,
+        totalPatients: totalPatientsCount,
         nurseQueuePatients,
         receptionQueuePatients,
       });
