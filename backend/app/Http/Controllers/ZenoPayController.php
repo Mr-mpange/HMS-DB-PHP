@@ -38,7 +38,11 @@ class ZenoPayController extends Controller
             'customer_name' => 'required|string',
             'customer_email' => 'required|email',
             'customer_phone' => 'required|string',
-            'payment_type' => 'nullable|string', // e.g., 'Registration', 'Consultation', 'Invoice'
+            'payment_type' => 'nullable|string', // e.g., 'Registration', 'Consultation', 'Invoice', 'Quick Service'
+            'service_id' => 'nullable|uuid', // For Quick Service
+            'service_name' => 'nullable|string', // For Quick Service
+            'quantity' => 'nullable|integer|min:1', // For Quick Service
+            'unit_price' => 'nullable|numeric|min:0', // For Quick Service
         ]);
 
         try {
@@ -71,6 +75,10 @@ class ZenoPayController extends Controller
                     'patient_id' => $patientId,
                     'payment_type' => $validated['payment_type'] ?? 'Payment',
                     'payment_method' => $validated['payment_method'] ?? 'Mobile Money',
+                    'service_id' => $validated['service_id'] ?? null,
+                    'service_name' => $validated['service_name'] ?? null,
+                    'quantity' => $validated['quantity'] ?? null,
+                    'unit_price' => $validated['unit_price'] ?? null,
                 ],
             ];
 
@@ -326,6 +334,108 @@ class ZenoPayController extends Controller
                         ]);
                         
                         Log::info('Visit created for registration payment: ' . $payment->patient_id);
+                    }
+                }
+
+                // For Quick Service payments, create service and visit after payment confirmed
+                if ($payment->payment_type === 'Quick Service' && $payment->patient_id) {
+                    // Get service details from payment metadata
+                    $metadata = $data['metadata'] ?? [];
+                    $serviceId = $metadata['service_id'] ?? null;
+                    $quantity = $metadata['quantity'] ?? 1;
+                    $unitPrice = $metadata['unit_price'] ?? 0;
+                    $serviceName = $metadata['service_name'] ?? 'Quick Service';
+
+                    // Create patient service record
+                    if ($serviceId) {
+                        \App\Models\PatientService::create([
+                            'id' => \Illuminate\Support\Str::uuid(),
+                            'patient_id' => $payment->patient_id,
+                            'service_id' => $serviceId,
+                            'quantity' => $quantity,
+                            'unit_price' => $unitPrice,
+                            'total_price' => $payment->amount,
+                            'service_date' => now()->toDateString(),
+                            'status' => 'Completed',
+                            'service_name' => $serviceName,
+                        ]);
+                        
+                        Log::info('Patient service created for Quick Service payment');
+                    }
+
+                    // Create visit for quick service (nurse → doctor → billing, NO lab)
+                    $existingVisit = \App\Models\PatientVisit::where('patient_id', $payment->patient_id)
+                        ->where('overall_status', 'Active')
+                        ->first();
+                    
+                    if (!$existingVisit) {
+                        \App\Models\PatientVisit::create([
+                            'id' => \Illuminate\Support\Str::uuid(),
+                            'patient_id' => $payment->patient_id,
+                            'visit_date' => now()->toDateString(),
+                            'reception_status' => 'Checked In',
+                            'reception_completed_at' => now(),
+                            'current_stage' => 'nurse',
+                            'nurse_status' => 'Pending',
+                            'lab_status' => 'Not Required',
+                            'overall_status' => 'Active',
+                            'visit_type' => 'Quick Service',
+                        ]);
+                        
+                        Log::info('Visit created for Quick Service payment: ' . $payment->patient_id);
+                    }
+                }
+
+                // For billing invoice payments, complete the visit after payment confirmed
+                if ($payment->invoice_id && $payment->patient_id) {
+                    $invoice = Invoice::find($payment->invoice_id);
+                    
+                    if ($invoice) {
+                        // Check if invoice is now fully paid
+                        if ($invoice->status === 'Paid' || $invoice->paid_amount >= $invoice->total_amount) {
+                            // Find active visit for this patient in billing stage
+                            $visit = \App\Models\PatientVisit::where('patient_id', $payment->patient_id)
+                                ->where('current_stage', 'billing')
+                                ->where('overall_status', 'Active')
+                                ->first();
+                            
+                            // If no visit in billing, try to find any active visit
+                            if (!$visit) {
+                                $visit = \App\Models\PatientVisit::where('patient_id', $payment->patient_id)
+                                    ->where('overall_status', 'Active')
+                                    ->first();
+                            }
+                            
+                            if ($visit) {
+                                // Complete the visit
+                                $visit->billing_status = 'Paid';
+                                $visit->billing_completed_at = now();
+                                $visit->current_stage = 'completed';
+                                $visit->overall_status = 'Completed';
+                                $visit->updated_at = now();
+                                $visit->save();
+                                
+                                Log::info('Visit completed after billing payment: ' . $visit->id);
+                            } else {
+                                // Create a completed visit record if none exists
+                                \App\Models\PatientVisit::create([
+                                    'id' => \Illuminate\Support\Str::uuid(),
+                                    'patient_id' => $payment->patient_id,
+                                    'visit_date' => now()->toDateString(),
+                                    'reception_status' => 'Completed',
+                                    'nurse_status' => 'Completed',
+                                    'doctor_status' => 'Completed',
+                                    'lab_status' => 'Not Required',
+                                    'pharmacy_status' => 'Completed',
+                                    'billing_status' => 'Paid',
+                                    'billing_completed_at' => now(),
+                                    'current_stage' => 'completed',
+                                    'overall_status' => 'Completed',
+                                ]);
+                                
+                                Log::info('Created completed visit record for billing payment');
+                            }
+                        }
                     }
                 }
 
