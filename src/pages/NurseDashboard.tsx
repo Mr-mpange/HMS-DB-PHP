@@ -314,6 +314,10 @@ export default function NurseDashboard() {
       const patientsData = Array.isArray(patientsResponse.data.patients) ? patientsResponse.data.patients : [];
       const totalPatientsCount = patientsResponse.data.total || patientsData.length;
 
+      // Fetch completed tasks for today
+      const completedResponse = await api.get(`/visits?nurse_status=Completed&nurse_completed_at=${today}`);
+      const completedVisitsToday = Array.isArray(completedResponse.data.visits) ? completedResponse.data.visits : [];
+
       // Calculate stats
       setPendingVisits(visitsData);
       setAppointments(appointmentsData);
@@ -330,7 +334,7 @@ export default function NurseDashboard() {
         totalPatients: totalPatientsCount, // Use total from API, not just fetched count
         todayAppointments: todayCount,
         pendingVitals: visitsData.length,
-        completedTasks: visitsData.filter((v: any) => v.nurse_status === 'Completed').length
+        completedTasks: completedVisitsToday.length
       });
 
     } catch (error: any) {

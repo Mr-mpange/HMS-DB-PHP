@@ -1715,15 +1715,13 @@ export default function DoctorDashboard() {
       const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       
       const todayAppointments = appointmentsData?.filter(a => {
-        // Extract date from appointment_date using local time to avoid timezone shifts
+        if (!a.appointment_date) return false;
+        // Extract date from appointment_date (handle both Date objects and strings)
         let aptDate = '';
         if (a.appointment_date instanceof Date) {
-          const d = a.appointment_date;
-          aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          aptDate = a.appointment_date.toISOString().split('T')[0];
         } else if (typeof a.appointment_date === 'string') {
-          // Parse the date string in local time
-          const d = new Date(a.appointment_date);
-          aptDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          aptDate = a.appointment_date.split('T')[0];
         }
         return aptDate === today;
       }).length || 0;
