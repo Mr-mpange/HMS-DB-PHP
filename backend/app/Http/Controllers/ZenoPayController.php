@@ -237,24 +237,30 @@ class ZenoPayController extends Controller
             }
 
             $data = $request->all();
-            $reference = $data['reference'] ?? $data['order_id'] ?? null;
+            $orderId = $data['order_id'] ?? null;
+            $reference = $data['reference'] ?? null;
             $status = $data['status'] ?? $data['payment_status'] ?? null;
 
             Log::info('Processing webhook:', [
+                'order_id' => $orderId,
                 'reference' => $reference,
                 'status' => $status
             ]);
 
-            if (!$reference) {
-                Log::error('Webhook missing reference');
-                return response()->json(['error' => 'Missing reference'], 400);
+            if (!$orderId && !$reference) {
+                Log::error('Webhook missing order_id and reference');
+                return response()->json(['error' => 'Missing order_id or reference'], 400);
             }
 
-            // Find payment by reference
-            $payment = Payment::where('reference_number', $reference)->first();
+            // Find payment by order_id (which we stored as reference_number) or by the ZenoPay reference
+            $payment = Payment::where('reference_number', $orderId)
+                ->orWhere('reference_number', $reference)
+                ->first();
 
             if (!$payment) {
-                Log::warning('Payment not found for reference: ' . $reference, [
+                Log::warning('Payment not found', [
+                    'searched_order_id' => $orderId,
+                    'searched_reference' => $reference,
                     'all_recent_payments' => Payment::orderBy('created_at', 'desc')->limit(5)->pluck('reference_number')
                 ]);
                 return response()->json(['error' => 'Payment not found'], 404);
@@ -266,6 +272,11 @@ class ZenoPayController extends Controller
                 'payment_type' => $payment->payment_type,
                 'patient_id' => $payment->patient_id
             ]);
+
+            // Update payment with ZenoPay reference if different
+            if ($reference && $payment->reference_number !== $reference) {
+                $payment->notes = ($payment->notes ? $payment->notes . ' | ' : '') . 'ZenoPay Ref: ' . $reference;
+            }
 
             // Update payment status
             if ($status === 'success' || $status === 'completed') {
