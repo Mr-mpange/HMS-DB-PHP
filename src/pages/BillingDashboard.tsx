@@ -444,6 +444,8 @@ export default function BillingDashboard() {
         phoneNumber,
         amount,
         invoiceId: selectedInvoice.id,
+        patientId: selectedInvoice.patient_id,
+        paymentType: 'Invoice Payment',
         paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
         description: `Payment for invoice ${selectedInvoice.invoice_number}`
       };
