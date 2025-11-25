@@ -1162,10 +1162,15 @@ export default function DoctorDashboard() {
       invalidateCache(`doctor_visits_${user?.id}`);
       
       // Don't remove from pending visits - patient stays in doctor queue
-      // Refresh the visit data to show updated notes
+      // Refresh the visit data to show updated notes and status
       const updatedVisits = pendingVisits.map(v => 
         v.id === selectedVisit.id 
-          ? { ...v, doctor_diagnosis: consultationForm.diagnosis, doctor_notes: combinedNotes }
+          ? { 
+              ...v, 
+              doctor_diagnosis: consultationForm.diagnosis, 
+              doctor_notes: combinedNotes,
+              doctor_status: 'In Consultation'
+            }
           : v
       );
       setPendingVisits(updatedVisits);
