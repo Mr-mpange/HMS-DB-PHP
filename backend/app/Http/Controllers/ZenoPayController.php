@@ -82,7 +82,7 @@ class ZenoPayController extends Controller
             ]);
 
             // Check if we're in test/development mode
-            $testMode = env('ZENOPAY_TEST_MODE', false);
+            $testMode = filter_var(env('ZENOPAY_TEST_MODE', false), FILTER_VALIDATE_BOOLEAN);
             
             if ($testMode) {
                 // DEVELOPMENT MODE: Simulate successful payment
