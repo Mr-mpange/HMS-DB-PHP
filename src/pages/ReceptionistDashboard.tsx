@@ -1053,7 +1053,8 @@ export default function ReceptionistDashboard() {
           const paymentRequest: MobilePaymentRequest = {
             phoneNumber,
             amount: amountPaid,
-            invoiceId: selectedReturningPatient.id, // Use patient ID
+            patientId: selectedReturningPatient.id,
+            paymentType: 'Consultation',
             paymentMethod: paymentForm.payment_method as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
             description: `Consultation fee for ${selectedReturningPatient.full_name}`
           };
