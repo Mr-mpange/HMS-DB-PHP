@@ -278,8 +278,8 @@ class ZenoPayController extends Controller
                 $payment->notes = ($payment->notes ? $payment->notes . ' | ' : '') . 'ZenoPay Ref: ' . $reference;
             }
 
-            // Update payment status
-            if ($status === 'success' || $status === 'completed') {
+            // Update payment status (case-insensitive check)
+            if (strtolower($status) === 'success' || strtolower($status) === 'completed') {
                 $payment->status = 'Completed';
                 $payment->notes = 'Payment completed via ZenoPay';
                 $payment->save();
