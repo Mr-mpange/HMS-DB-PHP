@@ -10,9 +10,14 @@ export interface MobilePaymentRequest {
   amount: number;
   invoiceId?: string; // Optional - for invoice payments
   patientId?: string; // Optional - for direct payments (registration, consultation)
-  paymentType?: string; // Optional - e.g., 'Registration', 'Consultation', 'Invoice'
+  paymentType?: string; // Optional - e.g., 'Registration', 'Consultation', 'Invoice', 'Quick Service'
   paymentMethod: 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa';
   description?: string;
+  // Quick Service metadata
+  service_id?: string;
+  service_name?: string;
+  quantity?: number;
+  unit_price?: number;
 }
 
 export interface MobilePaymentResponse {
@@ -57,7 +62,7 @@ class ZenoPayService {
   }
 
   async initiatePayment(request: MobilePaymentRequest): Promise<MobilePaymentResponse> {
-    const { phoneNumber, amount, invoiceId, patientId, paymentType, paymentMethod, description } = request;
+    const { phoneNumber, amount, invoiceId, patientId, paymentType, paymentMethod, description, service_id, service_name, quantity, unit_price } = request;
 
     console.log('🚀 Initiating mobile payment via backend:', {
       phoneNumber,
@@ -65,7 +70,11 @@ class ZenoPayService {
       invoiceId,
       patientId,
       paymentType,
-      paymentMethod
+      paymentMethod,
+      service_id,
+      service_name,
+      quantity,
+      unit_price
     });
 
     try {
@@ -81,7 +90,12 @@ class ZenoPayService {
         customer_email: 'patient@hospital.com',
         customer_phone: formattedPhone,
         payment_method: paymentMethod,
-        description: description || `${paymentType || 'Payment'} - ${paymentMethod}`
+        description: description || `${paymentType || 'Payment'} - ${paymentMethod}`,
+        // Quick Service metadata
+        service_id: service_id || null,
+        service_name: service_name || null,
+        quantity: quantity || null,
+        unit_price: unit_price || null
       });
 
       if (response.data.success) {
