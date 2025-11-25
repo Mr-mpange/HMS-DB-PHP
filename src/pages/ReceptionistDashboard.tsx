@@ -306,7 +306,20 @@ export default function ReceptionistDashboard() {
       }).length;
       
       const pendingAppointments = appointmentsArray.filter(a => a.status === 'Scheduled').length;
-      const confirmedAppointments = appointmentsArray.filter(a => a.status === 'Confirmed').length;
+      
+      // Count confirmed appointments for TODAY only
+      const confirmedAppointments = appointmentsArray.filter(a => {
+        if (a.status !== 'Confirmed') return false;
+        if (!a.appointment_date) return false;
+        // Extract date part
+        let aptDate = '';
+        if (a.appointment_date instanceof Date) {
+          aptDate = a.appointment_date.toISOString().split('T')[0];
+        } else if (typeof a.appointment_date === 'string') {
+          aptDate = a.appointment_date.split('T')[0];
+        }
+        return aptDate === today;
+      }).length;
 
       // Calculate nurse queue patients (from new registrations in patient_visits table)
       // Include NULL, empty, or 'Pending' status as these all mean waiting for vitals
