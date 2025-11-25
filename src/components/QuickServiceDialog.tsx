@@ -130,13 +130,17 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod)) {
         toast.info(`Initiating ${paymentMethod} payment for Quick Service...`);
         
-        const paymentRequest: MobilePaymentRequest = {
+        const paymentRequest: any = {
           phoneNumber: mobilePhone,
           amount: totalAmount,
           patientId: patientId,
           paymentType: 'Quick Service',
           paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-          description: `Quick Service: ${service.service_name}`
+          description: `Quick Service: ${service.service_name}`,
+          service_id: selectedService,
+          service_name: service.service_name,
+          quantity: quantity,
+          unit_price: service.base_price
         };
 
         const response = await mobilePaymentService.initiatePayment(paymentRequest);
