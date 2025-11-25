@@ -378,6 +378,13 @@ Route::middleware('auth:sanctum')->group(function () {
     // Invoice Items
     Route::post('/billing/invoice-items', [\App\Http\Controllers\InvoiceController::class, 'storeItem']);
     
+    // Invoices (alias routes for backward compatibility)
+    Route::get('/invoices', [\App\Http\Controllers\InvoiceController::class, 'index']);
+    Route::get('/invoices/{id}', [\App\Http\Controllers\InvoiceController::class, 'show']);
+    Route::post('/invoices', [\App\Http\Controllers\InvoiceController::class, 'store']);
+    Route::put('/invoices/{id}', [\App\Http\Controllers\InvoiceController::class, 'update']);
+    Route::delete('/invoices/{id}', [\App\Http\Controllers\InvoiceController::class, 'destroy']);
+    
     // Lab Tests
     Route::get('/lab-tests', [\App\Http\Controllers\LabTestController::class, 'index']);
     Route::get('/lab-tests/{id}', [\App\Http\Controllers\LabTestController::class, 'show']);

@@ -5,6 +5,7 @@ Major fixes and improvements:
 Frontend:
 - Fixed receptionist dashboard appointment stats (date comparison issue)
 - Added stat cards display for Today's Appointments, Pending, Check-ins, Total Patients
+- Added invoice reference numbers to payment records (fixes missing reference in cash payments)
 - Improved date handling across all dashboards
 - Enhanced appointment booking and service dialogs
 
@@ -12,6 +13,8 @@ Backend:
 - Added quantity_in_stock accessor to Medication model for backward compatibility
 - Fixed stock decrease logic when dispensing medications
 - Updated API routes for proper medication stock updates
+- Added /invoices route aliases for backward compatibility (fixes 404 errors)
+- Auto-generate invoice numbers in InvoiceController if not provided (fixes 422 validation errors)
 - Added new migrations for settings and prescription items
 
 Deployment:

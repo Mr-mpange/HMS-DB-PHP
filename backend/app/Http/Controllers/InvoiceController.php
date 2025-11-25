@@ -44,7 +44,7 @@ class InvoiceController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'invoice_number' => 'required|string|unique:invoices',
+            'invoice_number' => 'nullable|string|unique:invoices',
             'patient_id' => 'required|exists:patients,id',
             'total_amount' => 'required|numeric|min:0',
             'paid_amount' => 'nullable|numeric|min:0',
@@ -52,13 +52,28 @@ class InvoiceController extends Controller
             'invoice_date' => 'required|date',
         ]);
         
+        // Auto-generate invoice number if not provided
+        $invoiceNumber = $request->invoice_number;
+        if (!$invoiceNumber) {
+            // Generate format: INV-YYYYMMDD-XXXX
+            $date = date('Ymd');
+            $count = Invoice::whereDate('created_at', today())->count() + 1;
+            $invoiceNumber = 'INV-' . $date . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+            
+            // Ensure uniqueness
+            while (Invoice::where('invoice_number', $invoiceNumber)->exists()) {
+                $count++;
+                $invoiceNumber = 'INV-' . $date . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+            }
+        }
+        
         $totalAmount = $request->total_amount;
         $paidAmount = $request->paid_amount ?? 0;
         $balance = $totalAmount - $paidAmount;
         
         $invoice = Invoice::create([
             'id' => Str::uuid(),
-            'invoice_number' => $request->invoice_number,
+            'invoice_number' => $invoiceNumber,
             'patient_id' => $request->patient_id,
             'total_amount' => $totalAmount,
             'paid_amount' => $paidAmount,

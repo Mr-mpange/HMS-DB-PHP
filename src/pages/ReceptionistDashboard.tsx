@@ -729,7 +729,8 @@ export default function ReceptionistDashboard() {
         payment_method: paymentForm.payment_method,
         payment_type: 'Consultation Fee',
         status: 'Completed',
-        payment_date: new Date().toISOString()
+        payment_date: new Date().toISOString(),
+        reference_number: invoiceRes.data.invoice?.invoice_number || null
       };
       
       const paymentRes = await api.post('/payments', paymentData);
@@ -1093,7 +1094,8 @@ export default function ReceptionistDashboard() {
         payment_method: paymentForm.payment_method,
         payment_type: 'Consultation Fee',
         status: 'Completed',
-        payment_date: new Date().toISOString()
+        payment_date: new Date().toISOString(),
+        reference_number: invoiceRes.data.invoice?.invoice_number || null
       };
       
       await api.post('/payments', paymentData);
@@ -1427,7 +1429,8 @@ export default function ReceptionistDashboard() {
         payment_method: paymentForm.payment_method,
         payment_type: 'Consultation Fee',
         status: 'Completed',
-        payment_date: new Date().toISOString()
+        payment_date: new Date().toISOString(),
+        reference_number: invoiceRes.data.invoice?.invoice_number || null
       };
       
       await api.post('/payments', paymentData);
