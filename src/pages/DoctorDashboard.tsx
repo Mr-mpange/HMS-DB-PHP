@@ -1608,9 +1608,10 @@ export default function DoctorDashboard() {
     try {
       // Fetch visits waiting for doctor (with caching)
       // Cache for 30 seconds, refetch after 15 seconds
+      // Fetch visits at doctor stage (don't filter by doctor_status to include "In Consultation")
       const visitsResponse = await fetchWithCache(
         `doctor_visits_${user.id}`,
-        () => api.get(`/visits?current_stage=doctor&overall_status=Active&doctor_status=Pending`),
+        () => api.get(`/visits?current_stage=doctor&overall_status=Active`),
         { cacheTime: 30000, staleTime: 15000 }
       );
       
