@@ -122,7 +122,7 @@ export default function PharmacyDashboard() {
         patientsRes,
         doctorsRes
       ] = await Promise.allSettled([
-        api.get('/prescriptions?limit=50&visit_stage=pharmacy'),
+        api.get('/prescriptions?limit=100'),
         api.get('/pharmacy/medications'),
         api.get('/patients?fields=id,full_name,date_of_birth'),
         api.get('/users/profiles?role=doctor')

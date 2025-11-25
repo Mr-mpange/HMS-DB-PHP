@@ -16,7 +16,6 @@ class InsuranceCompaniesSeeder extends Seeder
         $companies = [
             [
                 'name' => 'NHIF (National Health Insurance Fund)',
-                'code' => 'NHIF',
                 'contact_person' => 'NHIF Customer Service',
                 'phone' => '+255 22 2153835',
                 'email' => 'info@nhif.or.tz',
@@ -25,7 +24,6 @@ class InsuranceCompaniesSeeder extends Seeder
             ],
             [
                 'name' => 'AAR Insurance',
-                'code' => 'AAR',
                 'contact_person' => 'AAR Customer Service',
                 'phone' => '+255 22 2601000',
                 'email' => 'info@aar-insurance.co.tz',
@@ -34,7 +32,6 @@ class InsuranceCompaniesSeeder extends Seeder
             ],
             [
                 'name' => 'Jubilee Insurance',
-                'code' => 'JUBILEE',
                 'contact_person' => 'Jubilee Customer Service',
                 'phone' => '+255 22 2113700',
                 'email' => 'info@jubileeinsurance.com',
@@ -43,7 +40,6 @@ class InsuranceCompaniesSeeder extends Seeder
             ],
             [
                 'name' => 'Strategis Insurance',
-                'code' => 'STRATEGIS',
                 'contact_person' => 'Strategis Customer Service',
                 'phone' => '+255 22 2700208',
                 'email' => 'info@strategis-insurance.com',
@@ -52,7 +48,6 @@ class InsuranceCompaniesSeeder extends Seeder
             ],
             [
                 'name' => 'Resolution Insurance',
-                'code' => 'RESOLUTION',
                 'contact_person' => 'Resolution Customer Service',
                 'phone' => '+255 22 2700000',
                 'email' => 'info@resolution.co.tz',
@@ -61,7 +56,6 @@ class InsuranceCompaniesSeeder extends Seeder
             ],
             [
                 'name' => 'Britam Insurance',
-                'code' => 'BRITAM',
                 'contact_person' => 'Britam Customer Service',
                 'phone' => '+255 22 2863000',
                 'email' => 'info@britam.com',
@@ -70,7 +64,6 @@ class InsuranceCompaniesSeeder extends Seeder
             ],
             [
                 'name' => 'Sanlam Insurance',
-                'code' => 'SANLAM',
                 'contact_person' => 'Sanlam Customer Service',
                 'phone' => '+255 22 2116507',
                 'email' => 'info@sanlam.co.tz',
@@ -79,7 +72,6 @@ class InsuranceCompaniesSeeder extends Seeder
             ],
             [
                 'name' => 'Phoenix of Tanzania Assurance',
-                'code' => 'PHOENIX',
                 'contact_person' => 'Phoenix Customer Service',
                 'phone' => '+255 22 2117974',
                 'email' => 'info@phoenix.co.tz',
@@ -90,7 +82,7 @@ class InsuranceCompaniesSeeder extends Seeder
 
         foreach ($companies as $company) {
             InsuranceCompany::firstOrCreate(
-                ['code' => $company['code']],
+                ['name' => $company['name']], // Use name instead of code for uniqueness
                 array_merge($company, ['id' => Str::uuid()])
             );
         }

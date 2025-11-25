@@ -1648,6 +1648,10 @@ export default function DoctorDashboard() {
         console.error('Error fetching appointments:', appointmentsResponse.statusText);
         throw new Error(appointmentsResponse.statusText);
       }
+
+      // Fetch total patients count
+      const patientCountResponse = await api.get('/patients?limit=1');
+      const totalPatientsCount = patientCountResponse.data.total || 0;
       
       const appointmentsData = appointmentsResponse.data.appointments || [];
       console.log('Fetched appointments:', appointmentsData?.length || 0);
@@ -1727,10 +1731,11 @@ export default function DoctorDashboard() {
       // Filter out visits that shouldn't be in doctor queue
       // Only show visits where:
       // 1. current_stage is 'doctor'
-      // 2. doctor_status is NOT 'Completed' (this ensures patients from lab only show if consultation incomplete)
+      // 2. doctor_status is NOT 'Completed' (includes 'Pending', 'In Consultation', 'Pending Review', null)
       // 3. overall_status is 'Active'
       // This filtering ensures that:
       // - New patients appear in the queue
+      // - Patients in consultation stay in the queue even after refresh
       // - Patients returning from lab ONLY appear if their consultation is not yet complete
       const activeVisits = visitsWithLabTests.filter(visit => 
         visit.current_stage === 'doctor' && 
@@ -1767,17 +1772,10 @@ export default function DoctorDashboard() {
         setCompletedVisits([]);
       }
       
-      // Calculate unique patients from ALL visits (active + completed) and appointments
-      const uniquePatientIds = new Set([
-        ...visitsWithLabTests.map(v => v.patient_id).filter(Boolean),
-        ...(appointmentsData || []).map(a => a.patient_id).filter(Boolean),
-        ...completedVisitsData.map(v => v.patient_id).filter(Boolean)
-      ]);
-      
       setStats({
         totalAppointments: appointmentsData?.length || 0,
         todayAppointments: todayAppointments.length,
-        totalPatients: uniquePatientIds.size,
+        totalPatients: totalPatientsCount,
         pendingConsultations: activeVisits.length
       });
     } catch (error) {
