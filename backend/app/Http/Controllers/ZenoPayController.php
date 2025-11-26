@@ -58,7 +58,9 @@ class ZenoPayController extends Controller
                 // Direct payment without invoice (registration, consultation fee)
                 $patientId = $validated['patient_id'] ?? null;
                 $paymentType = $validated['payment_type'] ?? 'Payment';
-                $reference = strtoupper($paymentType) . '-' . time() . '-' . rand(1000, 9999);
+                // Remove spaces from payment type for order_id (ZenoPay webhook issue)
+                $paymentTypeClean = str_replace(' ', '_', strtoupper($paymentType));
+                $reference = $paymentTypeClean . '-' . time() . '-' . rand(1000, 9999);
             }
 
             // Prepare ZenoPay request for mobile money Tanzania
@@ -142,6 +144,53 @@ class ZenoPayController extends Controller
                     }
                 }
 
+                // For Quick Service payments, create service and visit immediately
+                if (($validated['payment_type'] ?? '') === 'Quick Service' && $patientId) {
+                    $serviceId = $validated['service_id'] ?? null;
+                    $quantity = $validated['quantity'] ?? 1;
+                    $unitPrice = $validated['unit_price'] ?? 0;
+                    $serviceName = $validated['service_name'] ?? 'Quick Service';
+
+                    // Create patient service record
+                    if ($serviceId) {
+                        \App\Models\PatientService::create([
+                            'id' => Str::uuid(),
+                            'patient_id' => $patientId,
+                            'service_id' => $serviceId,
+                            'quantity' => $quantity,
+                            'unit_price' => $unitPrice,
+                            'total_price' => $validated['amount'],
+                            'service_date' => now()->toDateString(),
+                            'status' => 'Completed',
+                            'service_name' => $serviceName,
+                        ]);
+                        
+                        Log::info('TEST MODE: Patient service created for Quick Service');
+                    }
+
+                    // Create visit for quick service
+                    $existingVisit = \App\Models\PatientVisit::where('patient_id', $patientId)
+                        ->where('overall_status', 'Active')
+                        ->first();
+                    
+                    if (!$existingVisit) {
+                        \App\Models\PatientVisit::create([
+                            'id' => Str::uuid(),
+                            'patient_id' => $patientId,
+                            'visit_date' => now()->toDateString(),
+                            'reception_status' => 'Checked In',
+                            'reception_completed_at' => now(),
+                            'current_stage' => 'nurse',
+                            'nurse_status' => 'Pending',
+                            'lab_status' => 'Not Required',
+                            'overall_status' => 'Active',
+                            'visit_type' => 'Quick Service',
+                        ]);
+                        
+                        Log::info('TEST MODE: Visit created for Quick Service');
+                    }
+                }
+
                 return response()->json([
                     'success' => true,
                     'reference' => $reference,
@@ -203,10 +252,19 @@ class ZenoPayController extends Controller
                 ]);
             }
 
+            // ZenoPay returned an error
+            $errorData = $response->json();
+            Log::error('ZenoPay API error:', [
+                'status' => $response->status(),
+                'error' => $errorData,
+                'request' => $paymentData
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to initiate payment',
-                'error' => $response->json(),
+                'message' => $errorData['message'] ?? 'Failed to initiate payment with ZenoPay',
+                'error' => $errorData,
+                'zenopay_status' => $response->status(),
             ], 400);
 
         } catch (\Exception $e) {
@@ -334,6 +392,34 @@ class ZenoPayController extends Controller
                         ]);
                         
                         Log::info('Visit created for registration payment: ' . $payment->patient_id);
+                    }
+                }
+
+                // For consultation payments (returning patients), create a visit
+                if ($payment->payment_type === 'Consultation' && $payment->patient_id) {
+                    // Check if visit already exists
+                    $existingVisit = \App\Models\PatientVisit::where('patient_id', $payment->patient_id)
+                        ->where('overall_status', 'Active')
+                        ->first();
+                    
+                    if (!$existingVisit) {
+                        // Create new visit for returning patient
+                        \App\Models\PatientVisit::create([
+                            'id' => \Illuminate\Support\Str::uuid(),
+                            'patient_id' => $payment->patient_id,
+                            'visit_date' => now(),
+                            'status' => 'Active',
+                            'overall_status' => 'Active',
+                            'current_stage' => 'nurse',
+                            'reception_status' => 'Completed',
+                            'nurse_status' => 'Pending',
+                            'doctor_status' => 'Pending',
+                            'lab_status' => 'Pending',
+                            'pharmacy_status' => 'Pending',
+                            'billing_status' => 'Pending',
+                        ]);
+                        
+                        Log::info('Visit created for consultation payment (returning patient): ' . $payment->patient_id);
                     }
                 }
 
