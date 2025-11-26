@@ -1,0 +1,10 @@
+[33mb583ff5[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Improve ZenoPay error handling and try alternative API format
+[33mcdea8c3[m Fix ZenoPay API integration - use correct endpoint and format
+[33m8f93263[m Fix billing mobile payment - add patient_id and payment_type
+[33mc4f5bdc[m Fix Quick Service mobile payment - pass service metadata to backend
+[33m8773340[m complete
+[33mb772536[m Add webhook handling for billing invoice mobile money payments
+[33md664229[m WIP: Add mobile money support to Quick Service (partial)
+[33m4bd682b[m CRITICAL FIX: ZenoPay webhook status check now case-insensitive
+[33m13c3547[m Fix: ZenoPay webhook now searches by order_id
+[33m04ce86a[m Improve ZenoPay webhook logging and error handling
