@@ -2723,7 +2723,7 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
 
-        {/* Patient Reports Section */}
+        {/* Patient Reports Section - For searching individual patient medical history */}
         <PatientReports />
 
         {/* Medical services management moved to Medical Services page */}

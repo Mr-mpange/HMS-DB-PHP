@@ -290,36 +290,40 @@ export default function AdminReports() {
 
       {/* Professional Print Report - Only visible on print */}
       <div className="hidden print:block" style={{ padding: '20px', fontFamily: 'monospace' }}>
-        {/* Header with Logo */}
-        <div style={{ textAlign: 'center', borderTop: '3px double #000', borderBottom: '3px double #000', padding: '20px 0', marginBottom: '30px' }}>
-          {/* Logo - Centered */}
-          <div style={{ width: '120px', height: '120px', margin: '0 auto 15px auto' }}>
-            <Logo size="xl" showText={false} />
-          </div>
-          
-          <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: '10px 0', letterSpacing: '3px', color: '#1A5A42' }}>
-            HASET
-          </h1>
-          <h2 style={{ fontSize: '18px', margin: '5px 0', fontWeight: '600', color: '#2D7A5F' }}>
-            Hospital Management System
-          </h2>
-          <h3 style={{ fontSize: '16px', margin: '5px 0', fontWeight: 'normal', color: '#666' }}>
-            Healthcare Management System Report
-          </h3>
-          
-          <div style={{ marginTop: '15px', fontSize: '14px', color: '#333' }}>
-            <p style={{ margin: '5px 0' }}>
-              <strong>Generated:</strong> {format(new Date(), 'MMMM dd, yyyy - HH:mm')}
-            </p>
-            <p style={{ margin: '5px 0' }}>
-              <strong>Period:</strong> {getFilterLabel()}
-            </p>
+        {/* Header with Logo - SYSTEM REPORT STYLE */}
+        <div style={{ backgroundColor: '#f0f9ff', border: '3px solid #1e40af', padding: '20px', marginBottom: '30px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {/* Logo */}
+            <div style={{ width: '80px', height: '95px', flexShrink: 0 }}>
+              <Logo size="lg" showText={false} />
+            </div>
+            
+            {/* Title */}
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 8px 0', letterSpacing: '2px', color: '#1e40af' }}>
+                HASET HOSPITAL
+              </h1>
+              <h2 style={{ fontSize: '20px', margin: '0 0 12px 0', fontWeight: '700', color: '#dc2626', textTransform: 'uppercase' }}>
+                SYSTEM STATISTICS REPORT
+              </h2>
+              <div style={{ fontSize: '12px', color: '#475569' }}>
+                <p style={{ margin: '3px 0' }}>
+                  <strong>Report Period:</strong> {getFilterLabel()}
+                </p>
+                <p style={{ margin: '3px 0' }}>
+                  <strong>Generated:</strong> {format(new Date(), 'dd/MM/yyyy HH:mm')}
+                </p>
+              </div>
+            </div>
+            
+            {/* Spacer for balance */}
+            <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
         </div>
 
-        {/* Summary Report */}
-        <h3 style={{ fontSize: '18px', fontWeight: 'bold', textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '30px' }}>
-          SUMMARY REPORT
+        {/* Summary Statistics */}
+        <h3 style={{ fontSize: '18px', fontWeight: 'bold', textAlign: 'center', backgroundColor: '#1e40af', color: 'white', padding: '10px', marginBottom: '25px' }}>
+          📊 HOSPITAL STATISTICS SUMMARY
         </h3>
 
         <div style={{ lineHeight: '1.8', maxWidth: '700px', margin: '0 auto' }}>
