@@ -2461,7 +2461,7 @@ export default function DoctorDashboard() {
                           size="sm"
                           onClick={() => handleOrderLabTests(visit)}
                           className="flex items-center gap-1"
-                          disabled={!visit.doctor_notes}
+                          disabled={visit.doctor_status !== 'In Progress' && visit.doctor_status !== 'In Consultation'}
                         >
                           <TestTube className="h-3 w-3" />
                           Order Lab Test

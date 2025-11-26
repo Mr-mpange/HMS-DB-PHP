@@ -74,26 +74,37 @@ const Logo: React.FC<LogoProps> = React.memo(({ size = 'md', showText = true, cl
             className="w-full h-full object-cover rounded-full shadow-md border-2 border-white"
           />
         ) : (
-          <svg viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
-          {/* Circle border */}
-          <circle cx="512" cy="512" r="450" stroke="#2D7A5F" strokeWidth="40" fill="none"/>
-          
-          {/* Medical cross */}
-          <path d="M314 226H490V402H666V578H490V754H314V578H138V402H314V226Z" fill="#1A5A42"/>
-          
-          {/* Curved line through cross */}
-          <path d="M320 240C320 240 380 340 420 440C460 540 480 640 520 740" 
-                stroke="#EF4444" strokeWidth="30" strokeLinecap="round" fill="none"/>
-          
-          {/* Heartbeat/ECG line */}
-          <path d="M612 440L662 340L712 540L762 240L812 440L862 440" 
-                stroke="#EF4444" strokeWidth="35" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-          
-          {/* HASET text banner - curved to fit circle */}
-          <rect x="180" y="700" width="664" height="140" rx="70" fill="#EF4444"/>
-          <text x="512" y="800" fontFamily="Arial, sans-serif" fontSize="120" fontWeight="bold" 
-                fill="white" textAnchor="middle" dominantBaseline="middle">HASET</text>
-        </svg>
+          <svg viewBox="0 0 840 1000" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
+            {/* Pentagon shape - dark green */}
+            <path d="M420 50 L800 300 L680 750 L160 750 L40 300 Z" fill="#1a4d3a" />
+            
+            {/* White checkmark/tick */}
+            <path d="M260 580 L360 680 L580 420" stroke="white" strokeWidth="60" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+            
+            {/* Stethoscope - red */}
+            {/* Earpieces */}
+            <circle cx="360" cy="180" r="25" fill="#dc2626"/>
+            <circle cx="480" cy="180" r="25" fill="#dc2626"/>
+            
+            {/* Tubes */}
+            <path d="M360 205 Q360 280 420 320" stroke="#dc2626" strokeWidth="20" strokeLinecap="round" fill="none"/>
+            <path d="M480 205 Q480 280 420 320" stroke="#dc2626" strokeWidth="20" strokeLinecap="round" fill="none"/>
+            
+            {/* Main tube */}
+            <path d="M420 320 L420 450 Q420 480 390 480 L280 480" stroke="#dc2626" strokeWidth="20" strokeLinecap="round" fill="none"/>
+            
+            {/* Chest piece circles */}
+            <circle cx="280" cy="480" r="40" stroke="#dc2626" strokeWidth="20" fill="none"/>
+            <circle cx="280" cy="480" r="15" fill="#dc2626"/>
+            
+            {/* Small circle on tube */}
+            <circle cx="560" cy="420" r="25" stroke="#dc2626" strokeWidth="15" fill="none"/>
+            <circle cx="560" cy="420" r="10" fill="#dc2626"/>
+            
+            {/* HASET text - red, bold */}
+            <text x="420" y="920" fontFamily="Arial, sans-serif" fontSize="180" fontWeight="900" 
+                  fill="#dc2626" textAnchor="middle" letterSpacing="10">HASET</text>
+          </svg>
         )}
       </div>
       
