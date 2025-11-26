@@ -290,40 +290,33 @@ export default function AdminReports() {
 
       {/* Professional Print Report - Only visible on print */}
       <div className="hidden print:block" style={{ padding: '20px', fontFamily: 'monospace' }}>
-        {/* Header with Logo - SYSTEM REPORT STYLE */}
-        <div style={{ backgroundColor: '#f0f9ff', border: '3px solid #1e40af', padding: '20px', marginBottom: '30px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            {/* Logo */}
-            <div style={{ width: '80px', height: '95px', flexShrink: 0 }}>
-              <Logo size="lg" showText={false} />
-            </div>
+        {/* Header with Logo - Simple Lines Style */}
+        <div style={{ borderTop: '3px solid #000', borderBottom: '3px solid #000', padding: '20px 0', marginBottom: '30px' }}>
+          {/* Logo - Centered */}
+          <div style={{ width: '100px', height: '120px', margin: '0 auto 15px auto' }}>
+            <Logo size="xl" showText={false} />
+          </div>
+          
+          {/* Title - Centered */}
+          <div style={{ textAlign: 'center' }}>
+            <h1 style={{ fontSize: '28px', fontWeight: 'bold', margin: '0 0 8px 0', letterSpacing: '3px', color: '#000' }}>
+              HASET HOSPITAL
+            </h1>
+            <h2 style={{ fontSize: '20px', margin: '0 0 15px 0', fontWeight: '700', color: '#000' }}>
+              SYSTEM STATISTICS REPORT
+            </h2>
             
-            {/* Title */}
-            <div style={{ flex: 1, textAlign: 'center' }}>
-              <h1 style={{ fontSize: '32px', fontWeight: 'bold', margin: '0 0 8px 0', letterSpacing: '2px', color: '#1e40af' }}>
-                HASET HOSPITAL
-              </h1>
-              <h2 style={{ fontSize: '20px', margin: '0 0 12px 0', fontWeight: '700', color: '#dc2626', textTransform: 'uppercase' }}>
-                SYSTEM STATISTICS REPORT
-              </h2>
-              <div style={{ fontSize: '12px', color: '#475569' }}>
-                <p style={{ margin: '3px 0' }}>
-                  <strong>Report Period:</strong> {getFilterLabel()}
-                </p>
-                <p style={{ margin: '3px 0' }}>
-                  <strong>Generated:</strong> {format(new Date(), 'dd/MM/yyyy HH:mm')}
-                </p>
-              </div>
+            <div style={{ fontSize: '12px', color: '#333', marginTop: '12px' }}>
+              <span><strong>Report Period:</strong> {getFilterLabel()}</span>
+              <span style={{ margin: '0 10px' }}>|</span>
+              <span><strong>Generated:</strong> {format(new Date(), 'dd/MM/yyyy HH:mm')}</span>
             </div>
-            
-            {/* Spacer for balance */}
-            <div style={{ width: '80px', flexShrink: 0 }}></div>
           </div>
         </div>
 
         {/* Summary Statistics */}
-        <h3 style={{ fontSize: '18px', fontWeight: 'bold', textAlign: 'center', backgroundColor: '#1e40af', color: 'white', padding: '10px', marginBottom: '25px' }}>
-          📊 HOSPITAL STATISTICS SUMMARY
+        <h3 style={{ fontSize: '16px', fontWeight: 'bold', textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '8px', marginBottom: '25px' }}>
+          HOSPITAL STATISTICS SUMMARY
         </h3>
 
         <div style={{ lineHeight: '1.8', maxWidth: '700px', margin: '0 auto' }}>
