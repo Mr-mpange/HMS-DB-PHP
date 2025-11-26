@@ -651,9 +651,9 @@ export default function PatientReports() {
       {/* Print View */}
       {selectedPatient && patientHistory && (
         <div id="patient-report-print" style={{ display: 'none' }}>
-          <div style={{ fontFamily: 'Arial, sans-serif', padding: '30px 40px', lineHeight: '1.6' }}>
+          <div style={{ fontFamily: 'Arial, sans-serif', padding: '20px 30px', lineHeight: '1.4' }}>
             {/* Header with Logo */}
-            <div style={{ marginBottom: '40px', borderBottom: '3px solid #2563eb', paddingBottom: '20px' }}>
+            <div style={{ marginBottom: '20px', borderBottom: '2px solid #2563eb', paddingBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
                 {/* HASET Logo */}
                 <div style={{ width: '80px', height: '95px', flexShrink: 0 }}>
@@ -718,8 +718,8 @@ export default function PatientReports() {
             </div>
 
             {/* Patient Demographics */}
-            <div style={{ marginBottom: '35px', backgroundColor: '#f8fafc', padding: '25px 30px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <h2 style={{ fontSize: '18px', color: '#1e40af', fontWeight: 'bold', marginBottom: '20px', marginTop: '0' }}>
+            <div style={{ marginBottom: '20px', backgroundColor: '#f8fafc', padding: '15px 20px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+              <h2 style={{ fontSize: '16px', color: '#1e40af', fontWeight: 'bold', marginBottom: '12px', marginTop: '0' }}>
                 PATIENT INFORMATION
               </h2>
               <table style={{ width: '100%', fontSize: '14px', lineHeight: '2' }}>
@@ -979,24 +979,21 @@ export default function PatientReports() {
               </div>
             )}
 
-            {/* Footer */}
-            <div style={{ marginTop: '50px', paddingTop: '25px', borderTop: '2px solid #cbd5e1' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '15px', fontSize: '11px', color: '#64748b' }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#475569' }}>{systemSettings.hospital_name}</p>
-                  <p style={{ margin: '0 0 2px 0' }}>📍 {systemSettings.hospital_address}</p>
-                  <p style={{ margin: '0 0 2px 0' }}>📞 {systemSettings.hospital_phone}</p>
-                  <p style={{ margin: '0' }}>✉️ {systemSettings.hospital_email}</p>
+            {/* Footer - Compact */}
+            <div style={{ marginTop: '30px', paddingTop: '12px', borderTop: '1px solid #cbd5e1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#64748b', lineHeight: '1.3' }}>
+                <div>
+                  <span style={{ fontWeight: '600', color: '#475569' }}>{systemSettings.hospital_name}</span> | 
+                  📍 {systemSettings.hospital_address} | 
+                  📞 {systemSettings.hospital_phone} | 
+                  ✉️ {systemSettings.hospital_email}
                 </div>
-                <div style={{ flex: 1, textAlign: 'right' }}>
-                  <p style={{ margin: '0 0 4px 0', fontWeight: '600', color: '#475569' }}>Report Information</p>
-                  <p style={{ margin: '0 0 2px 0' }}>Patient ID: {selectedPatient.id}</p>
-                  <p style={{ margin: '0 0 2px 0' }}>Generated: {format(new Date(), 'PPP')}</p>
-                  <p style={{ margin: '0' }}>Time: {format(new Date(), 'p')}</p>
+                <div style={{ textAlign: 'right' }}>
+                  Generated: {format(new Date(), 'dd/MM/yyyy HH:mm')} | Patient ID: {selectedPatient.id}
                 </div>
               </div>
-              <div style={{ textAlign: 'center', paddingTop: '15px', borderTop: '1px solid #e2e8f0', fontSize: '10px', color: '#9ca3af' }}>
-                <p style={{ margin: '0' }}>This is a confidential computer-generated medical report. Unauthorized disclosure is prohibited.</p>
+              <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '8px', color: '#9ca3af' }}>
+                Confidential medical report - Unauthorized disclosure prohibited
               </div>
             </div>
           </div>
