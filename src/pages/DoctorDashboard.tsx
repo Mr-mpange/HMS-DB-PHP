@@ -998,6 +998,10 @@ export default function DoctorDashboard() {
     const uniqueTests = tests.filter((test, index, self) => 
       index === self.findIndex((t) => t.id === test.id)
     );
+    
+    console.log('Viewing lab results for tests:', uniqueTests);
+    console.log('First test structure:', uniqueTests[0]);
+    
     setSelectedLabTests(uniqueTests);
     setShowLabResults(true);
     
@@ -1966,28 +1970,43 @@ export default function DoctorDashboard() {
                         </Badge>
                       </div>
                       
-                      {test.lab_results?.length > 0 && (
+                      {(test.lab_results?.length > 0 || test.result_value || test.results) ? (
                         <div className="mt-3 space-y-2">
                           <h5 className="text-sm font-medium">Results:</h5>
                           <div className="space-y-2">
-                            {test.lab_results.map((result: any) => (
-                              <div key={result.id} className="flex justify-between items-center text-sm p-2 bg-muted/50 rounded">
-                                <span className="font-medium">{result.result_value} {result.unit}</span>
-                                <div className="flex items-center gap-2">
-                                  {result.reference_range && (
-                                    <span className="text-muted-foreground text-xs">
-                                      Ref: {result.reference_range}
-                                    </span>
-                                  )}
-                                  {result.abnormal_flag && (
-                                    <Badge variant="destructive" className="text-xs">
-                                      Abnormal
-                                    </Badge>
-                                  )}
+                            {test.lab_results?.length > 0 ? (
+                              test.lab_results.map((result: any) => (
+                                <div key={result.id} className="flex justify-between items-center text-sm p-2 bg-muted/50 rounded">
+                                  <span className="font-medium">{result.result_value} {result.unit}</span>
+                                  <div className="flex items-center gap-2">
+                                    {result.reference_range && (
+                                      <span className="text-muted-foreground text-xs">
+                                        Ref: {result.reference_range}
+                                      </span>
+                                    )}
+                                    {result.abnormal_flag && (
+                                      <Badge variant="destructive" className="text-xs">
+                                        Abnormal
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
+                              ))
+                            ) : test.result_value ? (
+                              <div className="text-sm p-2 bg-muted/50 rounded">
+                                <span className="font-medium">{test.result_value}</span>
+                                {test.notes && <p className="text-xs text-muted-foreground mt-1">{test.notes}</p>}
                               </div>
-                            ))}
+                            ) : test.results ? (
+                              <div className="text-sm p-2 bg-muted/50 rounded">
+                                <span className="font-medium">{test.results}</span>
+                              </div>
+                            ) : null}
                           </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-sm text-muted-foreground">
+                          No results entered yet
                         </div>
                       )}
                     </div>
