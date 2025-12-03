@@ -22,6 +22,10 @@ return [
     'allowed_origins' => [
         'https://hasetcompany.or.tz',
         'https://www.hasetcompany.or.tz',
+        'http://localhost:5173',
+        'http://localhost:8082',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:8082',
     ],
 
     'allowed_origins_patterns' => [],
