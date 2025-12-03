@@ -533,10 +533,9 @@ export default function LabDashboard() {
                                 size="sm"
                                 onClick={() => {
                                   console.log('View Tests clicked for patient:', patientId);
-                                  // Only show ordered, sample collected, and in-progress tests
-                                  const activeTests = tests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress');
-                                  console.log('Active tests to view:', activeTests.length);
-                                  setSelectedPatientTests(activeTests);
+                                  console.log('All tests for patient:', tests);
+                                  // Show all tests for this patient (including completed ones)
+                                  setSelectedPatientTests(tests);
                                   setIsViewMode(true); // Set view mode
                                   setBatchResults({}); // Clear results
                                   setBatchDialogOpen(true);
