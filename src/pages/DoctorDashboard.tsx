@@ -2349,7 +2349,7 @@ export default function DoctorDashboard() {
                     visit.overall_status === 'Active'
                   )
                   .map((visit) => {
-                    const hasLabResults = visit.labTests && visit.labTests.length > 0;
+                    const hasLabResults = (visit.labTests && visit.labTests.length > 0) || (visit.allCompletedLabTests && visit.allCompletedLabTests.length > 0);
                     const hasAbnormal = hasLabResults && [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])]
                       .some((test: any) => test.lab_results?.some((r: any) => r.abnormal_flag));
                     const age = visit.patient?.date_of_birth 
