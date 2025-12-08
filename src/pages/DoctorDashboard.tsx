@@ -98,6 +98,10 @@ export default function DoctorDashboard() {
     notes: ''
   });
   
+  // Search states
+  const [labTestSearchQuery, setLabTestSearchQuery] = useState('');
+  const [medicationSearchQuery, setMedicationSearchQuery] = useState('');
+  
   // Prescription form state - now supports multiple medications
   const [selectedMedications, setSelectedMedications] = useState<string[]>([]);
   const [prescriptionForms, setPrescriptionForms] = useState<Record<string, any>>({});
@@ -1075,6 +1079,8 @@ export default function DoctorDashboard() {
       await fetchAvailableLabTests();
     }
     
+    // Reset search query
+    setLabTestSearchQuery('');
     setShowLabTestDialog(true);
   };
 
@@ -1120,6 +1126,8 @@ export default function DoctorDashboard() {
       toast.error(`Failed to load medications: ${error.message || 'Unknown error'}`);
     }
     
+    // Reset search query
+    setMedicationSearchQuery('');
     setShowPrescriptionDialog(true);
   };
 
@@ -3214,9 +3222,26 @@ export default function DoctorDashboard() {
           <div className="space-y-4">
             <div>
               <Label>Select Tests *</Label>
+              <Input
+                placeholder="Search lab tests..."
+                value={labTestSearchQuery}
+                onChange={(e) => setLabTestSearchQuery(e.target.value)}
+                className="mb-2"
+              />
               <div className="border rounded-lg p-4 max-h-96 overflow-y-auto space-y-2">
                 {availableLabTests.length > 0 ? (
-                  availableLabTests.map((test) => (
+                  (() => {
+                    const filteredTests = availableLabTests.filter(test => 
+                      test.test_name.toLowerCase().includes(labTestSearchQuery.toLowerCase()) ||
+                      test.test_type?.toLowerCase().includes(labTestSearchQuery.toLowerCase()) ||
+                      test.description?.toLowerCase().includes(labTestSearchQuery.toLowerCase())
+                    );
+                    
+                    if (filteredTests.length === 0) {
+                      return <p className="text-center text-muted-foreground py-4">No lab tests found matching "{labTestSearchQuery}"</p>;
+                    }
+                    
+                    return filteredTests.map((test) => (
                     <div key={test.id} className="flex items-start gap-2">
                       <input
                         type="checkbox"
@@ -3241,7 +3266,8 @@ export default function DoctorDashboard() {
                         )}
                       </label>
                     </div>
-                  ))
+                    ));
+                  })()
                 ) : (
                   <p className="text-center text-muted-foreground py-4">No lab tests available</p>
                 )}
@@ -3299,8 +3325,25 @@ export default function DoctorDashboard() {
             <div className="space-y-2">
               <Label>Select Medications * (Check only what patient needs)</Label>
               <p className="text-xs text-muted-foreground">Select medications to prescribe, then fill in details for each one below</p>
+              <Input
+                placeholder="Search medications..."
+                value={medicationSearchQuery}
+                onChange={(e) => setMedicationSearchQuery(e.target.value)}
+                className="mb-2"
+              />
               <div className="border rounded-lg p-4 space-y-2 max-h-60 overflow-y-auto">
-                {availableMedications.map((med) => (
+                {(() => {
+                  const filteredMeds = availableMedications.filter(med => 
+                    med.name.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
+                    med.strength?.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
+                    med.dosage_form?.toLowerCase().includes(medicationSearchQuery.toLowerCase())
+                  );
+                  
+                  if (filteredMeds.length === 0) {
+                    return <p className="text-center text-muted-foreground py-4">No medications found matching "{medicationSearchQuery}"</p>;
+                  }
+                  
+                  return filteredMeds.map((med) => (
                   <div key={med.id} className="flex items-start space-x-2">
                     <input
                       type="checkbox"
@@ -3352,7 +3395,8 @@ export default function DoctorDashboard() {
                       )}
                     </label>
                   </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
 

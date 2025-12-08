@@ -169,12 +169,42 @@ export default function PharmacyDashboard() {
       
       // Combine the data manually
       // Note: medications array is already parsed from JSON by the backend
-      const combinedPrescriptions: PrescriptionWithRelations[] = (prescriptionsData || []).map((prescription: any) => ({
-        ...prescription,
-        patient: (patientsData || []).find((p: any) => p.id === prescription.patient_id) || null,
-        doctor_profile: (doctorsData || []).find((d: any) => d.id === prescription.doctor_id) || null,
-        // medications array is already included in prescription from backend
-      }));
+      const combinedPrescriptions: PrescriptionWithRelations[] = await Promise.all(
+        (prescriptionsData || []).map(async (prescription: any) => {
+          let patient = (patientsData || []).find((p: any) => p.id === prescription.patient_id);
+          let doctor = (doctorsData || []).find((d: any) => d.id === prescription.doctor_id);
+          
+          // If patient not found in initial load, fetch individually
+          if (!patient && prescription.patient_id) {
+            try {
+              const patientRes = await api.get(`/patients/${prescription.patient_id}`);
+              patient = patientRes.data.patient || patientRes.data;
+            } catch (error) {
+              console.warn(`Failed to fetch patient ${prescription.patient_id}:`, error);
+              patient = null;
+            }
+          }
+          
+          // If doctor not found in initial load, fetch individually
+          if (!doctor && prescription.doctor_id) {
+            try {
+              const doctorRes = await api.get(`/users/profiles?ids=${prescription.doctor_id}`);
+              const profiles = doctorRes.data.profiles || [];
+              doctor = profiles.find((d: any) => d.id === prescription.doctor_id);
+            } catch (error) {
+              console.warn(`Failed to fetch doctor ${prescription.doctor_id}:`, error);
+              doctor = null;
+            }
+          }
+          
+          return {
+            ...prescription,
+            patient: patient || { id: prescription.patient_id, full_name: 'Unknown Patient', phone: 'N/A' },
+            doctor_profile: doctor || { id: prescription.doctor_id, full_name: 'Unknown Doctor', name: 'Unknown Doctor' },
+            // medications array is already included in prescription from backend
+          };
+        })
+      );
 
       setPrescriptions(combinedPrescriptions);
       setMedications(medicationsData || []);
@@ -590,30 +620,51 @@ export default function PharmacyDashboard() {
     const quantity = formData.get('quantity');
     const newQuantity = quantity ? Number(quantity) : 0;
     
-    if (isNaN(newQuantity)) {
-      toast.error('Please enter a valid quantity');
-      return;
-    }
-    
-    if (isNaN(newQuantity)) {
-      toast.error('Please enter a valid quantity');
+    if (isNaN(newQuantity) || newQuantity < 0) {
+      toast.error('Please enter a valid quantity (must be 0 or greater)');
       return;
     }
 
     try {
-      await api.put(`/pharmacy/medications/${selectedMedication.id}`, { 
+      // Update stock on server
+      const response = await api.put(`/pharmacy/medications/${selectedMedication.id}`, { 
         stock_quantity: newQuantity,
         quantity_in_stock: newQuantity 
       });
+      
+      console.log('Stock update response:', response.data);
+      
+      // Immediately update local state to reflect the change
+      setMedications(prev => prev.map(med => 
+        med.id === selectedMedication.id 
+          ? { ...med, stock_quantity: newQuantity, quantity_in_stock: newQuantity }
+          : med
+      ));
+      
+      // Recalculate stats
+      const updatedMeds = medications.map(med => 
+        med.id === selectedMedication.id 
+          ? { ...med, stock_quantity: newQuantity, quantity_in_stock: newQuantity }
+          : med
+      );
+      
+      const lowStock = updatedMeds.filter(m => 
+        (m.stock_quantity || m.quantity_in_stock || 0) <= m.reorder_level
+      ).length;
+      
+      setStats(prev => ({ ...prev, lowStock }));
+      
+      toast.success(`Stock updated to ${newQuantity} units`);
+      setStockDialogOpen(false);
+      setSelectedMedication(null);
+      
+      // Also refresh from server to ensure consistency
+      setTimeout(() => loadPharmacyData(false), 500);
     } catch (error: any) {
-      toast.error('Failed to update stock');
+      console.error('Stock update error:', error);
+      toast.error(error.response?.data?.error || 'Failed to update stock');
       return;
     }
-
-    toast.success('Stock updated successfully');
-    setStockDialogOpen(false);
-    setSelectedMedication(null);
-    loadPharmacyData(false); // Background refresh
   };
 
   const handleSaveMedication = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -655,19 +706,55 @@ export default function PharmacyDashboard() {
 
     try {
       if (editingMedication) {
-        await api.put(`/pharmacy/medications/${editingMedication.id}`, medicationData);
+        const response = await api.put(`/pharmacy/medications/${editingMedication.id}`, medicationData);
+        
+        // Immediately update local state
+        setMedications(prev => prev.map(med => 
+          med.id === editingMedication.id 
+            ? { ...med, ...medicationData, stock_quantity: medicationData.quantity_in_stock }
+            : med
+        ));
+        
+        // Recalculate stats
+        const updatedMeds = medications.map(med => 
+          med.id === editingMedication.id 
+            ? { ...med, ...medicationData, stock_quantity: medicationData.quantity_in_stock }
+            : med
+        );
+        
+        const lowStock = updatedMeds.filter(m => 
+          (m.stock_quantity || m.quantity_in_stock || 0) <= m.reorder_level
+        ).length;
+        
+        setStats(prev => ({ ...prev, lowStock, totalMedications: updatedMeds.length }));
       } else {
-        await api.post('/pharmacy/medications', medicationData);
+        const response = await api.post('/pharmacy/medications', medicationData);
+        const newMed = response.data.medication;
+        
+        // Add new medication to local state
+        if (newMed) {
+          setMedications(prev => [...prev, { ...newMed, stock_quantity: newMed.quantity_in_stock }]);
+          setStats(prev => ({ 
+            ...prev, 
+            totalMedications: prev.totalMedications + 1,
+            lowStock: (newMed.quantity_in_stock || 0) <= (newMed.reorder_level || 0) 
+              ? prev.lowStock + 1 
+              : prev.lowStock
+          }));
+        }
       }
     } catch (error: any) {
-      toast.error(`Failed to ${editingMedication ? 'update' : 'add'} medication`);
+      console.error('Medication save error:', error);
+      toast.error(error.response?.data?.error || `Failed to ${editingMedication ? 'update' : 'add'} medication`);
       return;
     }
 
     toast.success(`Medication ${editingMedication ? 'updated' : 'added'} successfully`);
     setMedicationDialogOpen(false);
     setEditingMedication(null);
-    loadPharmacyData(false); // Background refresh
+    
+    // Also refresh from server to ensure consistency
+    setTimeout(() => loadPharmacyData(false), 500);
   };
 
   const openStockDialog = (medication: any) => {
@@ -1899,7 +1986,7 @@ export default function PharmacyDashboard() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
+                    <div className="space-y-2 col-span-2">
                       <Label>Medication Name *</Label>
                       <Select
                         value={item.medication_name}
@@ -1917,14 +2004,51 @@ export default function PharmacyDashboard() {
                         }}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select medication" />
+                          <SelectValue placeholder="Search and select medication..." />
                         </SelectTrigger>
-                        <SelectContent>
-                          {medications.map((med) => (
-                            <SelectItem key={med.id} value={med.name}>
-                              {med.name} {med.strength ? `(${med.strength})` : ''} - Stock: {med.stock_quantity || med.quantity_in_stock || 0}
-                            </SelectItem>
-                          ))}
+                        <SelectContent className="max-h-[300px]">
+                          <div className="sticky top-0 bg-white p-2 border-b">
+                            <Input
+                              placeholder="Type to search medications..."
+                              value={medicationSearchTerm}
+                              onChange={(e) => setMedicationSearchTerm(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-8"
+                            />
+                          </div>
+                          {medications
+                            .filter(med => {
+                              if (!medicationSearchTerm) return true;
+                              const searchLower = medicationSearchTerm.toLowerCase();
+                              return (
+                                med.name.toLowerCase().includes(searchLower) ||
+                                (med.generic_name && med.generic_name.toLowerCase().includes(searchLower)) ||
+                                (med.strength && med.strength.toLowerCase().includes(searchLower))
+                              );
+                            })
+                            .map((med) => (
+                              <SelectItem key={med.id} value={med.name}>
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{med.name} {med.strength ? `(${med.strength})` : ''}</span>
+                                  <span className="text-xs text-muted-foreground ml-2">
+                                    Stock: {med.stock_quantity || med.quantity_in_stock || 0}
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          {medications.filter(med => {
+                            if (!medicationSearchTerm) return true;
+                            const searchLower = medicationSearchTerm.toLowerCase();
+                            return (
+                              med.name.toLowerCase().includes(searchLower) ||
+                              (med.generic_name && med.generic_name.toLowerCase().includes(searchLower)) ||
+                              (med.strength && med.strength.toLowerCase().includes(searchLower))
+                            );
+                          }).length === 0 && (
+                            <div className="p-4 text-center text-sm text-muted-foreground">
+                              No medications found
+                            </div>
+                          )}
                         </SelectContent>
                       </Select>
                     </div>
@@ -2054,7 +2178,24 @@ export default function PharmacyDashboard() {
 
                       await api.post('/prescriptions', prescriptionData);
                       
-                      toast.success(`Prescription created with ${validItems.length} medication(s)!`);
+                      // Update visit status to remove from queue
+                      // The prescription is now created, so pharmacy status should be "In Progress" or "Completed"
+                      // We'll set it to "In Progress" so it appears in the prescriptions tab for dispensing
+                      try {
+                        await api.put(`/visits/${selectedPatientForPrescription.id}`, {
+                          pharmacy_status: 'In Progress',
+                          notes: `${selectedPatientForPrescription.notes || ''} - Prescription created by pharmacy staff`.trim()
+                        });
+                        console.log('Visit updated - patient removed from queue');
+                      } catch (visitError) {
+                        console.warn('Failed to update visit status:', visitError);
+                        // Don't fail the whole operation if visit update fails
+                      }
+                      
+                      // Remove from local queue immediately
+                      setPatientQueue(prev => prev.filter(v => v.id !== selectedPatientForPrescription.id));
+                      
+                      toast.success(`Prescription created with ${validItems.length} medication(s)! Patient removed from queue.`);
                       setCreatePrescriptionDialogOpen(false);
                       setSelectedPatientForPrescription(null);
                       setNewPrescriptionItems([{
@@ -2065,6 +2206,7 @@ export default function PharmacyDashboard() {
                         quantity: '',
                         instructions: ''
                       }]);
+                      setMedicationSearchTerm(''); // Clear search
                       
                       // Refresh data
                       loadPharmacyData(false);
