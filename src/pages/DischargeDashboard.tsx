@@ -479,6 +479,7 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
                       type="date"
                       value={dischargeForm.follow_up_date}
                       onChange={(e) => setDischargeForm({...dischargeForm, follow_up_date: e.target.value})}
+                      min={new Date().toISOString().split('T')[0]}
                     />
                   </div>
                   <div className="space-y-2">
@@ -514,6 +515,7 @@ ${visit.follow_up_date ? `Scheduled for ${format(new Date(visit.follow_up_date),
                       type="date"
                       value={dischargeForm.next_appointment_date}
                       onChange={(e) => setDischargeForm({...dischargeForm, next_appointment_date: e.target.value})}
+                      min={new Date().toISOString().split('T')[0]}
                     />
                   </div>
                   <div className="space-y-2">

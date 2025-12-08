@@ -198,26 +198,76 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         notes: `Payment for ${service.service_name} (Qty: ${quantity})`
       });
 
-      // Create a visit for quick service (nurse → doctor → billing, NO lab)
+      // Determine routing based on service type
+      let currentStage = 'billing'; // Default: direct to billing (service already paid)
+      let nurseStatus = 'Not Required';
+      let doctorStatus = 'Not Required';
+      let labStatus = 'Not Required';
+      let pharmacyStatus = 'Not Required';
+      let billingStatus = 'Completed'; // Already paid
+
+      // Route based on service type
+      if (service.service_type === 'Consultation' || service.service_type === 'Medical') {
+        currentStage = 'doctor';
+        doctorStatus = 'Pending';
+        billingStatus = 'Completed'; // Already paid upfront
+      } else if (service.service_type === 'Laboratory') {
+        currentStage = 'lab';
+        labStatus = 'Pending';
+        billingStatus = 'Completed'; // Already paid upfront
+      } else if (service.service_type === 'Radiology' || service.service_type === 'Imaging') {
+        currentStage = 'lab'; // Radiology goes to lab
+        labStatus = 'Pending';
+        billingStatus = 'Completed';
+      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure') {
+        currentStage = 'nurse';
+        nurseStatus = 'Pending';
+        billingStatus = 'Completed';
+      } else if (service.service_type === 'Pharmacy') {
+        currentStage = 'pharmacy';
+        pharmacyStatus = 'Pending';
+        billingStatus = 'Completed';
+      }
+      // For other services (e.g., administrative), go directly to billing/discharge
+
+      // Create a visit for quick service
       await api.post('/visits', {
         patient_id: patientId,
         visit_date: new Date().toISOString().split('T')[0],
-        reception_status: 'Checked In',
+        reception_status: 'Completed',
         reception_completed_at: new Date().toISOString(),
-        current_stage: 'nurse',
-        nurse_status: 'Pending',
-        lab_status: 'Not Required', // Skip lab stage
+        current_stage: currentStage,
+        nurse_status: nurseStatus,
+        doctor_status: doctorStatus,
+        lab_status: labStatus,
+        pharmacy_status: pharmacyStatus,
+        billing_status: billingStatus,
         overall_status: 'Active',
-        visit_type: 'Quick Service'
+        visit_type: 'Quick Service',
+        notes: `Quick Service: ${service.service_name} - Paid upfront`
       });
 
       const patientName = isWalkIn ? walkInData.full_name : patient.full_name;
       const change = parseFloat(amountPaid) - totalAmount;
       
+      // Determine destination message
+      let destination = 'billing';
+      if (service.service_type === 'Consultation' || service.service_type === 'Medical') {
+        destination = 'doctor';
+      } else if (service.service_type === 'Laboratory') {
+        destination = 'lab';
+      } else if (service.service_type === 'Radiology' || service.service_type === 'Imaging') {
+        destination = 'lab';
+      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure') {
+        destination = 'nurse';
+      } else if (service.service_type === 'Pharmacy') {
+        destination = 'pharmacy';
+      }
+      
       if (change > 0) {
-        toast.success(`${service.service_name} assigned to ${patientName}. Change: TSh ${change.toLocaleString()}. Patient sent to nurse.`, { duration: 5000 });
+        toast.success(`${service.service_name} assigned to ${patientName}. Change: TSh ${change.toLocaleString()}. Patient sent to ${destination}.`, { duration: 5000 });
       } else {
-        toast.success(`${service.service_name} assigned to ${patientName}. Payment received. Patient sent to nurse.`);
+        toast.success(`${service.service_name} assigned to ${patientName}. Payment received. Patient sent to ${destination}.`);
       }
       
       onSuccess();

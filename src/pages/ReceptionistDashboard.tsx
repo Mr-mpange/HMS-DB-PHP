@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { StatCard } from '@/components/StatCard';
 import { AppointmentsCard } from '@/components/AppointmentsCard';
 import { PatientsCard } from '@/components/PatientsCard';
@@ -33,6 +35,7 @@ import {
   HeartHandshake,
   Plus,
   Stethoscope,
+  Pill,
 } from 'lucide-react';
 
 export default function ReceptionistDashboard() {
@@ -78,6 +81,10 @@ export default function ReceptionistDashboard() {
   const [selectedAppointmentForPayment, setSelectedAppointmentForPayment] = useState<any>(null);
   const [showQuickServiceDialog, setShowQuickServiceDialog] = useState(false);
   const [selectedPatientForService, setSelectedPatientForService] = useState<any>(null);
+  const [showDirectPharmacyDialog, setShowDirectPharmacyDialog] = useState(false);
+  const [directPharmacySearch, setDirectPharmacySearch] = useState('');
+  const [directPharmacyResults, setDirectPharmacyResults] = useState<any[]>([]);
+  const [availableMedications, setAvailableMedications] = useState<any[]>([]);
   const [consultationFee, setConsultationFee] = useState(2000);
   const [departmentFees, setDepartmentFees] = useState<Record<string, number>>({});
   const [paymentForm, setPaymentForm] = useState({
@@ -104,6 +111,7 @@ export default function ReceptionistDashboard() {
   const [appointmentTime, setAppointmentTime] = useState<string>('');
   const [appointmentReason, setAppointmentReason] = useState<string>('');
   const [departmentDoctors, setDepartmentDoctors] = useState<any[]>([]);
+  const [visitType, setVisitType] = useState<'Consultation' | 'Lab Only' | 'Pharmacy Only'>('Consultation');
 
   const [appointmentForm, setAppointmentForm] = useState({
     patient_id: '',
@@ -138,6 +146,7 @@ export default function ReceptionistDashboard() {
     
     fetchData(true); // Initial load with loading screen
     fetchConsultationFee();
+    fetchMedications();
 
     // Set up polling instead of real-time subscriptions (every 30 seconds)
     const intervalId = setInterval(() => {
@@ -149,6 +158,18 @@ export default function ReceptionistDashboard() {
       clearInterval(intervalId);
     };
   }, [user]);
+
+  const fetchMedications = async () => {
+    try {
+      const response = await api.get('/pharmacy/medications');
+      const meds = response.data.medications || [];
+      // Only show medications that are in stock
+      setAvailableMedications(meds.filter((m: any) => (m.stock_quantity || m.quantity_in_stock || 0) > 0));
+    } catch (error) {
+      console.error('Error fetching medications:', error);
+      setAvailableMedications([]);
+    }
+  };
 
   const fetchData = async (isInitialLoad = true) => {
     if (!user) return;
@@ -1017,6 +1038,59 @@ export default function ReceptionistDashboard() {
   const completeReturningPatientVisit = async () => {
     if (!selectedReturningPatient) return;
 
+    // Check if this is a non-consultation visit (Lab Only or Pharmacy Only)
+    if (visitType === 'Lab Only' || visitType === 'Pharmacy Only') {
+      // Skip payment and create visit directly
+      try {
+        setLoading(true);
+
+        // Determine next stage based on visit type
+        let nextStage = 'nurse';
+        let nextStatus = 'Pending';
+        
+        if (visitType === 'Pharmacy Only') {
+          nextStage = 'pharmacy';
+        }
+
+        // Create visit without payment
+        const visitData = {
+          patient_id: selectedReturningPatient.id,
+          visit_date: new Date().toISOString().split('T')[0],
+          visit_type: visitType,
+          status: 'Active',
+          current_stage: nextStage,
+          reception_status: 'Checked In',
+          reception_completed_at: new Date().toISOString(),
+          overall_status: 'Active',
+          notes: `${visitType} - No consultation fee required`
+        };
+
+        if (nextStage === 'nurse') {
+          visitData['nurse_status'] = nextStatus;
+        } else if (nextStage === 'pharmacy') {
+          visitData['pharmacy_status'] = nextStatus;
+        }
+
+        await api.post('/visits', visitData);
+
+        toast.success(`${selectedReturningPatient.full_name} checked in! (${visitType} - No consultation fee)`);
+        
+        // Reset and close
+        setShowReturningPatientPaymentDialog(false);
+        setSelectedReturningPatient(null);
+        setVisitType('Consultation');
+        
+        // Refresh data
+        fetchData(false);
+      } catch (error: any) {
+        console.error('Error creating visit:', error);
+        toast.error(error.response?.data?.error || 'Failed to create visit');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const amountPaid = Number(paymentForm.amount_paid);
     if (isNaN(amountPaid) || amountPaid < consultationFee) {
       toast.error(`Payment must be at least TSh ${consultationFee.toLocaleString()}`);
@@ -1141,23 +1215,59 @@ export default function ReceptionistDashboard() {
   };
 
   const createVisitForReturningPatient = async (patient: any) => {
+    // Determine routing based on visit type
+    let currentStage = 'nurse';
+    let nurseStatus = 'Pending';
+    let doctorStatus = 'Not Required';
+    let labStatus = 'Not Required';
+    let pharmacyStatus = 'Not Required';
+    let billingStatus = 'Not Required';
+    
+    // Route based on visit type
+    if (visitType === 'Lab Only') {
+      currentStage = 'lab';
+      labStatus = 'Pending';
+      nurseStatus = 'Not Required';
+    } else if (visitType === 'Pharmacy Only') {
+      currentStage = 'pharmacy';
+      pharmacyStatus = 'Pending';
+      nurseStatus = 'Not Required';
+    } else {
+      // Consultation - goes to nurse first
+      currentStage = 'nurse';
+      nurseStatus = 'Pending';
+    }
+    
     // Create new visit with all required fields
     const visitData = {
       patient_id: patient.id,
       visit_date: new Date().toISOString().split('T')[0],
-      reception_status: 'Checked In',
+      visit_type: visitType,
+      reception_status: 'Completed',
       reception_completed_at: new Date().toISOString(),
-      current_stage: 'nurse',
-      nurse_status: 'Pending',
-      overall_status: 'Active'
+      current_stage: currentStage,
+      nurse_status: nurseStatus,
+      doctor_status: doctorStatus,
+      lab_status: labStatus,
+      pharmacy_status: pharmacyStatus,
+      billing_status: billingStatus,
+      overall_status: 'Active',
+      notes: `Returning patient - ${visitType}`
     };
 
-    console.log('🏥 Reception - Creating walk-in visit:', visitData);
+    console.log('🏥 Reception - Creating returning patient visit:', visitData);
     const visitRes = await api.post('/visits', visitData);
-    console.log('✅ Walk-in visit created:', visitRes.data);
+    console.log('✅ Returning patient visit created:', visitRes.data);
+    
     if ((visitRes.status !== 200 && visitRes.status !== 201) || visitRes.data.error) {
       throw new Error(visitRes.data.error || 'Failed to create visit');
     }
+
+    // Show success message with destination
+    const destination = currentStage === 'nurse' ? 'nurse' : 
+                       currentStage === 'lab' ? 'laboratory' : 
+                       currentStage === 'pharmacy' ? 'pharmacy' : 'nurse';
+    toast.success(`${patient.full_name} sent to ${destination}!`);
 
     // Refresh data
     fetchData(false);
@@ -1213,6 +1323,14 @@ export default function ReceptionistDashboard() {
       return;
     }
 
+    // Check if this is a non-consultation visit (Lab Only or Pharmacy Only)
+    // These visits should NOT charge consultation fee
+    if (visitType === 'Lab Only' || visitType === 'Pharmacy Only') {
+      // Skip payment and create visit directly
+      await createVisitWithoutPayment();
+      return;
+    }
+
     // Determine the fee based on whether booking with appointment
     const feeToCharge = registerWithAppointment && appointmentDepartmentId
       ? getDepartmentFee(appointmentDepartmentId)
@@ -1229,6 +1347,102 @@ export default function ReceptionistDashboard() {
       payment_method: paymentMethod
     });
     setShowRegistrationPaymentDialog(true);
+  };
+
+  const createVisitWithoutPayment = async () => {
+    try {
+      setLoading(true);
+
+      // Register patient first
+      const patientData = {
+        full_name: registerForm.full_name,
+        date_of_birth: registerForm.date_of_birth,
+        gender: registerForm.gender,
+        phone: registerForm.phone,
+        email: registerForm.email || null,
+        address: registerForm.address || null,
+        blood_group: registerForm.blood_group || null,
+        insurance_company_id: registerForm.insurance_company_id || null,
+        insurance_number: registerForm.insurance_number || null,
+        status: 'Active'
+      };
+
+      const patientRes = await api.post('/patients', patientData);
+      const newPatient = patientRes.data.patient || patientRes.data;
+
+      // Determine routing based on visit type
+      let currentStage = 'nurse';
+      let nurseStatus = 'Pending';
+      let doctorStatus = 'Not Required';
+      let labStatus = 'Not Required';
+      let pharmacyStatus = 'Not Required';
+      let billingStatus = 'Not Required';
+      
+      // Route based on visit type
+      if (visitType === 'Lab Only') {
+        currentStage = 'lab';
+        labStatus = 'Pending';
+        nurseStatus = 'Not Required';
+      } else if (visitType === 'Pharmacy Only') {
+        currentStage = 'pharmacy';
+        pharmacyStatus = 'Pending';
+        nurseStatus = 'Not Required';
+      } else {
+        // Consultation - goes to nurse first
+        currentStage = 'nurse';
+        nurseStatus = 'Pending';
+      }
+
+      // Create visit without payment
+      const visitData = {
+        patient_id: newPatient.id,
+        visit_date: new Date().toISOString().split('T')[0],
+        visit_type: visitType,
+        reception_status: 'Completed',
+        reception_completed_at: new Date().toISOString(),
+        current_stage: currentStage,
+        nurse_status: nurseStatus,
+        doctor_status: doctorStatus,
+        lab_status: labStatus,
+        pharmacy_status: pharmacyStatus,
+        billing_status: billingStatus,
+        overall_status: 'Active',
+        notes: `${visitType} - No consultation fee required`
+      };
+
+      console.log('🏥 Reception - Creating visit without payment:', visitData);
+      await api.post('/visits', visitData);
+
+      // Show success message with destination
+      const destination = currentStage === 'nurse' ? 'nurse' : 
+                         currentStage === 'lab' ? 'laboratory' : 
+                         currentStage === 'pharmacy' ? 'pharmacy' : 'nurse';
+      
+      toast.success(`${registerForm.full_name} registered and sent to ${destination}! (${visitType} - No consultation fee)`);
+      
+      // Reset and close
+      setShowRegisterDialog(false);
+      setRegisterForm({
+        full_name: '',
+        date_of_birth: '',
+        gender: '',
+        phone: '',
+        email: '',
+        address: '',
+        blood_group: '',
+        insurance_company_id: '',
+        insurance_number: ''
+      });
+      setVisitType('Consultation');
+      
+      // Refresh data
+      fetchData(false);
+    } catch (error: any) {
+      console.error('Error creating visit:', error);
+      toast.error(error.response?.data?.error || 'Failed to create visit');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const completePatientRegistration = async () => {
@@ -1485,19 +1699,30 @@ export default function ReceptionistDashboard() {
         const visitData = {
           patient_id: patientId,
           visit_date: new Date().toISOString().split('T')[0],
-          reception_status: 'Checked In',
+          visit_type: visitType || 'Consultation',
+          reception_status: 'Completed',
+          reception_completed_at: new Date().toISOString(),
           current_stage: 'nurse',
-          overall_status: 'Active'
+          nurse_status: 'Pending',
+          doctor_status: 'Not Required',
+          lab_status: 'Not Required',
+          pharmacy_status: 'Not Required',
+          billing_status: 'Not Required',
+          overall_status: 'Active',
+          notes: `Walk-in patient - ${visitType || 'Consultation'}`
         };
+        
+        console.log('🏥 Reception - Creating walk-in visit:', visitData);
         
         // Create visit
         const visitRes = await api.post('/visits', visitData);
-        if (!visitRes.data.error && visitRes.data.visitId) {
-          await api.put(`/visits/${visitRes.data.visitId}`, {
-            nurse_status: 'Pending',
-            reception_completed_at: new Date().toISOString()
-          });
-          toast.success('Patient added to nurse queue!');
+        
+        console.log('✅ Walk-in visit created:', visitRes.data);
+        
+        if (!visitRes.data.error) {
+          toast.success(`${registerForm.full_name} registered and sent to nurse queue!`);
+        } else {
+          toast.warning('Patient registered but visit creation had issues');
         }
       }
 
@@ -1862,6 +2087,11 @@ export default function ReceptionistDashboard() {
                   <Stethoscope className="h-6 w-6 text-green-600" />
                   <span className="text-green-700">Quick Service (Walk-in)</span>
                   <span className="text-xs text-green-600">→ Direct Service Only</span>
+                </Button>
+                <Button variant="outline" className="h-20 flex-col gap-2 bg-purple-50 hover:bg-purple-100 border-purple-200" onClick={() => setShowDirectPharmacyDialog(true)}>
+                  <Pill className="h-6 w-6 text-purple-600" />
+                  <span className="text-purple-700">Direct to Pharmacy</span>
+                  <span className="text-xs text-purple-600">→ Medication Only</span>
                 </Button>
                 <Button variant="outline" className="h-20 flex-col gap-2" onClick={handleBookAppointment}>
                   <Calendar className="h-6 w-6" />
@@ -2296,6 +2526,8 @@ export default function ReceptionistDashboard() {
                   id="appt_date"
                   value={appointmentForm.appointment_date}
                   onChange={(e) => setAppointmentForm({ ...appointmentForm, appointment_date: e.target.value })}
+                  min={new Date().toISOString().split('T')[0]}
+                  required
                 />
               </div>
               <div className="space-y-2">
@@ -2711,74 +2943,107 @@ export default function ReceptionistDashboard() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={(e) => { e.preventDefault(); completeReturningPatientVisit(); }} className="space-y-4">
-            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="flex justify-between items-center">
-                <span className="font-medium">Consultation Fee:</span>
-                <span className="text-2xl font-bold text-blue-600">TSh {consultationFee.toLocaleString()}</span>
-              </div>
-            </div>
-
+            
             <div className="space-y-2">
-              <Label htmlFor="ret_payment_method">Payment Method</Label>
+              <Label htmlFor="visit_type">Visit Type</Label>
               <select
-                id="ret_payment_method"
-                className="w-full p-2 border rounded-md"
-                value={paymentForm.payment_method}
-                onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+                id="visit_type"
+                className="w-full p-2 border rounded-md bg-white"
+                value={visitType}
+                onChange={(e) => setVisitType(e.target.value as any)}
               >
-                <option value="Cash">💵 Cash</option>
-                <option value="Card">💳 Card</option>
-                <option value="M-Pesa">📱 M-Pesa</option>
-                <option value="Airtel Money">📱 Airtel Money</option>
-                <option value="Tigo Pesa">📱 Tigo Pesa</option>
-                <option value="Halopesa">📱 Halopesa</option>
+                <option value="Consultation">🩺 Consultation (Doctor Visit)</option>
+                <option value="Lab Only">🔬 Lab Only (Tests Only)</option>
+                <option value="Pharmacy Only">💊 Pharmacy Only (Buy Medicine)</option>
               </select>
+              <p className="text-xs text-muted-foreground">
+                {visitType === 'Consultation' && '→ Nurse → Doctor → Lab/Pharmacy/Discharge'}
+                {visitType === 'Lab Only' && '→ Nurse (sample) → Lab → Nurse (report) → Billing'}
+                {visitType === 'Pharmacy Only' && '→ Pharmacist writes prescription → Dispense → Billing'}
+              </p>
             </div>
 
-            {/* Mobile Money Phone Number Input */}
-            {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method) && (
-              <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                <Label htmlFor="ret_mobile_phone">Mobile Money Phone Number *</Label>
-                <Input
-                  id="ret_mobile_phone"
-                  type="tel"
-                  placeholder="0712345678"
-                  pattern="^0[67][0-9]{8}$"
-                  title="Enter valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)"
-                  required
-                />
-                <p className="text-xs text-blue-600">
-                  📱 Payment request will be sent to this number
+            <div className={`p-4 rounded-lg border ${visitType === 'Consultation' ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200'}`}>
+              <div className="flex justify-between items-center">
+                <span className="font-medium">
+                  {visitType === 'Consultation' ? 'Consultation Fee:' : 'Fee:'}
+                </span>
+                <span className={`text-2xl font-bold ${visitType === 'Consultation' ? 'text-blue-600' : 'text-green-600'}`}>
+                  {visitType === 'Consultation' ? `TSh ${consultationFee.toLocaleString()}` : 'FREE'}
+                </span>
+              </div>
+              {visitType !== 'Consultation' && (
+                <p className="text-xs text-green-700 mt-2">
+                  ✓ No consultation fee for {visitType} visits
                 </p>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="ret_amount_paid">Amount Paid</Label>
-              <Input
-                id="ret_amount_paid"
-                type="number"
-                value={paymentForm.amount_paid}
-                onChange={(e) => setPaymentForm({ ...paymentForm, amount_paid: e.target.value })}
-                placeholder="Enter amount"
-              />
+              )}
             </div>
 
-            {Number(paymentForm.amount_paid) > consultationFee && (
-              <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-green-800">Change to Return:</span>
-                  <span className="text-xl font-bold text-green-600">
-                    TSh {(Number(paymentForm.amount_paid) - consultationFee).toLocaleString()}
-                  </span>
+            {visitType === 'Consultation' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="ret_payment_method">Payment Method</Label>
+                  <select
+                    id="ret_payment_method"
+                    className="w-full p-2 border rounded-md"
+                    value={paymentForm.payment_method}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
+                  >
+                    <option value="Cash">💵 Cash</option>
+                    <option value="Card">💳 Card</option>
+                    <option value="M-Pesa">📱 M-Pesa</option>
+                    <option value="Airtel Money">📱 Airtel Money</option>
+                    <option value="Tigo Pesa">📱 Tigo Pesa</option>
+                    <option value="Halopesa">📱 Halopesa</option>
+                  </select>
                 </div>
-              </div>
-            )}
 
-            {Number(paymentForm.amount_paid) < consultationFee && paymentForm.amount_paid !== '' && (
-              <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                <span className="text-sm text-red-600">Insufficient payment amount</span>
-              </div>
+                {/* Mobile Money Phone Number Input */}
+                {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentForm.payment_method) && (
+                  <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <Label htmlFor="ret_mobile_phone">Mobile Money Phone Number *</Label>
+                    <Input
+                      id="ret_mobile_phone"
+                      type="tel"
+                      placeholder="0712345678"
+                      pattern="^0[67][0-9]{8}$"
+                      title="Enter valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)"
+                      required
+                    />
+                    <p className="text-xs text-blue-600">
+                      📱 Payment request will be sent to this number
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="ret_amount_paid">Amount Paid</Label>
+                  <Input
+                    id="ret_amount_paid"
+                    type="number"
+                    value={paymentForm.amount_paid}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, amount_paid: e.target.value })}
+                    placeholder="Enter amount"
+                  />
+                </div>
+
+                {Number(paymentForm.amount_paid) > consultationFee && (
+                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium text-green-800">Change to Return:</span>
+                      <span className="text-xl font-bold text-green-600">
+                        TSh {(Number(paymentForm.amount_paid) - consultationFee).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {Number(paymentForm.amount_paid) < consultationFee && paymentForm.amount_paid !== '' && (
+                  <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                    <span className="text-sm text-red-600">Insufficient payment amount</span>
+                  </div>
+                )}
+              </>
             )}
 
             <div className="flex justify-end gap-2 pt-4">
@@ -2790,9 +3055,10 @@ export default function ReceptionistDashboard() {
               </Button>
               <Button 
                 type="submit"
-                disabled={Number(paymentForm.amount_paid) < consultationFee}
+                disabled={visitType === 'Consultation' && Number(paymentForm.amount_paid) < consultationFee}
+                className={visitType !== 'Consultation' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
-                Confirm Payment & Create Visit
+                {visitType === 'Consultation' ? 'Confirm Payment & Create Visit' : 'Create Visit (No Payment)'}
               </Button>
             </div>
           </form>
@@ -2898,6 +3164,213 @@ export default function ReceptionistDashboard() {
           fetchData();
         }}
       />
+
+      {/* Direct to Pharmacy Dialog */}
+      <Dialog open={showDirectPharmacyDialog} onOpenChange={(open) => {
+        setShowDirectPharmacyDialog(open);
+        if (!open) {
+          setDirectPharmacySearch('');
+          setDirectPharmacyResults([]);
+        }
+      }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pill className="h-5 w-5 text-purple-600" />
+              Direct to Pharmacy
+            </DialogTitle>
+            <DialogDescription>
+              Send patient directly to pharmacy queue. Pharmacy staff will create the prescription.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Tabs defaultValue="existing" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="existing">Existing Patient</TabsTrigger>
+              <TabsTrigger value="new">New Walk-in</TabsTrigger>
+            </TabsList>
+            
+            {/* Existing Patient Tab */}
+            <TabsContent value="existing" className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Search Patient</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Search by name or phone..."
+                      value={directPharmacySearch}
+                      onChange={(e) => setDirectPharmacySearch(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          api.get(`/patients?search=${directPharmacySearch}`)
+                            .then(({ data }) => setDirectPharmacyResults(data.patients || []))
+                            .catch(() => toast.error('Failed to search patients'));
+                        }
+                      }}
+                    />
+                    <Button 
+                      onClick={async () => {
+                        try {
+                          const { data } = await api.get(`/patients?search=${directPharmacySearch}`);
+                          setDirectPharmacyResults(data.patients || []);
+                        } catch (error) {
+                          toast.error('Failed to search patients');
+                        }
+                      }}
+                    >
+                      Search
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Search Results */}
+                {directPharmacyResults.length > 0 && (
+                  <div className="border rounded-lg max-h-60 overflow-y-auto">
+                    {directPharmacyResults.map((patient) => (
+                      <div
+                        key={patient.id}
+                        className="p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+                        onClick={async () => {
+                          try {
+                            // Create pharmacy visit directly
+                            const visitData = {
+                              patient_id: patient.id,
+                              visit_date: new Date().toISOString().split('T')[0],
+                              status: 'Active',
+                              current_stage: 'pharmacy',
+                              reception_status: 'Checked In',
+                              reception_completed_at: new Date().toISOString(),
+                              pharmacy_status: 'Pending',
+                              overall_status: 'Active',
+                              notes: 'Direct to pharmacy - prescription to be created by pharmacy staff'
+                            };
+
+                            await api.post('/visits', visitData);
+                            toast.success(`${patient.full_name} sent to pharmacy queue!`);
+                            setShowDirectPharmacyDialog(false);
+                            setDirectPharmacySearch('');
+                            setDirectPharmacyResults([]);
+                            fetchData(false);
+                          } catch (error: any) {
+                            console.error('Error sending to pharmacy:', error);
+                            toast.error(error.response?.data?.error || 'Failed to send to pharmacy');
+                          }
+                        }}
+                      >
+                        <div className="font-medium">{patient.full_name}</div>
+                        <div className="text-sm text-gray-600">{patient.phone}</div>
+                        {patient.insurance_company && (
+                          <div className="text-xs text-blue-600">Insurance: {patient.insurance_company}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+            
+              {/* New Walk-in Patient Tab */}
+              <TabsContent value="new" className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Full Name *</Label>
+                    <Input placeholder="Patient name" id="pharmacy_name" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Phone *</Label>
+                    <Input placeholder="Phone number" id="pharmacy_phone" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Gender *</Label>
+                    <select className="w-full p-2 border rounded-md" id="pharmacy_gender" required>
+                      <option value="">Select...</option>
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Date of Birth *</Label>
+                    <Input 
+                      type="date" 
+                      id="pharmacy_dob" 
+                      max={new Date().toISOString().split('T')[0]}
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <Button 
+                  className="w-full bg-purple-600 hover:bg-purple-700"
+                  onClick={async () => {
+                    try {
+                      const name = (document.getElementById('pharmacy_name') as HTMLInputElement).value;
+                      const phone = (document.getElementById('pharmacy_phone') as HTMLInputElement).value;
+                      const gender = (document.getElementById('pharmacy_gender') as HTMLSelectElement).value;
+                      const dob = (document.getElementById('pharmacy_dob') as HTMLInputElement).value;
+                      
+                      if (!name || !phone) {
+                        toast.error('Name and phone are required');
+                        return;
+                      }
+                      
+                      if (!gender) {
+                        toast.error('Gender is required');
+                        return;
+                      }
+                      
+                      if (!dob) {
+                        toast.error('Date of birth is required');
+                        return;
+                      }
+                      
+                      // Register patient
+                      const patientData = {
+                        full_name: name,
+                        phone: phone,
+                        gender: gender,
+                        date_of_birth: dob,
+                        address: 'Walk-in',
+                        status: 'Active'
+                      };
+                      
+                      const patientRes = await api.post('/patients', patientData);
+                      const newPatient = patientRes.data.patient || patientRes.data;
+                      
+                      // Create pharmacy visit directly
+                      const visitData = {
+                        patient_id: newPatient.id,
+                        visit_date: new Date().toISOString().split('T')[0],
+                        status: 'Active',
+                        current_stage: 'pharmacy',
+                        reception_status: 'Checked In',
+                        reception_completed_at: new Date().toISOString(),
+                        pharmacy_status: 'Pending',
+                        overall_status: 'Active',
+                        notes: 'Direct to pharmacy - prescription to be created by pharmacy staff'
+                      };
+
+                      await api.post('/visits', visitData);
+                      toast.success(`${name} registered and sent to pharmacy queue!`);
+                      setShowDirectPharmacyDialog(false);
+                      setDirectPharmacySearch('');
+                      fetchData(false);
+                    } catch (error: any) {
+                      toast.error(error.response?.data?.error || 'Failed to register patient');
+                    }
+                  }}
+                >
+                  Register & Send to Pharmacy
+                </Button>
+              </TabsContent>
+            </Tabs>
+
+          <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <p className="text-sm text-purple-800">
+              <strong>Note:</strong> This sends the patient directly to the pharmacy queue. Pharmacy staff will create the prescription.
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </>
   );
 }

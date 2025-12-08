@@ -5,15 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node fix-html.js",
-    "build:prod": "vite build --mode production && node fix-html.js",
-    "build:dev": "vite build --mode development && node fix-html.js",
-    "build:only": "vite build",
+    "build": "vite build",
+    "build:prod": "vite build --mode production",
+    "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
     "preview:dist": "cd dist && php -S localhost:3000",
-    "type-check": "tsc --noEmit",
-    "analyze": "vite build --mode production && vite-bundle-visualizer"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

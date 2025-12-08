@@ -4,14 +4,22 @@ A comprehensive hospital management system built with React (Frontend) and Larav
 
 ## Features
 
+### Core Functionality
 - **Multi-Role Dashboard**: Admin, Doctor, Nurse, Receptionist, Pharmacist, Lab Technician, Billing, Patient
 - **Patient Management**: Registration, appointments, medical records
 - **Appointment System**: Booking, scheduling, and tracking
-- **Pharmacy Management**: Medication inventory, dispensing, stock tracking
-- **Laboratory**: Test ordering, results management
+- **Pharmacy Management**: Medication inventory, dispensing, stock tracking with search
+- **Laboratory**: Test ordering, results management with search
 - **Billing & Payments**: Invoice generation, payment processing, insurance claims
 - **Mobile Money Integration**: ZenoPay payment gateway support
 - **Workflow Management**: Patient journey tracking from registration to discharge
+
+### Recent Improvements
+- ✅ **Quick Service**: Direct patient routing to pharmacy, lab, or doctor with invoice creation
+- ✅ **Walk-In Patient Flow**: Proper routing based on visit type (Consultation, Lab Only, Pharmacy Only)
+- ✅ **Search Functionality**: Added search in pharmacy inventory and lab tests queue
+- ✅ **Low Stock Reports**: Admin can print low stock inventory with hospital logo
+- ✅ **Logo Integration**: Hospital logo appears in all print reports
 
 ## Tech Stack
 
@@ -190,6 +198,10 @@ See backend routes in `backend/routes/api.php` for complete API reference.
 ## License
 
 This project is licensed under the MIT License.
+
+## Recent Updates
+
+See `COMPLETE_FIXES_SUMMARY.md` for detailed information about recent fixes and improvements.
 
 ## Support
 

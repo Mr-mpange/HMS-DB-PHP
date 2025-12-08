@@ -24,9 +24,19 @@ export default function LabDashboard() {
   const [batchResults, setBatchResults] = useState<Record<string, any>>({});
   const [groupedTests, setGroupedTests] = useState<Record<string, any[]>>({});
   const [isViewMode, setIsViewMode] = useState(false); // Track if dialog is in view-only mode
+  const [addTestDialogOpen, setAddTestDialogOpen] = useState(false);
+  const [labTestServices, setLabTestServices] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState(''); // Search functionality
+  const [newTestData, setNewTestData] = useState({
+    test_name: '',
+    test_type: 'Laboratory',
+    priority: 'Routine',
+    notes: ''
+  });
 
   useEffect(() => {
     fetchData(true); // Initial load with loading screen
+    fetchLabTestServices(); // Fetch available lab test services
 
     // Use polling instead of realtime subscriptions
     const interval = setInterval(() => fetchData(false), 30000); // Background refresh every 30 seconds
@@ -35,6 +45,16 @@ export default function LabDashboard() {
       clearInterval(interval);
     };
   }, []);
+
+  const fetchLabTestServices = async () => {
+    try {
+      const { data } = await api.get('/labs/services');
+      setLabTestServices(data.services || []);
+    } catch (error) {
+      console.error('Error fetching lab test services:', error);
+      // Don't show error toast, just log it
+    }
+  };
 
   const fetchData = async (isInitialLoad = true) => {
     if (isInitialLoad) {
@@ -143,6 +163,62 @@ export default function LabDashboard() {
     setBatchDialogOpen(true);
   };
 
+  const handleAddTestToPatient = async () => {
+    if (!newTestData.test_name.trim()) {
+      toast.error('Please enter a test name');
+      return;
+    }
+
+    if (!selectedPatientTests[0]?.patient_id) {
+      toast.error('No patient selected');
+      return;
+    }
+
+    try {
+      const response = await api.post('/labs', {
+        patient_id: selectedPatientTests[0].patient_id,
+        test_name: newTestData.test_name,
+        test_type: newTestData.test_type,
+        priority: newTestData.priority,
+        notes: newTestData.notes,
+        status: 'Pending'
+      });
+
+      toast.success(`Test "${newTestData.test_name}" added successfully`);
+      
+      // Reset form
+      setNewTestData({
+        test_name: '',
+        test_type: 'Laboratory',
+        priority: 'Routine',
+        notes: ''
+      });
+      setAddTestDialogOpen(false);
+      
+      // Refresh data to show new test
+      await fetchData(false);
+      
+      // Update selected patient tests to include the new test
+      const updatedTests = [...selectedPatientTests, response.data.labTest];
+      setSelectedPatientTests(updatedTests);
+      
+      // Initialize batch result for new test
+      setBatchResults(prev => ({
+        ...prev,
+        [response.data.labTest.id]: {
+          result_value: '',
+          reference_range: '',
+          unit: '',
+          abnormal_flag: false,
+          notes: ''
+        }
+      }));
+    } catch (error) {
+      console.error('Error adding test:', error);
+      toast.error('Failed to add test');
+    }
+  };
+
   const handleBatchResultChange = (testId: string, field: string, value: any) => {
     setBatchResults(prev => ({
       ...prev,
@@ -157,13 +233,30 @@ export default function LabDashboard() {
     try {
       const resultsToInsert = [];
       const testsToUpdate = [];
+      const testsWithoutResults = [];
 
       for (const test of selectedPatientTests) {
         const result = batchResults[test.id];
         if (result && result.result_value) {
+          // Format results as JSON for storage in the results field
+          const formattedResults = {
+            test_date: new Date().toISOString(),
+            performed_by: 'Lab Technician',
+            results: {
+              [test.test_name]: {
+                value: result.result_value,
+                unit: result.unit || '',
+                normal_range: result.reference_range || '',
+                status: result.abnormal_flag ? 'Abnormal' : 'Normal'
+              }
+            },
+            interpretation: result.notes || '',
+            recommendations: ''
+          };
+
           resultsToInsert.push({
-            lab_test_id: test.id,
-            ...result
+            test_id: test.id,
+            results: JSON.stringify(formattedResults)
           });
           testsToUpdate.push(test.id);
         }
@@ -174,21 +267,11 @@ export default function LabDashboard() {
         return;
       }
 
-      // Insert all results
+      // Insert all results using batch endpoint
       await api.post('/labs/results/batch', {
         results: resultsToInsert,
         testIds: testsToUpdate
       });
-
-      // Explicitly update each test status to 'Completed'
-      await Promise.all(
-        testsToUpdate.map(testId =>
-          api.put(`/labs/${testId}`, {
-            status: 'Completed',
-            completed_date: new Date().toISOString()
-          })
-        )
-      );
 
       // Update patient workflow
       let patientId = null;
@@ -243,7 +326,7 @@ export default function LabDashboard() {
           lab_status: 'Completed',
           lab_completed_at: new Date().toISOString(),
           current_stage: 'doctor',
-          doctor_status: 'Pending'
+          doctor_status: 'Pending Review'
         };
         
         console.log('📤 Sending update:', updateData);
@@ -251,10 +334,41 @@ export default function LabDashboard() {
         const response = await api.put(`/visits/${visitId}`, updateData);
         
         console.log('✅ Visit updated successfully!', response.data);
-        toast.success('Patient sent back to doctor for prescription');
+        toast.success('Lab tests completed. Patient sent back to doctor for review.');
       } else {
-        console.warn('⚠️  No active lab visit found for patient:', patientId);
-        toast.warning('Could not find active visit to update');
+        console.warn('⚠️  No active lab visit found, creating new visit for patient:', patientId);
+        
+        // Get the test to find the doctor
+        const test = selectedPatientTests[0];
+        if (test && test.doctor_id) {
+          // Create a new visit for this patient
+          const newVisit = {
+            patient_id: patientId,
+            doctor_id: test.doctor_id,
+            visit_date: new Date().toISOString(),
+            status: 'Active',
+            current_stage: 'doctor',
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            doctor_status: 'Pending Review',
+            overall_status: 'Active'
+          };
+          
+          console.log('📤 Creating new visit:', newVisit);
+          const response = await api.post('/visits', newVisit);
+          console.log('✅ Visit created successfully!', response.data);
+          
+          // Update the lab tests with the new visit_id
+          if (response.data.visit && response.data.visit.id) {
+            for (const test of selectedPatientTests) {
+              await api.put(`/labs/${test.id}`, { visit_id: response.data.visit.id });
+            }
+          }
+          
+          toast.success('Lab results sent to doctor for review');
+        } else {
+          toast.warning('Could not create visit - no doctor assigned');
+        }
       }
     } catch (error: any) {
       console.error('❌ Error updating patient workflow:', error);
@@ -321,10 +435,10 @@ export default function LabDashboard() {
             lab_status: 'Completed',
             lab_completed_at: new Date().toISOString(),
             current_stage: 'doctor',
-            doctor_status: 'Pending'
+            doctor_status: 'Pending Review'
           });
           console.log('Successfully updated patient visit workflow');
-          toast.success('Lab result submitted and patient moved to doctor consultation');
+          toast.success('Lab tests completed. Patient sent back to doctor for review.');
         } catch (workflowError) {
           console.error('Failed to update patient visit workflow:', workflowError);
           toast.error('Test completed but failed to update workflow');
@@ -441,6 +555,16 @@ export default function LabDashboard() {
             </div>
           </CardHeader>
           <CardContent>
+            {/* Search Bar */}
+            <div className="mb-4">
+              <Input
+                type="text"
+                placeholder="Search by patient name, phone, or test name..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="max-w-md"
+              />
+            </div>
             <div className="border rounded-lg overflow-hidden">
               <Table>
                 <TableHeader>
@@ -455,7 +579,23 @@ export default function LabDashboard() {
                 </TableHeader>
                 <TableBody>
                   {Object.entries(groupedTests)
-                    .filter(([_, tests]) => tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress'))
+                    .filter(([_, tests]) => {
+                      // Filter by status
+                      const hasActiveTests = tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress');
+                      if (!hasActiveTests) return false;
+                      
+                      // Filter by search term
+                      if (!searchTerm) return true;
+                      const searchLower = searchTerm.toLowerCase();
+                      const latestTest = tests[0];
+                      const patientName = latestTest.patient?.full_name?.toLowerCase() || '';
+                      const patientPhone = latestTest.patient?.phone?.toLowerCase() || '';
+                      const testNames = tests.map(t => t.test_name?.toLowerCase() || '').join(' ');
+                      
+                      return patientName.includes(searchLower) || 
+                             patientPhone.includes(searchLower) || 
+                             testNames.includes(searchLower);
+                    })
                     .map(([patientId, tests]) => {
                       const pendingCount = tests.filter(t => t.status === 'Ordered' || t.status === 'Sample Collected').length;
                       const inProgressCount = tests.filter(t => t.status === 'In Progress').length;
@@ -521,9 +661,13 @@ export default function LabDashboard() {
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">
-                              {latestTest.ordered_date && !isNaN(new Date(latestTest.ordered_date).getTime())
-                                ? format(new Date(latestTest.ordered_date), 'MMM dd, HH:mm')
-                                : 'N/A'}
+                              {(() => {
+                                const dateToUse = latestTest.ordered_date || latestTest.test_date || latestTest.created_at;
+                                if (dateToUse && !isNaN(new Date(dateToUse).getTime())) {
+                                  return format(new Date(dateToUse), 'MMM dd, HH:mm');
+                                }
+                                return 'N/A';
+                              })()}
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
@@ -633,9 +777,13 @@ export default function LabDashboard() {
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm bg-blue-50 p-2 rounded border border-blue-200">
                         <Clock className="h-4 w-4 text-blue-600" />
-                        <span><strong>Ordered:</strong> {test.ordered_date && !isNaN(new Date(test.ordered_date).getTime())
-                          ? format(new Date(test.ordered_date), 'MMM dd, yyyy HH:mm')
-                          : 'N/A'}</span>
+                        <span><strong>Ordered:</strong> {(() => {
+                          const dateToUse = test.ordered_date || test.test_date || test.created_at;
+                          if (dateToUse && !isNaN(new Date(dateToUse).getTime())) {
+                            return format(new Date(dateToUse), 'MMM dd, yyyy HH:mm');
+                          }
+                          return 'N/A';
+                        })()}</span>
                       </div>
                       {test.notes && (
                         <div className="p-3 bg-yellow-50 border-l-4 border-yellow-400 rounded">
@@ -676,13 +824,24 @@ export default function LabDashboard() {
         }}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FlaskConical className="h-5 w-5" />
-                Submit Results for {selectedPatientTests[0]?.patient?.full_name}
-              </DialogTitle>
-              <DialogDescription>
-                Enter results for {selectedPatientTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress').length} test(s)
-              </DialogDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="flex items-center gap-2">
+                    <FlaskConical className="h-5 w-5" />
+                    Submit Results for {selectedPatientTests[0]?.patient?.full_name}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Enter results for {selectedPatientTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress').length} test(s)
+                  </DialogDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAddTestDialogOpen(true)}
+                >
+                  ➕ Add Test
+                </Button>
+              </div>
             </DialogHeader>
             <div className="space-y-4">
               {selectedPatientTests
@@ -717,6 +876,28 @@ export default function LabDashboard() {
                         >
                           {test.status}
                         </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => {
+                            if (confirm(`Cancel test: ${test.test_name}?\n\nThis will remove the test from the patient's order.`)) {
+                              try {
+                                await api.delete(`/lab-tests/${test.id}`);
+                                toast.success(`Test "${test.test_name}" cancelled`);
+                                // Remove from local state
+                                setSelectedPatientTests(prev => prev.filter(t => t.id !== test.id));
+                                // Refresh data
+                                await fetchData(false);
+                              } catch (error) {
+                                console.error('Error cancelling test:', error);
+                                toast.error('Failed to cancel test');
+                              }
+                            }
+                          }}
+                        >
+                          🗑️ Cancel
+                        </Button>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -789,6 +970,122 @@ export default function LabDashboard() {
                 <Button onClick={handleSubmitBatchResults}>
                   <CheckCircle className="h-4 w-4 mr-2" />
                   Submit All Results
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Test Dialog */}
+        <Dialog open={addTestDialogOpen} onOpenChange={setAddTestDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5" />
+                Add Additional Test
+              </DialogTitle>
+              <DialogDescription>
+                Add a new lab test for {selectedPatientTests[0]?.patient?.full_name}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="test_name">Test Name *</Label>
+                <Select
+                  value={newTestData.test_name}
+                  onValueChange={(value) => {
+                    // Find the selected service to auto-fill test_type
+                    const selectedService = labTestServices.find(s => s.service_name === value);
+                    setNewTestData({ 
+                      ...newTestData, 
+                      test_name: value,
+                      test_type: selectedService?.service_type || 'Laboratory'
+                    });
+                  }}
+                >
+                  <SelectTrigger id="test_name">
+                    <SelectValue placeholder="Select a lab test" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {labTestServices.length === 0 ? (
+                      <SelectItem value="no-tests" disabled>No lab tests available</SelectItem>
+                    ) : (
+                      labTestServices.map((service) => (
+                        <SelectItem key={service.id} value={service.service_name}>
+                          {service.service_name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="test_type">Test Type</Label>
+                <Select
+                  value={newTestData.test_type}
+                  onValueChange={(value) => setNewTestData({ ...newTestData, test_type: value })}
+                >
+                  <SelectTrigger id="test_type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Laboratory">Laboratory</SelectItem>
+                    <SelectItem value="Radiology">Radiology</SelectItem>
+                    <SelectItem value="Pathology">Pathology</SelectItem>
+                    <SelectItem value="Microbiology">Microbiology</SelectItem>
+                    <SelectItem value="Hematology">Hematology</SelectItem>
+                    <SelectItem value="Chemistry">Chemistry</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="priority">Priority</Label>
+                <Select
+                  value={newTestData.priority}
+                  onValueChange={(value) => setNewTestData({ ...newTestData, priority: value })}
+                >
+                  <SelectTrigger id="priority">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Routine">Routine</SelectItem>
+                    <SelectItem value="Urgent">Urgent</SelectItem>
+                    <SelectItem value="STAT">STAT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes (Optional)</Label>
+                <Textarea
+                  id="notes"
+                  value={newTestData.notes}
+                  onChange={(e) => setNewTestData({ ...newTestData, notes: e.target.value })}
+                  placeholder="Any special instructions or notes..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setAddTestDialogOpen(false);
+                    setNewTestData({
+                      test_name: '',
+                      test_type: 'Laboratory',
+                      priority: 'Routine',
+                      notes: ''
+                    });
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleAddTestToPatient}>
+                  <FlaskConical className="h-4 w-4 mr-2" />
+                  Add Test
                 </Button>
               </div>
             </div>

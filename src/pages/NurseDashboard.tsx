@@ -20,8 +20,24 @@ export default function NurseDashboard() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [vitalSigns, setVitalSigns] = useState<any[]>([]);
+  const [labResultsReady, setLabResultsReady] = useState<any[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<any>(null);
   const [showVitalsDialog, setShowVitalsDialog] = useState(false);
+  const [showLabResultsDialog, setShowLabResultsDialog] = useState(false);
+  const [selectedVisitForResults, setSelectedVisitForResults] = useState<any>(null);
+  const [labTestResults, setLabTestResults] = useState<any[]>([]);
+  const [showOrderLabTestsDialog, setShowOrderLabTestsDialog] = useState(false);
+  const [selectedPatientForLabTests, setSelectedPatientForLabTests] = useState<any>(null);
+  const [availableLabTests, setAvailableLabTests] = useState<any[]>([]);
+  const [selectedLabTests, setSelectedLabTests] = useState<string[]>([]);
+  const [showRegisterPatientDialog, setShowRegisterPatientDialog] = useState(false);
+  const [newPatientForm, setNewPatientForm] = useState({
+    full_name: '',
+    phone: '',
+    gender: '',
+    date_of_birth: '',
+    address: ''
+  });
   const [showNotesDialog, setShowNotesDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showPatientSearch, setShowPatientSearch] = useState(false);
@@ -165,17 +181,36 @@ export default function NurseDashboard() {
         doctor_status: 'Pending'
       });
 
-      // Update visit with vitals and move to doctor stage
-      const response = await api.put(`/visits/${visit.id}`, {
+      // Determine next stage based on visit type
+      const visitType = visit.visit_type || 'Consultation';
+      let nextStage = 'doctor';
+      let nextStatus = 'Pending';
+      let successMessage = 'Vital signs recorded. Patient sent to doctor.';
+      
+      if (visitType === 'Lab Only') {
+        nextStage = 'lab';
+        nextStatus = 'Pending';
+        successMessage = 'Sample collected. Patient sent to lab.';
+      }
+      
+      // Update visit with vitals and move to next stage
+      const updateData: any = {
         nurse_status: 'Completed',
-        nurse_notes: vitalsData, // Store vitals in nurse_notes as JSON
+        nurse_notes: vitalsData,
         nurse_completed_at: new Date().toISOString(),
-        current_stage: 'doctor',
-        doctor_status: 'Pending'
-      });
+        current_stage: nextStage
+      };
+      
+      if (nextStage === 'doctor') {
+        updateData.doctor_status = nextStatus;
+      } else if (nextStage === 'lab') {
+        updateData.lab_status = nextStatus;
+      }
+      
+      const response = await api.put(`/visits/${visit.id}`, updateData);
 
       console.log('✅ Visit updated successfully!', response.data);
-      toast.success(`Vital signs recorded. Patient sent to doctor.`);
+      toast.success(successMessage);
       
       // Update local state immediately to remove patient from list
       setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
@@ -318,10 +353,23 @@ export default function NurseDashboard() {
       const completedResponse = await api.get(`/visits?nurse_status=Completed&nurse_completed_at=${today}`);
       const completedVisitsToday = Array.isArray(completedResponse.data.visits) ? completedResponse.data.visits : [];
 
+      // Fetch patients returning from lab (Lab Only visits with completed lab tests)
+      const labResultsResponse = await api.get('/visits?visit_type=Lab Only&lab_status=Completed&current_stage=nurse');
+      const labResultsData = Array.isArray(labResultsResponse.data.visits) ? labResultsResponse.data.visits : [];
+
       // Calculate stats
       setPendingVisits(visitsData);
+      setLabResultsReady(labResultsData);
       setAppointments(appointmentsData);
       setPatients(patientsData);
+      
+      // Fetch available lab test services
+      try {
+        const labServicesRes = await api.get('/labs/services');
+        setAvailableLabTests(labServicesRes.data.services || []);
+      } catch (error) {
+        console.error('Failed to fetch lab services:', error);
+      }
       
       // Count today's appointments - extract date from datetime string
       const todayCount = appointmentsData.filter((a: any) => {
@@ -445,6 +493,72 @@ export default function NurseDashboard() {
           </Card>
         </div>
 
+        {/* Lab Results Ready - Patients returning from lab */}
+        {labResultsReady.length > 0 && (
+          <Card className="shadow-lg border-green-200 bg-green-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-green-700">
+                <Activity className="h-5 w-5" />
+                Lab Results Ready (Nurse-Ordered Tests)
+              </CardTitle>
+              <CardDescription>Patients returning from lab with completed nurse-ordered tests - print reports and send to billing</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {labResultsReady.map((visit) => (
+                  <div key={visit.id} className="flex items-center justify-between p-3 border border-green-300 rounded-lg bg-white">
+                    <div>
+                      <p className="font-medium">{visit.patient?.full_name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Phone: {visit.patient?.phone}
+                      </p>
+                      <Badge variant="default" className="mt-1 bg-green-600">Lab Tests Completed</Badge>
+                    </div>
+                    <Button 
+                      onClick={async () => {
+                        try {
+                          // Fetch lab test results for this patient
+                          const response = await api.get(`/labs?patient_id=${visit.patient_id}`);
+                          const tests = response.data.labTests || response.data.tests || [];
+                          
+                          // Filter to only show:
+                          // 1. Completed tests
+                          // 2. Tests from this specific visit (nurse-ordered, not doctor-ordered)
+                          // 3. Tests where visit_type is "Lab Only" (nurse → lab → nurse workflow)
+                          const completedTests = tests.filter((t: any) => {
+                            const isCompleted = t.status === 'Completed';
+                            const isFromThisVisit = t.visit_id === visit.id || t.visit?.id === visit.id;
+                            const isLabOnlyVisit = visit.visit_type === 'Lab Only';
+                            
+                            // Only show if completed AND (from this visit OR this is a Lab Only visit)
+                            return isCompleted && (isFromThisVisit || isLabOnlyVisit);
+                          });
+                          
+                          if (completedTests.length === 0) {
+                            toast.info('No completed lab tests found for this visit');
+                            return;
+                          }
+                          
+                          setLabTestResults(completedTests);
+                          setSelectedVisitForResults(visit);
+                          setShowLabResultsDialog(true);
+                        } catch (error) {
+                          console.error('Error fetching lab results:', error);
+                          toast.error('Failed to load lab results');
+                        }
+                      }}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      <Activity className="h-4 w-4 mr-2" />
+                      View & Print Results
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Pending Patients (Nurse Stage) */}
         <Card className="shadow-lg">
           <CardHeader>
@@ -452,7 +566,7 @@ export default function NurseDashboard() {
               <Users className="h-5 w-5" />
               Patients Waiting for Nurse
             </CardTitle>
-            <CardDescription>Patients ready for vital signs assessment</CardDescription>
+            <CardDescription>Patients ready for vital signs assessment or lab test ordering</CardDescription>
           </CardHeader>
           <CardContent>
             {pendingVisits.length === 0 ? (
@@ -469,11 +583,28 @@ export default function NurseDashboard() {
                       <p className="text-xs text-muted-foreground">
                         Checked in: {format(new Date(visit.reception_completed_at || visit.created_at), 'MMM dd, yyyy HH:mm')}
                       </p>
+                      {visit.visit_type && visit.visit_type !== 'Consultation' && (
+                        <Badge variant="outline" className="mt-1">{visit.visit_type}</Badge>
+                      )}
                     </div>
-                    <Button onClick={() => handleRecordVitals(visit.patient)}>
-                      <Thermometer className="h-4 w-4 mr-2" />
-                      Record Vitals
-                    </Button>
+                    {visit.visit_type === 'Lab Only' ? (
+                      <Button 
+                        onClick={() => {
+                          setSelectedPatientForLabTests(visit);
+                          setSelectedLabTests([]);
+                          setShowOrderLabTestsDialog(true);
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Activity className="h-4 w-4 mr-2" />
+                        Order Lab Tests
+                      </Button>
+                    ) : (
+                      <Button onClick={() => handleRecordVitals(visit.patient)}>
+                        <Thermometer className="h-4 w-4 mr-2" />
+                        Record Vitals
+                      </Button>
+                    )}
                 </div>
                 ))}
               </div>
@@ -481,15 +612,32 @@ export default function NurseDashboard() {
           </CardContent>
         </Card>
 
-        {/* Patient Search */}
+        {/* Patient Search & Register */}
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Patient Search</CardTitle>
-            <CardDescription>Search for patients in the system</CardDescription>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Register new patient or search existing</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
             <Button
               variant="default"
+              className="w-full bg-green-600 hover:bg-green-700"
+              onClick={() => {
+                setNewPatientForm({
+                  full_name: '',
+                  phone: '',
+                  gender: '',
+                  date_of_birth: '',
+                  address: ''
+                });
+                setShowRegisterPatientDialog(true);
+              }}
+            >
+              <Users className="h-5 w-5 mr-2" />
+              Register New Patient (Lab Only)
+            </Button>
+            <Button
+              variant="outline"
               className="w-full"
               onClick={handlePatientSearch}
             >
@@ -762,6 +910,7 @@ export default function NurseDashboard() {
                   type="date"
                   value={scheduleForm.appointment_date}
                   onChange={(e) => setScheduleForm({...scheduleForm, appointment_date: e.target.value})}
+                  min={new Date().toISOString().split('T')[0]}
                 />
               </div>
               <div>
@@ -838,6 +987,472 @@ export default function NurseDashboard() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lab Results Print Dialog */}
+      <Dialog open={showLabResultsDialog} onOpenChange={setShowLabResultsDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Lab Test Results - {selectedVisitForResults?.patient?.full_name}
+            </DialogTitle>
+            <DialogDescription>
+              Lab tests ordered by nurse - Review and print results for the patient
+            </DialogDescription>
+          </DialogHeader>
+
+          <div id="lab-results-print-area" className="space-y-6">
+            {/* Header for Print */}
+            <div className="text-center border-b pb-4 print:block">
+              <h1 className="text-2xl font-bold">Laboratory Test Results</h1>
+              <p className="text-sm text-muted-foreground mt-2">
+                Patient: {selectedVisitForResults?.patient?.full_name} | 
+                Phone: {selectedVisitForResults?.patient?.phone} | 
+                Date: {selectedVisitForResults?.visit_date ? format(new Date(selectedVisitForResults.visit_date), 'MMM dd, yyyy') : 'N/A'}
+              </p>
+            </div>
+
+            {/* Lab Test Results Table */}
+            {labTestResults.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No completed lab tests found</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {labTestResults.map((test, index) => (
+                  <Card key={test.id} className="print:border print:shadow-none">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <CardTitle className="text-lg">{index + 1}. {test.test_name}</CardTitle>
+                          <CardDescription>{test.test_type}</CardDescription>
+                        </div>
+                        <Badge variant="default" className="bg-green-600">Completed</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {/* Test Results */}
+                        {test.lab_results && test.lab_results.length > 0 ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Parameter</TableHead>
+                                <TableHead>Result</TableHead>
+                                <TableHead>Unit</TableHead>
+                                <TableHead>Reference Range</TableHead>
+                                <TableHead>Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {test.lab_results.map((result: any, idx: number) => (
+                                <TableRow key={idx}>
+                                  <TableCell className="font-medium">{result.parameter || result.test_name || '-'}</TableCell>
+                                  <TableCell className="font-semibold">{result.result_value || result.value || '-'}</TableCell>
+                                  <TableCell>{result.unit || '-'}</TableCell>
+                                  <TableCell>{result.reference_range || '-'}</TableCell>
+                                  <TableCell>
+                                    {result.abnormal_flag ? (
+                                      <Badge variant="destructive">Abnormal</Badge>
+                                    ) : (
+                                      <Badge variant="secondary">Normal</Badge>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : test.results ? (
+                          <div className="p-4 bg-muted rounded-lg">
+                            <p className="font-medium mb-2">Results:</p>
+                            <p className="whitespace-pre-wrap">{typeof test.results === 'string' ? test.results : JSON.stringify(test.results, null, 2)}</p>
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground">No detailed results available</p>
+                        )}
+
+                        {/* Notes */}
+                        {test.notes && (
+                          <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <p className="text-sm font-medium text-blue-900">Notes:</p>
+                            <p className="text-sm text-blue-800 mt-1">{test.notes}</p>
+                          </div>
+                        )}
+
+                        {/* Test Details */}
+                        <div className="grid grid-cols-2 gap-4 text-sm text-muted-foreground mt-3 pt-3 border-t">
+                          <div>
+                            <span className="font-medium">Test Date:</span> {test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}
+                          </div>
+                          <div>
+                            <span className="font-medium">Completed:</span> {test.completed_at ? format(new Date(test.completed_at), 'MMM dd, yyyy HH:mm') : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Footer for Print */}
+            <div className="text-center text-sm text-muted-foreground border-t pt-4 print:block">
+              <p>This is an official laboratory report</p>
+              <p className="mt-1">Printed on: {format(new Date(), 'MMM dd, yyyy HH:mm')}</p>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-4 print:hidden">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setShowLabResultsDialog(false);
+                setSelectedVisitForResults(null);
+                setLabTestResults([]);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1 bg-green-600 hover:bg-green-700"
+              onClick={() => {
+                // Print the results
+                window.print();
+              }}
+            >
+              <Activity className="h-4 w-4 mr-2" />
+              Print Results
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={async () => {
+                try {
+                  // Update visit to send to billing
+                  await api.put(`/visits/${selectedVisitForResults.id}`, {
+                    current_stage: 'billing',
+                    billing_status: 'Pending',
+                    nurse_report_printed_at: new Date().toISOString()
+                  });
+                  toast.success('Patient sent to billing.');
+                  setShowLabResultsDialog(false);
+                  setLabResultsReady(prev => prev.filter(v => v.id !== selectedVisitForResults.id));
+                  setSelectedVisitForResults(null);
+                  setLabTestResults([]);
+                } catch (error) {
+                  toast.error('Failed to send patient to billing');
+                }
+              }}
+            >
+              Send to Billing
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order Lab Tests Dialog */}
+      <Dialog open={showOrderLabTestsDialog} onOpenChange={setShowOrderLabTestsDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Order Lab Tests
+            </DialogTitle>
+            <DialogDescription>
+              Select lab tests to order for {selectedPatientForLabTests?.patient?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {availableLabTests.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No lab tests available</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {availableLabTests.map((test) => (
+                  <div
+                    key={test.id}
+                    className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-muted cursor-pointer"
+                    onClick={() => {
+                      setSelectedLabTests(prev =>
+                        prev.includes(test.service_name)
+                          ? prev.filter(t => t !== test.service_name)
+                          : [...prev, test.service_name]
+                      );
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedLabTests.includes(test.service_name)}
+                      onChange={() => {}}
+                      className="h-4 w-4"
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium">{test.service_name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {test.service_type} - TSh {test.base_price?.toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowOrderLabTestsDialog(false);
+                  setSelectedPatientForLabTests(null);
+                  setSelectedLabTests([]);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                disabled={selectedLabTests.length === 0}
+                onClick={async () => {
+                  try {
+                    if (selectedLabTests.length === 0) {
+                      toast.error('Please select at least one lab test');
+                      return;
+                    }
+
+                    const visit = selectedPatientForLabTests;
+                    
+                    // Create lab test orders
+                    const labTestPromises = selectedLabTests.map(testName => {
+                      const testService = availableLabTests.find(t => t.service_name === testName);
+                      return api.post('/labs', {
+                        patient_id: visit.patient_id,
+                        visit_id: visit.id,
+                        test_name: testName,
+                        test_type: testService?.service_type || 'Laboratory',
+                        status: 'Pending',
+                        test_date: new Date().toISOString().split('T')[0],
+                        ordered_date: new Date().toISOString(),
+                        notes: 'Ordered by nurse'
+                      });
+                    });
+
+                    await Promise.all(labTestPromises);
+
+                    // Add lab tests to billing (patient-services)
+                    for (const testName of selectedLabTests) {
+                      const testService = availableLabTests.find(t => t.service_name === testName);
+                      if (testService) {
+                        await api.post('/patient-services', {
+                          patient_id: visit.patient_id,
+                          service_id: testService.id,
+                          service_name: testName,
+                          quantity: 1,
+                          unit_price: testService.base_price || 0,
+                          total_price: testService.base_price || 0,
+                          service_date: new Date().toISOString().split('T')[0],
+                          status: 'Pending'
+                        });
+                      }
+                    }
+
+                    // Update visit to send to lab
+                    await api.put(`/visits/${visit.id}`, {
+                      nurse_status: 'Completed',
+                      nurse_completed_at: new Date().toISOString(),
+                      current_stage: 'lab',
+                      lab_status: 'Pending'
+                    });
+
+                    toast.success(`${selectedLabTests.length} lab test(s) ordered. Patient sent to lab.`);
+                    setShowOrderLabTestsDialog(false);
+                    setSelectedPatientForLabTests(null);
+                    setSelectedLabTests([]);
+                    setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
+                    
+                    // Refresh data
+                    fetchData();
+                  } catch (error: any) {
+                    console.error('Error ordering lab tests:', error);
+                    toast.error(error.response?.data?.error || 'Failed to order lab tests');
+                  }
+                }}
+              >
+                <Activity className="h-4 w-4 mr-2" />
+                Order {selectedLabTests.length} Test(s) & Send to Lab
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Register New Patient Dialog */}
+      <Dialog open={showRegisterPatientDialog} onOpenChange={setShowRegisterPatientDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Register New Patient for Lab Tests
+            </DialogTitle>
+            <DialogDescription>
+              Register a walk-in patient who needs lab tests only
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="full_name">Full Name *</Label>
+                <Input
+                  id="full_name"
+                  value={newPatientForm.full_name}
+                  onChange={(e) => setNewPatientForm({ ...newPatientForm, full_name: e.target.value })}
+                  placeholder="Patient full name"
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="phone">Phone Number *</Label>
+                <Input
+                  id="phone"
+                  value={newPatientForm.phone}
+                  onChange={(e) => setNewPatientForm({ ...newPatientForm, phone: e.target.value })}
+                  placeholder="+255..."
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="gender">Gender *</Label>
+                <Select
+                  value={newPatientForm.gender}
+                  onValueChange={(value) => setNewPatientForm({ ...newPatientForm, gender: value })}
+                >
+                  <SelectTrigger id="gender">
+                    <SelectValue placeholder="Select gender" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Male">Male</SelectItem>
+                    <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="date_of_birth">Date of Birth *</Label>
+                <Input
+                  id="date_of_birth"
+                  type="date"
+                  value={newPatientForm.date_of_birth}
+                  onChange={(e) => setNewPatientForm({ ...newPatientForm, date_of_birth: e.target.value })}
+                  max={new Date().toISOString().split('T')[0]}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="address">Address (Optional)</Label>
+                <Input
+                  id="address"
+                  value={newPatientForm.address}
+                  onChange={(e) => setNewPatientForm({ ...newPatientForm, address: e.target.value })}
+                  placeholder="Patient address"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setShowRegisterPatientDialog(false);
+                  setNewPatientForm({
+                    full_name: '',
+                    phone: '',
+                    gender: '',
+                    date_of_birth: '',
+                    address: ''
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-green-600 hover:bg-green-700"
+                onClick={async () => {
+                  try {
+                    // Validate required fields
+                    if (!newPatientForm.full_name || !newPatientForm.phone || !newPatientForm.gender || !newPatientForm.date_of_birth) {
+                      toast.error('Please fill in all required fields');
+                      return;
+                    }
+
+                    // Register patient
+                    const patientRes = await api.post('/patients', {
+                      full_name: newPatientForm.full_name,
+                      phone: newPatientForm.phone,
+                      gender: newPatientForm.gender,
+                      date_of_birth: newPatientForm.date_of_birth,
+                      address: newPatientForm.address || 'Walk-in',
+                      status: 'Active'
+                    });
+
+                    const newPatient = patientRes.data.patient || patientRes.data;
+
+                    // Create Lab Only visit
+                    const visitRes = await api.post('/visits', {
+                      patient_id: newPatient.id,
+                      visit_date: new Date().toISOString().split('T')[0],
+                      visit_type: 'Lab Only',
+                      status: 'Active',
+                      current_stage: 'nurse',
+                      nurse_status: 'Pending',
+                      reception_status: 'Checked In',
+                      reception_completed_at: new Date().toISOString(),
+                      overall_status: 'Active',
+                      notes: 'Walk-in patient registered by nurse for lab tests'
+                    });
+
+                    const newVisit = visitRes.data.visit || visitRes.data;
+
+                    toast.success(`${newPatientForm.full_name} registered successfully! Now order lab tests.`);
+                    
+                    // Close registration dialog
+                    setShowRegisterPatientDialog(false);
+                    setNewPatientForm({
+                      full_name: '',
+                      phone: '',
+                      gender: '',
+                      date_of_birth: '',
+                      address: ''
+                    });
+
+                    // Immediately open lab test ordering dialog for this patient
+                    setSelectedPatientForLabTests({
+                      ...newVisit,
+                      patient: newPatient,
+                      patient_id: newPatient.id
+                    });
+                    setSelectedLabTests([]);
+                    setShowOrderLabTestsDialog(true);
+
+                    // Refresh data in background
+                    fetchData();
+                  } catch (error: any) {
+                    console.error('Error registering patient:', error);
+                    toast.error(error.response?.data?.error || 'Failed to register patient');
+                  }
+                }}
+              >
+                <Users className="h-4 w-4 mr-2" />
+                Register & Add to Queue
+              </Button>
             </div>
           </div>
         </DialogContent>

@@ -37,6 +37,100 @@ Route::get('/settings/logo', function() {
     return response()->json(['logo_url' => null]);
 });
 
+// Public API routes for external system integration (no auth required)
+Route::prefix('public')->group(function () {
+    // Get all departments
+    Route::get('/departments', function() {
+        $departments = \App\Models\Department::where('is_active', true)
+            ->select('id', 'name', 'description', 'code')
+            ->get();
+        return response()->json([
+            'success' => true,
+            'departments' => $departments
+        ]);
+    });
+    
+    // Get doctors by department
+    Route::get('/departments/{id}/doctors', function($id) {
+        $department = \App\Models\Department::find($id);
+        if (!$department) {
+            return response()->json(['success' => false, 'error' => 'Department not found'], 404);
+        }
+        
+        $doctors = \App\Models\User::where('role', 'doctor')
+            ->where('department_id', $id)
+            ->select('id', 'name', 'email', 'phone', 'specialization')
+            ->get();
+            
+        return response()->json([
+            'success' => true,
+            'department' => $department->name,
+            'doctors' => $doctors
+        ]);
+    });
+    
+    // Get all doctors
+    Route::get('/doctors', function() {
+        $doctors = \App\Models\User::where('role', 'doctor')
+            ->with('department:id,name')
+            ->select('id', 'name', 'email', 'phone', 'specialization', 'department_id')
+            ->get();
+            
+        return response()->json([
+            'success' => true,
+            'doctors' => $doctors
+        ]);
+    });
+    
+    // Create appointment (public - for external systems)
+    Route::post('/appointments/create', function(Request $request) {
+        $validated = $request->validate([
+            'patient_id' => 'required|uuid|exists:patients,id',
+            'doctor_id' => 'required|exists:users,id',
+            'department_id' => 'nullable|uuid|exists:departments,id',
+            'appointment_date' => 'required|date',
+            'appointment_time' => 'nullable|string',
+            'type' => 'nullable|string|max:50',
+            'reason' => 'nullable|string',
+            'notes' => 'nullable|string',
+        ]);
+
+        // Combine date and time if time is provided
+        if (isset($validated['appointment_time'])) {
+            $validated['appointment_date'] = $validated['appointment_date'] . ' ' . $validated['appointment_time'];
+            unset($validated['appointment_time']);
+        }
+
+        $validated['id'] = (string) \Illuminate\Support\Str::uuid();
+        $validated['status'] = 'Scheduled';
+        
+        $appointment = \App\Models\Appointment::create($validated);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Appointment created successfully',
+            'appointment' => $appointment->load(['patient', 'doctor', 'department'])
+        ], 201);
+    });
+    
+    // Get patient appointments (requires patient_id)
+    Route::get('/appointments/my-appointments', function(Request $request) {
+        $request->validate([
+            'patient_id' => 'required|uuid|exists:patients,id'
+        ]);
+        
+        $appointments = \App\Models\Appointment::where('patient_id', $request->patient_id)
+            ->with(['doctor:id,name,specialization', 'department:id,name'])
+            ->orderBy('appointment_date', 'desc')
+            ->get();
+            
+        return response()->json([
+            'success' => true,
+            'appointments' => $appointments
+        ]);
+    });
+});
+
 // Protected routes
 Route::middleware('auth:sanctum')->group(function () {
     // Auth
@@ -757,11 +851,74 @@ Route::middleware('auth:sanctum')->group(function () {
             'notes' => $request->notes ?? $request->instructions,
         ]);
         
+        // Create invoice for lab test
+        try {
+            // Find the service price for this lab test
+            $service = \App\Models\MedicalService::where('service_name', $request->test_name)
+                ->orWhere('service_name', 'like', '%' . $request->test_name . '%')
+                ->first();
+            
+            $testPrice = $service ? $service->base_price : 5000; // Default price if not found
+            
+            // Generate invoice number
+            $date = date('Ymd');
+            $count = \App\Models\Invoice::whereDate('created_at', today())->count() + 1;
+            $invoiceNumber = 'INV-' . $date . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+            
+            // Ensure uniqueness
+            while (\App\Models\Invoice::where('invoice_number', $invoiceNumber)->exists()) {
+                $count++;
+                $invoiceNumber = 'INV-' . $date . '-' . str_pad($count, 4, '0', STR_PAD_LEFT);
+            }
+            
+            $invoice = \App\Models\Invoice::create([
+                'id' => \Illuminate\Support\Str::uuid(),
+                'invoice_number' => $invoiceNumber,
+                'patient_id' => $request->patient_id,
+                'total_amount' => $testPrice,
+                'paid_amount' => 0,
+                'balance' => $testPrice,
+                'status' => 'Pending',
+                'invoice_date' => now()->toDateString(),
+                'notes' => 'Lab Test: ' . $request->test_name,
+            ]);
+            
+            // Create invoice item
+            \App\Models\InvoiceItem::create([
+                'id' => \Illuminate\Support\Str::uuid(),
+                'invoice_id' => $invoice->id,
+                'service_id' => $service ? $service->id : null,
+                'description' => 'Lab Test: ' . $request->test_name,
+                'quantity' => 1,
+                'unit_price' => $testPrice,
+                'total_price' => $testPrice,
+            ]);
+            
+            \Log::info('Invoice created for lab test', [
+                'lab_test_id' => $labTest->id,
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoiceNumber
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to create invoice for lab test: ' . $e->getMessage());
+            // Don't fail the lab test creation if invoice fails
+        }
+        
         return response()->json(['labTest' => $labTest], 201);
     });
     
     Route::put('/labs/{id}', function(Request $request, $id) {
         $labTest = \App\Models\LabTest::findOrFail($id);
+        
+        // Prevent marking as Completed without results
+        if ($request->has('status') && $request->status === 'Completed') {
+            if (empty($labTest->results) && !$request->has('results')) {
+                return response()->json([
+                    'error' => 'Cannot mark test as Completed without entering results'
+                ], 400);
+            }
+        }
+        
         $labTest->update($request->all());
         return response()->json(['labTest' => $labTest]);
     });
@@ -773,23 +930,52 @@ Route::middleware('auth:sanctum')->group(function () {
     });
     
     Route::post('/labs/results/batch', function(Request $request) {
-        $request->validate([
-            'results' => 'required|array',
-            'testIds' => 'required|array',
-        ]);
-        
-        // Update test results
-        foreach ($request->results as $result) {
-            if (isset($result['test_id'])) {
-                \App\Models\LabTest::where('id', $result['test_id'])->update([
-                    'results' => $result['results'] ?? null,
-                    'status' => 'Completed',
-                    'completed_at' => now(),
-                ]);
+        try {
+            $request->validate([
+                'results' => 'required|array',
+                'testIds' => 'required|array',
+            ]);
+            
+            $updated = 0;
+            $errors = [];
+            
+            // Update test results
+            foreach ($request->results as $result) {
+                if (isset($result['test_id']) && isset($result['results'])) {
+                    try {
+                        $test = \App\Models\LabTest::find($result['test_id']);
+                        if ($test) {
+                            // Store results as JSON string if it's an array
+                            $resultsData = is_array($result['results']) 
+                                ? json_encode($result['results']) 
+                                : $result['results'];
+                            
+                            $test->results = $resultsData;
+                            $test->status = 'Completed';
+                            $test->save();
+                            $updated++;
+                        } else {
+                            $errors[] = "Test not found: {$result['test_id']}";
+                        }
+                    } catch (\Exception $e) {
+                        $errors[] = "Error updating test {$result['test_id']}: " . $e->getMessage();
+                    }
+                }
             }
+            
+            return response()->json([
+                'success' => true, 
+                'updated' => $updated,
+                'errors' => $errors
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Batch results error: ' . $e->getMessage());
+            \Log::error('Request data: ' . json_encode($request->all()));
+            return response()->json([
+                'error' => $e->getMessage(),
+                'trace' => config('app.debug') ? $e->getTraceAsString() : null
+            ], 500);
         }
-        
-        return response()->json(['success' => true, 'updated' => count($request->results)]);
     });
     
     // Consultations

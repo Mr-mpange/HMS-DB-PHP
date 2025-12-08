@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Activity, Loader2 } from 'lucide-react';
-import StaticLogo from '@/components/StaticLogo';
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
@@ -82,7 +81,11 @@ export default function Auth() {
       <Card className="w-full max-w-md shadow-xl border-primary/10">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <StaticLogo size="lg" showText={true} className="justify-center" />
+            <img 
+              src="/favicon.svg" 
+              alt="HASET Logo" 
+              className="h-32 w-32 object-contain"
+            />
           </div>
           <CardDescription className="text-base">
             Professional healthcare management system
@@ -114,6 +117,7 @@ export default function Auth() {
                     id="signin-password"
                     name="password"
                     type="password"
+                    placeholder="Enter your password"
                     required
                     disabled={isLoading}
                   />
@@ -171,6 +175,7 @@ export default function Auth() {
                     id="signup-password"
                     name="password"
                     type="password"
+                    placeholder="Create a strong password"
                     required
                     disabled={isLoading}
                   />

@@ -176,7 +176,7 @@ export default function DoctorDashboard() {
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [appointmentToComplete, setAppointmentToComplete] = useState<any>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [nextAction, setNextAction] = useState<'discharge' | 'lab' | 'pharmacy'>('discharge');
+  const [nextAction, setNextAction] = useState<'discharge' | 'pharmacy'>('discharge');
   const [isCompletingWithAction, setIsCompletingWithAction] = useState(false); // Track if completing with lab/pharmacy
 
   const handleCompleteAppointment = async (appointment: any) => {
@@ -198,66 +198,64 @@ export default function DoctorDashboard() {
       // Don't set loading to true - it causes the whole page to reload
       // The dialog will close and show success message instead
       
-      // Update appointment status to 'Completed' with notes
-      const response = await api.put(`/appointments/${appointmentToComplete.id}`, { 
-        status: 'Completed',
-        notes: completionNotes,
-        completed_at: new Date().toISOString()
-      });
+      // appointmentToComplete is actually a visit object, not an appointment
+      // Update appointment status to 'Completed' with notes if appointment exists
+      if (appointmentToComplete.appointment_id) {
+        try {
+          await api.put(`/appointments/${appointmentToComplete.appointment_id}`, { 
+            status: 'Completed',
+            notes: completionNotes,
+            completed_at: new Date().toISOString()
+          });
+        } catch (error: any) {
+          console.warn('Could not update appointment:', error.message);
+        }
+      }
 
-      if (response.status !== 200) throw new Error('Failed to update appointment');
-
-      // Find the visit associated with this appointment
-      const visitsRes = await api.get(`/visits?appointment_id=${appointmentToComplete.id}`);
-      const visits = visitsRes.data.visits || [];
+      // appointmentToComplete is the visit object itself
+      const visit = appointmentToComplete;
       
-      if (visits.length > 0) {
-        const visit = visits[0];
+      if (visit && visit.id) {
         
         if (nextAction === 'discharge') {
-          // Discharge patient - mark visit as completed
+          // Discharge patient - no additional charges (consultation already paid at reception)
           await api.put(`/visits/${visit.id}`, {
             doctor_status: 'Completed',
             doctor_completed_at: new Date().toISOString(),
-            overall_status: 'Completed',
             current_stage: 'completed',
-            discharge_notes: completionNotes
+            overall_status: 'Completed',
+            discharge_notes: completionNotes,
+            discharge_date: new Date().toISOString()
           });
-          toast.success('Appointment completed. Patient discharged.');
+          
+          toast.success('✅ Patient discharged successfully. No additional charges.');
         } else if (nextAction === 'lab') {
-          // Send to lab
+          // Send to lab - patient will return to doctor with results
           await api.put(`/visits/${visit.id}`, {
             doctor_status: 'Completed',
             doctor_completed_at: new Date().toISOString(),
             current_stage: 'lab',
             lab_status: 'Pending'
           });
-          toast.success('Appointment completed. Patient sent to lab.');
+          toast.success('Patient sent to lab. They will return with results.');
         } else if (nextAction === 'pharmacy') {
-          // Send to pharmacy
+          // Send to pharmacy directly
           await api.put(`/visits/${visit.id}`, {
             doctor_status: 'Completed',
             doctor_completed_at: new Date().toISOString(),
             current_stage: 'pharmacy',
-            pharmacy_status: 'Pending'
+            pharmacy_status: 'Pending',
+            overall_status: 'Active'
           });
-          toast.success('Appointment completed. Patient sent to pharmacy.');
+          toast.success('Prescription written. Patient sent to pharmacy.');
         }
-      } else {
-        // No visit found - just complete the appointment
-        toast.success('Appointment completed successfully');
-      }
-
-      // Update local state - remove completed appointment from list
-      setAppointments(prev => 
-        prev.filter(a => a.id !== appointmentToComplete.id)
-      );
-      
-      // If there's a visit, remove it from pending visits
-      if (visits.length > 0) {
+        
+        // Remove from pending visits
         setPendingVisits(prev => 
-          prev.filter(v => v.appointment_id !== appointmentToComplete.id)
+          prev.filter(v => v.id !== visit.id)
         );
+      } else {
+        toast.error('No visit found to complete');
       }
       
       setShowCompleteDialog(false);
@@ -1005,26 +1003,8 @@ export default function DoctorDashboard() {
     setSelectedLabTests(uniqueTests);
     setShowLabResults(true);
     
-    // If visit is provided and has lab results that haven't been reviewed, mark as reviewed
-    if (visit && visit.lab_completed_at && !visit.lab_results_reviewed) {
-      try {
-        const response = await api.put(`/visits/${visit.id}`, {
-          lab_results_reviewed: true,
-          lab_results_reviewed_at: new Date().toISOString()
-        });
-        
-        if (response.status === 200) {
-          // Update local state
-          setPendingVisits(prev => prev.map(v => 
-            v.id === visit.id 
-              ? { ...v, lab_results_reviewed: true, lab_results_reviewed_at: new Date().toISOString() }
-              : v
-          ));
-        }
-      } catch (error) {
-        console.error('Error marking lab results as reviewed:', error);
-      }
-    }
+    // Don't automatically mark as reviewed - let doctor explicitly take action
+    // (Write Prescription or Start Consultation will mark as reviewed)
   };
   
   const handleViewPrescriptions = (prescriptions: any[]) => {
@@ -1998,9 +1978,62 @@ export default function DoctorDashboard() {
                                 {test.notes && <p className="text-xs text-muted-foreground mt-1">{test.notes}</p>}
                               </div>
                             ) : test.results ? (
-                              <div className="text-sm p-2 bg-muted/50 rounded">
-                                <span className="font-medium">{test.results}</span>
-                              </div>
+                              (() => {
+                                try {
+                                  const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                                  return (
+                                    <div className="space-y-3">
+                                      {parsedResults.test_date && (
+                                        <div className="text-xs text-muted-foreground">
+                                          Test Date: {new Date(parsedResults.test_date).toLocaleString()}
+                                        </div>
+                                      )}
+                                      {parsedResults.results && (
+                                        <div className="space-y-2">
+                                          {Object.entries(parsedResults.results).map(([key, value]: [string, any]) => (
+                                            <div key={key} className="flex justify-between items-center text-sm p-2 bg-muted/50 rounded">
+                                              <span className="font-medium">{key}</span>
+                                              <div className="flex items-center gap-2">
+                                                <span className="font-semibold">
+                                                  {value.value} {value.unit || ''}
+                                                </span>
+                                                {value.normal_range && (
+                                                  <span className="text-muted-foreground text-xs">
+                                                    (Normal: {value.normal_range})
+                                                  </span>
+                                                )}
+                                                {value.status && value.status !== 'Normal' && (
+                                                  <Badge variant="destructive" className="text-xs">
+                                                    {value.status}
+                                                  </Badge>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {parsedResults.interpretation && (
+                                        <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                                          <h6 className="text-sm font-semibold text-blue-900 mb-1">Interpretation:</h6>
+                                          <p className="text-sm text-blue-800">{parsedResults.interpretation}</p>
+                                        </div>
+                                      )}
+                                      {parsedResults.recommendations && (
+                                        <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded">
+                                          <h6 className="text-sm font-semibold text-amber-900 mb-1">Recommendations:</h6>
+                                          <p className="text-sm text-amber-800">{parsedResults.recommendations}</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                } catch (e) {
+                                  return (
+                                    <div className="text-sm p-2 bg-muted/50 rounded">
+                                      <pre className="whitespace-pre-wrap text-xs">{test.results}</pre>
+                                    </div>
+                                  );
+                                }
+                              })()
                             ) : null}
                           </div>
                         </div>
@@ -2031,7 +2064,68 @@ export default function DoctorDashboard() {
                           </div>
                           <Badge>Completed</Badge>
                         </div>
-                        {/* Results display same as above */}
+                        {test.results ? (
+                          (() => {
+                            try {
+                              const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                              return (
+                                <div className="mt-3 space-y-3">
+                                  {parsedResults.test_date && (
+                                    <div className="text-xs text-muted-foreground">
+                                      Test Date: {new Date(parsedResults.test_date).toLocaleString()}
+                                    </div>
+                                  )}
+                                  {parsedResults.results && (
+                                    <div className="space-y-2">
+                                      {Object.entries(parsedResults.results).map(([key, value]: [string, any]) => (
+                                        <div key={key} className="flex justify-between items-center text-sm p-2 bg-muted/50 rounded">
+                                          <span className="font-medium">{key}</span>
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-semibold">
+                                              {value.value} {value.unit || ''}
+                                            </span>
+                                            {value.normal_range && (
+                                              <span className="text-muted-foreground text-xs">
+                                                (Normal: {value.normal_range})
+                                              </span>
+                                            )}
+                                            {value.status && value.status !== 'Normal' && (
+                                              <Badge variant="destructive" className="text-xs">
+                                                {value.status}
+                                              </Badge>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {parsedResults.interpretation && (
+                                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                                      <h6 className="text-sm font-semibold text-blue-900 mb-1">Interpretation:</h6>
+                                      <p className="text-sm text-blue-800">{parsedResults.interpretation}</p>
+                                    </div>
+                                  )}
+                                  {parsedResults.recommendations && (
+                                    <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded">
+                                      <h6 className="text-sm font-semibold text-amber-900 mb-1">Recommendations:</h6>
+                                      <p className="text-sm text-amber-800">{parsedResults.recommendations}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            } catch (e) {
+                              return (
+                                <div className="mt-3 text-sm p-2 bg-muted/50 rounded">
+                                  <pre className="whitespace-pre-wrap text-xs">{test.results}</pre>
+                                </div>
+                              );
+                            }
+                          })()
+                        ) : (
+                          <div className="mt-3 text-sm text-muted-foreground">
+                            No results entered yet
+                          </div>
+                        )}
                       </div>
                     ))
                 ) : (
@@ -2053,6 +2147,9 @@ export default function DoctorDashboard() {
                             <p className="text-sm text-muted-foreground">{test.test_type}</p>
                           </div>
                           <Badge variant="secondary">{test.status}</Badge>
+                        </div>
+                        <div className="mt-3 text-sm text-muted-foreground">
+                          Test pending - results not yet available
                         </div>
                       </div>
                     ))
@@ -2238,7 +2335,23 @@ export default function DoctorDashboard() {
                       .map((visit) => {
                         const labTestCount = visit.labTests?.length || 0;
                         const hasAbnormal = (visit.labTests || [])
-                          .some((test: any) => test.lab_results?.some((r: any) => r.abnormal_flag));
+                          .some((test: any) => {
+                            if (Array.isArray(test.lab_results)) {
+                              return test.lab_results.some((r: any) => r.abnormal_flag);
+                            }
+                            // Check if results field has abnormal status
+                            if (test.results) {
+                              try {
+                                const parsed = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                                if (parsed.results) {
+                                  return Object.values(parsed.results).some((r: any) => r.status && r.status !== 'Normal');
+                                }
+                              } catch (e) {
+                                return false;
+                              }
+                            }
+                            return false;
+                          });
                         
                         return (
                           <TableRow key={visit.id} className="hover:bg-green-50">
@@ -2370,7 +2483,23 @@ export default function DoctorDashboard() {
                   .map((visit) => {
                     const hasLabResults = (visit.labTests && visit.labTests.length > 0) || (visit.allCompletedLabTests && visit.allCompletedLabTests.length > 0);
                     const hasAbnormal = hasLabResults && [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])]
-                      .some((test: any) => test.lab_results?.some((r: any) => r.abnormal_flag));
+                      .some((test: any) => {
+                        if (Array.isArray(test.lab_results)) {
+                          return test.lab_results.some((r: any) => r.abnormal_flag);
+                        }
+                        // Check if results field has abnormal status
+                        if (test.results) {
+                          try {
+                            const parsed = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                            if (parsed.results) {
+                              return Object.values(parsed.results).some((r: any) => r.status && r.status !== 'Normal');
+                            }
+                          } catch (e) {
+                            return false;
+                          }
+                        }
+                        return false;
+                      });
                     const age = visit.patient?.date_of_birth 
                       ? new Date().getFullYear() - new Date(visit.patient.date_of_birth).getFullYear()
                       : 'N/A';
@@ -2475,23 +2604,38 @@ export default function DoctorDashboard() {
                             Consultation In Progress
                           </Button>
                         )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOrderLabTests(visit)}
-                          className="flex items-center gap-1"
-                          disabled={visit.doctor_status !== 'In Progress' && visit.doctor_status !== 'In Consultation'}
-                        >
-                          <TestTube className="h-3 w-3" />
-                          Order Lab Test
-                        </Button>
+                        {(visit.doctor_status === 'In Progress' || visit.doctor_status === 'In Consultation') && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOrderLabTests(visit)}
+                              className="flex items-center gap-1"
+                            >
+                              <TestTube className="h-3 w-3" />
+                              Order Lab Test
+                            </Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                setAppointmentToComplete(visit);
+                                setCompletionNotes('');
+                                setShowCompleteDialog(true);
+                              }}
+                              className="flex items-center gap-1 bg-green-600 hover:bg-green-700"
+                            >
+                              <CheckCircle className="h-3 w-3" />
+                              Complete
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
-                    );
-                  })
-                }
-                  {pendingVisits.filter(v => 
+                );
+              })}
+                {pendingVisits.filter(v => 
                     (!v.lab_completed_at || v.lab_results_reviewed) && 
                     v.doctor_status !== 'Completed' && 
                     v.current_stage === 'doctor' &&
@@ -3402,45 +3546,30 @@ export default function DoctorDashboard() {
                 <div className="flex items-center space-x-2">
                   <input
                     type="radio"
-                    id="discharge"
-                    name="nextAction"
-                    value="discharge"
-                    checked={nextAction === 'discharge'}
-                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'lab' | 'pharmacy')}
-                  />
-                  <Label htmlFor="discharge" className="cursor-pointer">
-                    <span className="font-medium text-green-700">Discharge Patient</span>
-                    <span className="block text-xs text-muted-foreground">Patient can go home - no further treatment needed</span>
-                  </Label>
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    id="lab"
-                    name="nextAction"
-                    value="lab"
-                    checked={nextAction === 'lab'}
-                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'lab' | 'pharmacy')}
-                  />
-                  <Label htmlFor="lab" className="cursor-pointer">
-                    <span className="font-medium text-blue-700">Send to Lab</span>
-                    <span className="block text-xs text-muted-foreground">Patient needs lab tests</span>
-                  </Label>
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="radio"
                     id="pharmacy"
                     name="nextAction"
                     value="pharmacy"
                     checked={nextAction === 'pharmacy'}
-                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'lab' | 'pharmacy')}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy')}
                   />
                   <Label htmlFor="pharmacy" className="cursor-pointer">
                     <span className="font-medium text-purple-700">Send to Pharmacy</span>
-                    <span className="block text-xs text-muted-foreground">Patient needs medications</span>
+                    <span className="block text-xs text-muted-foreground">Write prescription - patient goes directly to pharmacy</span>
+                  </Label>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="discharge"
+                    name="nextAction"
+                    value="discharge"
+                    checked={nextAction === 'discharge'}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy')}
+                  />
+                  <Label htmlFor="discharge" className="cursor-pointer">
+                    <span className="font-medium text-green-700">Discharge Patient</span>
+                    <span className="block text-xs text-muted-foreground">Patient is done - no additional charges</span>
                   </Label>
                 </div>
               </div>
@@ -3460,49 +3589,54 @@ export default function DoctorDashboard() {
               </Button>
               <Button 
                 onClick={async () => {
-                  if (nextAction === 'lab') {
-                    // Save completion notes first, then open lab test order form
-                    setIsCompletingWithAction(true);
-                    setShowCompleteDialog(false);
-                    
-                    // Save notes to appointment
-                    await api.put(`/appointments/${appointmentToComplete.id}`, {
-                      notes: completionNotes
-                    });
-                    
-                    // Create a visit-like object for lab tests
-                    // Note: appointment might not have a visit, so we use appointment data
-                    const visit = {
-                      id: null, // No visit ID - this is direct from appointment
-                      appointment_id: appointmentToComplete?.id,
-                      patient_id: appointmentToComplete?.patient_id,
-                      patient: appointmentToComplete?.patient,
-                      doctor_notes: completionNotes
-                    };
-                    handleOrderLabTests(visit);
-                  } else if (nextAction === 'pharmacy') {
-                    // Save completion notes first, then open prescription form
-                    setIsCompletingWithAction(true);
-                    setShowCompleteDialog(false);
-                    
-                    // Save notes to appointment
-                    await api.put(`/appointments/${appointmentToComplete.id}`, {
-                      notes: completionNotes
-                    });
-                    
-                    // Create a visit-like object for prescription
-                    // Note: appointment might not have a visit, so we use appointment data
-                    const visit = {
-                      id: null, // No visit ID - this is direct from appointment
-                      appointment_id: appointmentToComplete?.id,
-                      patient_id: appointmentToComplete?.patient_id,
-                      patient: appointmentToComplete?.patient,
-                      doctor_notes: completionNotes
-                    };
-                    handleWritePrescription(visit);
-                  } else {
-                    // Discharge - complete immediately
-                    confirmCompleteAppointment();
+                  try {
+                    if (nextAction === 'lab') {
+                      // Save completion notes first, then open lab test order form
+                      setIsCompletingWithAction(true);
+                      setShowCompleteDialog(false);
+                      
+                      // Try to save notes to appointment if it exists
+                      if (appointmentToComplete.appointment_id) {
+                        try {
+                          await api.put(`/appointments/${appointmentToComplete.appointment_id}`, {
+                            notes: completionNotes
+                          });
+                        } catch (error: any) {
+                          // If appointment doesn't exist, that's okay - we'll use the visit
+                          console.warn('Could not update appointment notes:', error.message);
+                        }
+                      }
+                      
+                      // Use the actual visit object (appointmentToComplete is actually a visit)
+                      handleOrderLabTests(appointmentToComplete);
+                    } else if (nextAction === 'pharmacy') {
+                      // Save completion notes first, then open prescription form
+                      setIsCompletingWithAction(true);
+                      setShowCompleteDialog(false);
+                      
+                      // Try to save notes to appointment if it exists
+                      if (appointmentToComplete.appointment_id) {
+                        try {
+                          await api.put(`/appointments/${appointmentToComplete.appointment_id}`, {
+                            notes: completionNotes
+                          });
+                        } catch (error: any) {
+                          // If appointment doesn't exist, that's okay - we'll use the visit
+                          console.warn('Could not update appointment notes:', error.message);
+                        }
+                      }
+                      
+                      // Use the actual visit object (appointmentToComplete is actually a visit)
+                      handleWritePrescription(appointmentToComplete);
+                    } else {
+                      // Discharge - complete immediately
+                      confirmCompleteAppointment();
+                    }
+                  } catch (error: any) {
+                    console.error('Error processing action:', error);
+                    toast.error('Failed to process action. Please try again.');
+                    setShowCompleteDialog(true);
+                    setIsCompletingWithAction(false);
                   }
                 }}
                 disabled={loading || completionNotes.trim().length < 10}

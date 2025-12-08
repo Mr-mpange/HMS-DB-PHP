@@ -108,3 +108,74 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Print Styles for Lab Results */
+@media print {
+  /* Hide everything except the print area */
+  body * {
+    visibility: hidden;
+  }
+  
+  #lab-results-print-area,
+  #lab-results-print-area * {
+    visibility: visible;
+  }
+  
+  #lab-results-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 20px;
+  }
+  
+  /* Hide print button and other UI elements */
+  .print\:hidden {
+    display: none !important;
+  }
+  
+  /* Show print-only elements */
+  .print\:block {
+    display: block !important;
+  }
+  
+  /* Remove shadows and adjust colors for print */
+  .print\:border {
+    border: 1px solid #000 !important;
+  }
+  
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+  
+  /* Page breaks */
+  .print\:break-after-page {
+    page-break-after: always;
+  }
+  
+  .print\:break-before-page {
+    page-break-before: always;
+  }
+  
+  /* Ensure proper spacing */
+  @page {
+    margin: 1cm;
+    size: A4;
+  }
+  
+  /* Make sure tables don't break awkwardly */
+  table {
+    page-break-inside: avoid;
+  }
+  
+  tr {
+    page-break-inside: avoid;
+  }
+  
+  /* Card styling for print */
+  .card {
+    border: 1px solid #ddd !important;
+    margin-bottom: 1rem;
+    page-break-inside: avoid;
+  }
+}

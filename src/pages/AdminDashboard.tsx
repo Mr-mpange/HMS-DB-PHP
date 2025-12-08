@@ -57,6 +57,7 @@ import { logActivity } from '@/lib/utils';
 import AdminReports from '@/components/AdminReports';
 import ActivityLogsView from '@/components/ActivityLogsView';
 import PatientReports from '@/components/PatientReports';
+import LowStockInventoryReport from '@/components/LowStockInventoryReport';
 // Using dynamic import for code splitting
 const EnhancedAppointmentBooking = React.lazy(() => import('@/components/EnhancedAppointmentBooking'));
 
@@ -2175,6 +2176,9 @@ export default function AdminDashboard() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Low Stock Inventory Report */}
+        <LowStockInventoryReport />
 
         {/* System Settings Card */}
         <Card className="shadow-lg border-blue-200">

@@ -1601,6 +1601,7 @@ export default function BillingDashboard() {
                         id="dueDate"
                         name="dueDate"
                         type="date"
+                        min={new Date().toISOString().split('T')[0]}
                       />
                     </div>
 
