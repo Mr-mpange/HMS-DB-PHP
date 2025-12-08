@@ -216,7 +216,8 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         currentStage = 'lab'; // Radiology goes to lab
         labStatus = 'Pending';
         nurseStatus = 'Not Required';
-      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure') {
+      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure' || service.service_type === 'Vaccination' || service.service_type === 'Diagnostic') {
+        // Nursing procedures, vaccinations, and diagnostic services go to nurse
         currentStage = 'nurse';
         nurseStatus = 'Pending';
       } else if (service.service_type === 'Pharmacy') {
@@ -247,14 +248,14 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       const change = parseFloat(amountPaid) - totalAmount;
       
       // Determine destination message
-      let destination = 'billing';
+      let destination = 'nurse'; // Default to nurse
       if (service.service_type === 'Consultation' || service.service_type === 'Medical') {
         destination = 'doctor';
       } else if (service.service_type === 'Laboratory') {
         destination = 'lab';
       } else if (service.service_type === 'Radiology' || service.service_type === 'Imaging') {
         destination = 'lab';
-      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure') {
+      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure' || service.service_type === 'Vaccination' || service.service_type === 'Diagnostic') {
         destination = 'nurse';
       } else if (service.service_type === 'Pharmacy') {
         destination = 'pharmacy';
