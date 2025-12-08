@@ -49,15 +49,11 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
     setLoading(true);
     try {
       const response = await api.get('/services');
-      // Filter for active services that DON'T require lab tests
-      // Exclude Laboratory and Radiology services (they need lab stage)
-      const activeServices = response.data.services.filter((s: any) => 
-        s.is_active && 
-        s.service_type !== 'Laboratory' && 
-        s.service_type !== 'Radiology'
-      );
+      // Filter for active services
+      // Quick service can handle ALL service types - patient will be routed to correct department
+      const activeServices = response.data.services.filter((s: any) => s.is_active);
       setServices(activeServices);
-      console.log('Loaded quick services (excluding lab/radiology):', activeServices.length, activeServices);
+      console.log('Loaded quick services:', activeServices.length, activeServices);
     } catch (error) {
       console.error('Error fetching services:', error);
       toast.error('Failed to load services');
@@ -199,36 +195,36 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       });
 
       // Determine routing based on service type
-      let currentStage = 'billing'; // Default: direct to billing (service already paid)
-      let nurseStatus = 'Not Required';
+      // IMPORTANT: Patient goes to service department FIRST, then billing after service completion
+      let currentStage = 'nurse'; // Default: nurse for general services
+      let nurseStatus = 'Pending';
       let doctorStatus = 'Not Required';
       let labStatus = 'Not Required';
       let pharmacyStatus = 'Not Required';
-      let billingStatus = 'Completed'; // Already paid
+      let billingStatus = 'Completed'; // Payment already received, but patient still needs service
 
-      // Route based on service type
+      // Route based on service type - patient goes to department to receive service
       if (service.service_type === 'Consultation' || service.service_type === 'Medical') {
         currentStage = 'doctor';
         doctorStatus = 'Pending';
-        billingStatus = 'Completed'; // Already paid upfront
+        nurseStatus = 'Not Required';
       } else if (service.service_type === 'Laboratory') {
         currentStage = 'lab';
         labStatus = 'Pending';
-        billingStatus = 'Completed'; // Already paid upfront
+        nurseStatus = 'Not Required';
       } else if (service.service_type === 'Radiology' || service.service_type === 'Imaging') {
         currentStage = 'lab'; // Radiology goes to lab
         labStatus = 'Pending';
-        billingStatus = 'Completed';
+        nurseStatus = 'Not Required';
       } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure') {
         currentStage = 'nurse';
         nurseStatus = 'Pending';
-        billingStatus = 'Completed';
       } else if (service.service_type === 'Pharmacy') {
         currentStage = 'pharmacy';
         pharmacyStatus = 'Pending';
-        billingStatus = 'Completed';
+        nurseStatus = 'Not Required';
       }
-      // For other services (e.g., administrative), go directly to billing/discharge
+      // For other/administrative services, go to nurse for general handling
 
       // Create a visit for quick service
       await api.post('/visits', {
