@@ -1061,6 +1061,33 @@ export default function DoctorDashboard() {
     }
   };
 
+  // Handler for completing quick service (no consultation needed)
+  const handleCompleteQuickService = async (visit: any) => {
+    try {
+      await api.put(`/visits/${visit.id}`, {
+        doctor_status: 'Completed',
+        doctor_completed_at: new Date().toISOString(),
+        current_stage: 'completed',
+        overall_status: 'Completed',
+        discharge_time: new Date().toISOString(),
+        discharge_notes: `Quick Service completed: ${visit.notes || 'Service provided'}`
+      });
+
+      toast.success(`Service completed for ${visit.patient?.full_name}. Patient discharged.`);
+      
+      // Remove from pending visits
+      setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
+      
+      // Refresh data
+      setTimeout(() => {
+        fetchData(false);
+      }, 1000);
+    } catch (error: any) {
+      console.error('Error completing quick service:', error);
+      toast.error(error.response?.data?.error || 'Failed to complete service');
+    }
+  };
+
   // Handler for ordering lab tests
   const handleOrderLabTests = async (visit: any) => {
     setSelectedVisit(visit);
@@ -2523,6 +2550,12 @@ export default function DoctorDashboard() {
                             <span className="text-red-600 ml-2">⚠ Allergies</span>
                           )}
                         </div>
+                        {visit.visit_type === 'Quick Service' && (
+                          <Badge variant="outline" className="mt-1 text-xs bg-green-50 text-green-700">Quick Service</Badge>
+                        )}
+                        {visit.visit_type === 'Quick Service' && visit.notes && (
+                          <div className="text-xs text-blue-600 mt-1">📋 {visit.notes}</div>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -2591,7 +2624,17 @@ export default function DoctorDashboard() {
                             View Results
                           </Button>
                         )}
-                        {(!visit.doctor_diagnosis && visit.doctor_status !== 'In Progress' && visit.doctor_status !== 'In Consultation') ? (
+                        {visit.visit_type === 'Quick Service' ? (
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleCompleteQuickService(visit)}
+                            className="flex items-center gap-1 bg-green-600 hover:bg-green-700"
+                          >
+                            <CheckCircle className="h-3 w-3" />
+                            Complete Service
+                          </Button>
+                        ) : (!visit.doctor_diagnosis && visit.doctor_status !== 'In Progress' && visit.doctor_status !== 'In Consultation') ? (
                           <Button
                             variant="default"
                             size="sm"

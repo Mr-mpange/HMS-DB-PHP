@@ -119,6 +119,33 @@ export default function NurseDashboard() {
     setShowScheduleDialog(true);
   };
 
+  const handleCompleteQuickService = async (visit: any) => {
+    try {
+      // For quick services (vaccination, diagnostic, etc.), just mark as completed and discharge
+      await api.put(`/visits/${visit.id}`, {
+        nurse_status: 'Completed',
+        nurse_completed_at: new Date().toISOString(),
+        current_stage: 'completed',
+        overall_status: 'Completed',
+        discharge_time: new Date().toISOString(),
+        discharge_notes: `Quick Service completed: ${visit.notes || 'Service provided'}`
+      });
+
+      toast.success(`Service completed for ${visit.patient?.full_name}. Patient discharged.`);
+      
+      // Remove from pending visits
+      setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
+      
+      // Refresh data
+      setTimeout(() => {
+        fetchData(false);
+      }, 1000);
+    } catch (error: any) {
+      console.error('Error completing quick service:', error);
+      toast.error(error.response?.data?.error || 'Failed to complete service');
+    }
+  };
+
   const handlePatientSearch = () => {
     setShowPatientSearch(true);
     setSearchQuery('');
@@ -586,6 +613,9 @@ export default function NurseDashboard() {
                       {visit.visit_type && visit.visit_type !== 'Consultation' && (
                         <Badge variant="outline" className="mt-1">{visit.visit_type}</Badge>
                       )}
+                      {visit.visit_type === 'Quick Service' && visit.notes && (
+                        <p className="text-xs text-blue-600 mt-1">📋 {visit.notes}</p>
+                      )}
                     </div>
                     {visit.visit_type === 'Lab Only' ? (
                       <Button 
@@ -598,6 +628,14 @@ export default function NurseDashboard() {
                       >
                         <Activity className="h-4 w-4 mr-2" />
                         Order Lab Tests
+                      </Button>
+                    ) : visit.visit_type === 'Quick Service' ? (
+                      <Button 
+                        onClick={() => handleCompleteQuickService(visit)}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <Stethoscope className="h-4 w-4 mr-2" />
+                        Complete Service
                       </Button>
                     ) : (
                       <Button onClick={() => handleRecordVitals(visit.patient)}>
