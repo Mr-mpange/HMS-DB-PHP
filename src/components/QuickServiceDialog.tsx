@@ -299,7 +299,6 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       const change = parseFloat(amountPaid) - totalAmount;
       
       // Determine destination message based on primary service type
-      const serviceTypes = serviceCart.map(item => item.service.service_type);
       let destination = 'nurse';
       
       if (serviceTypes.some(t => t === 'Laboratory' || t === 'Radiology' || t === 'Imaging')) {

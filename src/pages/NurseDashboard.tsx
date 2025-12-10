@@ -14,7 +14,7 @@ import { ServiceFormDialog } from '@/components/ServiceFormDialog';
 import api from '@/lib/api';
 import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from '
+import { format } from 'date-fns';
 
 export default function NurseDashboard() {
   const { user } = useAuth();
@@ -35,7 +35,7 @@ export default function NurseDashboard() {
   const [selectedVisitForForm, setSelectedVisitForForm] = useState<any>(null);
   const [serviceFormTemplate, setServiceFormTemplate] = useState<any>(null);
   const [formSubmitting, setFormSubmitting] = useState(false);
-  const [services, setServices] = useState<any
+  const [services, setServices] = useState<any[]>([]);
   const [showRegisterPatientDialog, setShowRegisterPatientDialog] = useState(false);
   const [newPatientForm, setNewPatientForm] = useState({
     full_name: '',
@@ -72,11 +72,6 @@ export default function NurseDashboard() {
     reason: '',
     department_id: ''
   });
-  const [showServiceFormDialog, setShowServiceFormDialog] = useState(false);
-  const [selectedVisitForForm, setSelectedVisitForForm] = useState<any>(null);
-  const [serviceFormTemplate, setServiceFormTemplate] = useState<any>(null);
-  const [formSubmitting, setFormSubmitting] = useState(false);
-  const [services, setServices] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalPatients: 0,
     todayAppointments: 0,
