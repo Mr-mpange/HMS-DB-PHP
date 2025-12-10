@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { mobilePaymentService, MobilePaymentRequest } from '@/lib/mobilePaymentService';
-import { Loader2, Stethoscope } from 'lucide-react';
+import { Loader2, Stethoscope, Plus } from 'lucide-react';
 
 interface QuickServiceDialogProps {
   open: boolean;

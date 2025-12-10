@@ -33,7 +33,7 @@ import {
   Phone,
   Clipboard,
   HeartHandshake,
-  Plus,
+
   Stethoscope,
   Pill,
 } from 'lucide-react';
