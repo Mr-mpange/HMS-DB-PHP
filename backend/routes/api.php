@@ -830,7 +830,16 @@ Route::middleware('auth:sanctum')->group(function () {
             $query->limit($request->limit);
         }
         
-        $tests = $query->orderBy('created_at', 'desc')->get();
+        // FIXED: Prioritize active tests over completed ones
+        // Order by: Active tests first (Pending, In Progress), then by creation date
+        $tests = $query->orderByRaw("
+            CASE 
+                WHEN status IN ('Pending', 'In Progress', 'Sample Collected', 'Ordered') THEN 0
+                WHEN status = 'Cancelled' THEN 1  
+                WHEN status = 'Completed' THEN 2
+                ELSE 3
+            END ASC, created_at DESC
+        ")->get();
         
         // Transform tests to include lab_results as an array
         $testsWithResults = $tests->map(function($test) {

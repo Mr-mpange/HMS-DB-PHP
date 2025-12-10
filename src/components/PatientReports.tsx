@@ -218,7 +218,28 @@ export default function PatientReports() {
   };
 
   const handlePrint = () => {
+    if (!selectedPatient || !patientHistory) {
+      toast.error('Please select a patient first');
+      return;
+    }
+    
+    // Remove any existing low stock print styles temporarily
+    const lowStockStyles = document.querySelector('[data-print-style="low-stock-report"]');
+    if (lowStockStyles) {
+      lowStockStyles.remove();
+    }
+    
+    // Add patient report specific class to body for targeting
+    document.body.classList.add('printing-patient-report');
+    
     window.print();
+    
+    // Remove the class after printing
+    setTimeout(() => {
+      document.body.classList.remove('printing-patient-report');
+    }, 1000);
+    
+    toast.success('Printing patient report');
   };
 
   const filteredPatients = patients.filter(p => {
@@ -243,23 +264,25 @@ export default function PatientReports() {
       {selectedPatient && patientHistory && (
         <style data-print-style="patient-report">{`
           @media print {
-            /* When patient report exists, hide everything else */
+            /* HIGHEST PRIORITY - Hide everything when patient report is active */
             body * { 
-              visibility: hidden;
+              visibility: hidden !important;
+              display: none !important;
             }
             
-            /* FORCE HIDE admin reports specifically */
-            .hidden.print\\:block,
-            .hidden.print\\:block *,
-            .print-report,
-            .print-report * {
+            /* FORCE HIDE low stock report specifically */
+            #low-stock-report-print,
+            #low-stock-report-print *,
+            [data-print-style="low-stock-report"],
+            [data-print-style="low-stock-report"] * {
               visibility: hidden !important;
               display: none !important;
               position: absolute !important;
               left: -99999px !important;
+              z-index: -1 !important;
             }
             
-            /* Show ONLY patient report */
+            /* Show ONLY patient report with highest priority */
             #patient-report-print {
               visibility: visible !important;
               display: block !important;
@@ -269,13 +292,14 @@ export default function PatientReports() {
               width: 100% !important;
               height: auto !important;
               overflow: visible !important;
+              z-index: 99999 !important;
             }
             
             #patient-report-print * { 
               visibility: visible !important;
+              display: block !important;
               height: auto !important;
-              overflow: visible !important;
-            }
+              
           
           /* Ensure proper display for elements */
           #patient-report-print div {
@@ -655,39 +679,13 @@ export default function PatientReports() {
             {/* Header with Logo */}
             <div style={{ marginBottom: '20px', borderBottom: '2px solid #2563eb', paddingBottom: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
-                {/* HASET Logo */}
+                {/* Hospital Logo */}
                 <div style={{ width: '80px', height: '95px', flexShrink: 0 }}>
-                  <svg viewBox="0 0 840 1000" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
-                    {/* Pentagon shape - dark green */}
-                    <path d="M420 50 L800 300 L680 750 L160 750 L40 300 Z" fill="#1a4d3a" />
-                    
-                    {/* White checkmark/tick */}
-                    <path d="M260 580 L360 680 L580 420" stroke="white" strokeWidth="60" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                    
-                    {/* Stethoscope - red */}
-                    {/* Earpieces */}
-                    <circle cx="360" cy="180" r="25" fill="#dc2626"/>
-                    <circle cx="480" cy="180" r="25" fill="#dc2626"/>
-                    
-                    {/* Tubes */}
-                    <path d="M360 205 Q360 280 420 320" stroke="#dc2626" strokeWidth="20" strokeLinecap="round" fill="none"/>
-                    <path d="M480 205 Q480 280 420 320" stroke="#dc2626" strokeWidth="20" strokeLinecap="round" fill="none"/>
-                    
-                    {/* Main tube */}
-                    <path d="M420 320 L420 450 Q420 480 390 480 L280 480" stroke="#dc2626" strokeWidth="20" strokeLinecap="round" fill="none"/>
-                    
-                    {/* Chest piece circles */}
-                    <circle cx="280" cy="480" r="40" stroke="#dc2626" strokeWidth="20" fill="none"/>
-                    <circle cx="280" cy="480" r="15" fill="#dc2626"/>
-                    
-                    {/* Small circle on tube */}
-                    <circle cx="560" cy="420" r="25" stroke="#dc2626" strokeWidth="15" fill="none"/>
-                    <circle cx="560" cy="420" r="10" fill="#dc2626"/>
-                    
-                    {/* HASET text - red, bold */}
-                    <text x="420" y="920" fontFamily="Arial, sans-serif" fontSize="180" fontWeight="900" 
-                          fill="#dc2626" textAnchor="middle" letterSpacing="10">HASET</text>
-                  </svg>
+                  <img 
+                    src="/placeholder.svg" 
+                    alt="Hospital Logo" 
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
                 </div>
                 
                 {/* Hospital Info */}

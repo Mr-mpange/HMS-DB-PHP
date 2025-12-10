@@ -1095,8 +1095,10 @@ export default function LabDashboard() {
                                   setBatchResults({});
                                 }
                                 
-                                // Refresh data
-                                await fetchData(false);
+                                // Refresh data with a small delay to ensure backend has processed
+                                setTimeout(() => {
+                                  fetchData(false);
+                                }, 500);
                               } catch (error) {
                                 console.error('Error cancelling test:', error);
                                 toast.error('Failed to cancel test');
