@@ -278,8 +278,30 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/patient-services', [ServiceController::class, 'assignToPatient']);
     Route::get('/patient-services', [ServiceController::class, 'getAllPatientServices']);
     
+    // Service Forms
+    Route::post('/service-forms', function(Request $request) {
+        $request->validate([
+            'visit_id' => 'required|exists:visits,id',
+            'patient_id' => 'required|exists:patients,id',
+            'form_data' => 'required|array',
+            'completed_by' => 'required|exists:users,id'
+        ]);
+        
+        \DB::table('service_forms')->insert([
+            'visit_id' => $request->visit_id,
+            'patient_id' => $request->patient_id,
+            'service_id' => $request->service_id ?? null,
+            'form_data' => json_encode($request->form_data),
+            'completed_by' => $request->completed_by,
+            'completed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+        
+        return response()->json(['success' => true, 'message' => 'Form saved']);
+    });
+    
     // Payments
-    Route::get('/payments', [PaymentController::class, 'index']);
     Route::get('/payments/{id}', [PaymentController::class, 'show']);
     Route::post('/payments', [PaymentController::class, 'store']);
     Route::delete('/payments/{id}', [PaymentController::class, 'destroy']);

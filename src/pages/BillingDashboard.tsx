@@ -868,9 +868,10 @@ export default function BillingDashboard() {
 
         {/* Main Content with Tabs */}
         <Tabs defaultValue="pending" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="pending">Awaiting Billing ({billingVisits.length})</TabsTrigger>
-            <TabsTrigger value="invoices">Invoices & Payments</TabsTrigger>
+            <TabsTrigger value="invoices">Unpaid Invoices</TabsTrigger>
+            <TabsTrigger value="paid">Paid Invoices</TabsTrigger>
             <TabsTrigger value="payments">Today's Payments</TabsTrigger>
             <TabsTrigger value="insurance">Insurance Claims</TabsTrigger>
           </TabsList>
@@ -1051,6 +1052,88 @@ export default function BillingDashboard() {
                           </TableCell>
                         </TableRow>
                       ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Paid Invoices Tab - Shows Quick Service and other paid invoices */}
+          <TabsContent value="paid" className="space-y-4">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Paid Invoices</CardTitle>
+                    <CardDescription>All fully paid invoices including Quick Service payments</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="min-w-[120px]">Patient</TableHead>
+                        <TableHead className="min-w-[100px]">Phone</TableHead>
+                        <TableHead className="min-w-[100px]">Total Amount</TableHead>
+                        <TableHead className="min-w-[100px]">Paid Amount</TableHead>
+                        <TableHead className="min-w-[80px]">Invoice Count</TableHead>
+                        <TableHead className="min-w-[100px]">Latest Date</TableHead>
+                        <TableHead className="min-w-[80px]">Status</TableHead>
+                        <TableHead className="min-w-[100px]">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {invoices
+                        .filter((patientData) => patientData.status === 'Paid') // Show only fully paid patients
+                        .map((patientData) => (
+                        <TableRow key={patientData.patient.id}>
+                          <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
+                          <TableCell className="text-sm">{patientData.patient.phone}</TableCell>
+                          <TableCell className="font-semibold text-green-600">
+                            TSh{Number(patientData.totalAmount as number).toFixed(2)}
+                          </TableCell>
+                          <TableCell className="text-green-600">
+                            TSh{Number(patientData.totalPaid as number).toFixed(2)}
+                          </TableCell>
+                          <TableCell>{patientData.invoiceCount}</TableCell>
+                          <TableCell className="text-sm">
+                            {format(new Date(patientData.latestInvoiceDate), 'MMM dd, yyyy')}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="default" className="bg-green-600">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Paid
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                // Show invoice details
+                                const firstInvoice = patientData.invoices[0];
+                                if (firstInvoice) {
+                                  toast.info(`Invoice details for ${patientData.patient.full_name}`);
+                                }
+                              }}
+                            >
+                              <File className="mr-1 h-3 w-3" />
+                              View Details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {invoices.filter((patientData) => patientData.status === 'Paid').length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                            <CheckCircle className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                            <p>No paid invoices found</p>
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>

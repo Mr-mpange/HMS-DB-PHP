@@ -24,6 +24,9 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
+  // Multiple services cart
+  const [serviceCart, setServiceCart] = useState<Array<{service: any, quantity: number}>>([]);
+  
   // Payment fields
   const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
   const [amountPaid, setAmountPaid] = useState<string>('');
@@ -42,8 +45,51 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
     if (open) {
       fetchServices();
       setIsWalkIn(!patient); // If no patient, it's a walk-in
+      setServiceCart([]); // Reset cart when dialog opens
     }
   }, [open, patient]);
+
+  // Add service to cart
+  const addToCart = () => {
+    if (!selectedService) {
+      toast.error('Please select a service');
+      return;
+    }
+    
+    const service = services.find(s => s.id === selectedService);
+    if (!service) return;
+    
+    // Check if service already in cart
+    const existingIndex = serviceCart.findIndex(item => item.service.id === selectedService);
+    
+    if (existingIndex >= 0) {
+      // Update quantity
+      const updated = [...serviceCart];
+      updated[existingIndex].quantity += quantity;
+      setServiceCart(updated);
+      toast.success(`Updated ${service.service_name} quantity`);
+    } else {
+      // Add new service
+      setServiceCart([...serviceCart, { service, quantity }]);
+      toast.success(`Added ${service.service_name} to cart`);
+    }
+    
+    // Reset selection
+    setSelectedService('');
+    setQuantity(1);
+  };
+
+  // Remove service from cart
+  const removeFromCart = (serviceId: string) => {
+    setServiceCart(serviceCart.filter(item => item.service.id !== serviceId));
+  };
+
+  // Calculate total amount from cart
+  const calculateTotal = () => {
+    return serviceCart.reduce((total, item) => {
+      return total + (item.service.base_price * item.quantity);
+    }, 0);
+  };
 
   const fetchServices = async () => {
     setLoading(true);
@@ -63,8 +109,8 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
   };
 
   const handleAssignService = async () => {
-    if (!selectedService) {
-      toast.error('Please select a service');
+    if (serviceCart.length === 0) {
+      toast.error('Please add at least one service to cart');
       return;
     }
 
@@ -80,8 +126,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
     }
 
     // Validate payment
-    const service = services.find(s => s.id === selectedService);
-    const totalAmount = service.base_price * quantity;
+    const totalAmount = calculateTotal();
     
     if (!amountPaid || parseFloat(amountPaid) < totalAmount) {
       toast.error(`Payment required: TSh ${totalAmount.toLocaleString()}`);
@@ -126,17 +171,19 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod)) {
         toast.info(`Initiating ${paymentMethod} payment for Quick Service...`);
         
+        const serviceNames = serviceCart.map(item => item.service.service_name).join(', ');
+        
         const paymentRequest: any = {
           phoneNumber: mobilePhone,
           amount: totalAmount,
           patientId: patientId,
           paymentType: 'Quick Service',
           paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-          description: `Quick Service: ${service.service_name}`,
-          service_id: selectedService,
-          service_name: service.service_name,
-          quantity: quantity,
-          unit_price: service.base_price
+          description: `Quick Service: ${serviceNames}`,
+          service_id: serviceCart[0].service.id,
+          service_name: serviceNames,
+          quantity: serviceCart.reduce((sum, item) => sum + item.quantity, 0),
+          unit_price: totalAmount
         };
 
         const response = await mobilePaymentService.initiatePayment(paymentRequest);
@@ -158,18 +205,24 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         }
       }
       
-      // Create patient service
-      await api.post('/patient-services', {
-        patient_id: patientId,
-        service_id: selectedService,
-        quantity: quantity,
-        unit_price: service.base_price,
-        total_price: totalAmount,
-        service_date: new Date().toISOString().split('T')[0],
-        status: 'Completed' // Mark as completed since payment is made upfront
-      });
+      // Create patient services for all items in cart
+      for (const item of serviceCart) {
+        await api.post('/patient-services', {
+          patient_id: patientId,
+          service_id: item.service.id,
+          quantity: item.quantity,
+          unit_price: item.service.base_price,
+          total_price: item.service.base_price * item.quantity,
+          service_date: new Date().toISOString().split('T')[0],
+          status: 'Completed' // Mark as completed since payment is made upfront
+        });
+      }
 
-      // Create invoice for the service
+      // Create invoice for all services
+      const serviceNames = serviceCart.map(item => 
+        `${item.service.service_name} (Qty: ${item.quantity})`
+      ).join(', ');
+      
       const invoiceRes = await api.post('/invoices', {
         patient_id: patientId,
         invoice_date: new Date().toISOString().split('T')[0],
@@ -177,7 +230,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         paid_amount: parseFloat(amountPaid),
         balance: 0, // Fully paid
         status: 'Paid',
-        notes: `Quick Service: ${service.service_name} (Qty: ${quantity})`
+        notes: `Quick Service: ${serviceNames}`
       });
 
       const invoiceId = invoiceRes.data.invoice?.id || invoiceRes.data.invoiceId;
@@ -191,43 +244,41 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         payment_type: 'Quick Service',
         status: 'Completed',
         payment_date: new Date().toISOString(),
-        notes: `Payment for ${service.service_name} (Qty: ${quantity})`
+        notes: `Payment for ${serviceNames}`
       });
 
-      // Determine routing based on service type
-      // IMPORTANT: Patient goes to service department FIRST, then billing after service completion
-      let currentStage = 'nurse'; // Default: nurse for general services
-      let nurseStatus = 'Pending';
+      // Determine routing based on service types in cart
+      // If multiple services, prioritize: Lab > Doctor > Nurse > Pharmacy
+      let currentStage = 'nurse'; // Default
+      let nurseStatus = 'Not Required';
       let doctorStatus = 'Not Required';
       let labStatus = 'Not Required';
       let pharmacyStatus = 'Not Required';
-      let billingStatus = 'Completed'; // Payment already received, but patient still needs service
-
-      // Route based on service type - patient goes to department to receive service
-      if (service.service_type === 'Consultation' || service.service_type === 'Medical') {
-        currentStage = 'doctor';
-        doctorStatus = 'Pending';
-        nurseStatus = 'Not Required';
-      } else if (service.service_type === 'Laboratory') {
+      let billingStatus = 'Completed'; // Payment already received
+      
+      const serviceTypes = serviceCart.map(item => item.service.service_type);
+      
+      // Determine primary destination
+      if (serviceTypes.some(t => t === 'Laboratory' || t === 'Radiology' || t === 'Imaging')) {
         currentStage = 'lab';
         labStatus = 'Pending';
-        nurseStatus = 'Not Required';
-      } else if (service.service_type === 'Radiology' || service.service_type === 'Imaging') {
-        currentStage = 'lab'; // Radiology goes to lab
-        labStatus = 'Pending';
-        nurseStatus = 'Not Required';
-      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure' || service.service_type === 'Vaccination' || service.service_type === 'Diagnostic') {
-        // Nursing procedures, vaccinations, and diagnostic services go to nurse
+      } else if (serviceTypes.some(t => t === 'Consultation' || t === 'Medical')) {
+        currentStage = 'doctor';
+        doctorStatus = 'Pending';
+      } else if (serviceTypes.some(t => t === 'Nursing' || t === 'Procedure' || t === 'Vaccination' || t === 'Diagnostic')) {
         currentStage = 'nurse';
         nurseStatus = 'Pending';
-      } else if (service.service_type === 'Pharmacy') {
+      } else if (serviceTypes.some(t => t === 'Pharmacy')) {
         currentStage = 'pharmacy';
         pharmacyStatus = 'Pending';
-        nurseStatus = 'Not Required';
+      } else {
+        currentStage = 'nurse';
+        nurseStatus = 'Pending';
       }
-      // For other/administrative services, go to nurse for general handling
 
       // Create a visit for quick service
+      const visitNotes = `Quick Service: ${serviceCart.map(item => item.service.service_name).join(', ')} - Paid upfront`;
+      
       await api.post('/visits', {
         patient_id: patientId,
         visit_date: new Date().toISOString().split('T')[0],
@@ -241,30 +292,33 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
         billing_status: billingStatus,
         overall_status: 'Active',
         visit_type: 'Quick Service',
-        notes: `Quick Service: ${service.service_name} - Paid upfront`
+        notes: visitNotes
       });
 
       const patientName = isWalkIn ? walkInData.full_name : patient.full_name;
       const change = parseFloat(amountPaid) - totalAmount;
       
-      // Determine destination message
-      let destination = 'nurse'; // Default to nurse
-      if (service.service_type === 'Consultation' || service.service_type === 'Medical') {
+      // Determine destination message based on primary service type
+      const serviceTypes = serviceCart.map(item => item.service.service_type);
+      let destination = 'nurse';
+      
+      if (serviceTypes.some(t => t === 'Laboratory' || t === 'Radiology' || t === 'Imaging')) {
+        destination = 'lab';
+      } else if (serviceTypes.some(t => t === 'Consultation' || t === 'Medical')) {
         destination = 'doctor';
-      } else if (service.service_type === 'Laboratory') {
-        destination = 'lab';
-      } else if (service.service_type === 'Radiology' || service.service_type === 'Imaging') {
-        destination = 'lab';
-      } else if (service.service_type === 'Nursing' || service.service_type === 'Procedure' || service.service_type === 'Vaccination' || service.service_type === 'Diagnostic') {
+      } else if (serviceTypes.some(t => t === 'Nursing' || t === 'Procedure' || t === 'Vaccination' || t === 'Diagnostic')) {
         destination = 'nurse';
-      } else if (service.service_type === 'Pharmacy') {
+      } else if (serviceTypes.some(t => t === 'Pharmacy')) {
         destination = 'pharmacy';
       }
       
+      const serviceCount = serviceCart.length;
+      const serviceList = serviceCart.map(item => item.service.service_name).join(', ');
+      
       if (change > 0) {
-        toast.success(`${service.service_name} assigned to ${patientName}. Change: TSh ${change.toLocaleString()}. Patient sent to ${destination}.`, { duration: 5000 });
+        toast.success(`${serviceCount} service(s) assigned to ${patientName}. Change: TSh ${change.toLocaleString()}. Patient sent to ${destination}.`, { duration: 5000 });
       } else {
-        toast.success(`${service.service_name} assigned to ${patientName}. Payment received. Patient sent to ${destination}.`);
+        toast.success(`${serviceCount} service(s) (${serviceList}) assigned to ${patientName}. Payment received. Patient sent to ${destination}.`);
       }
       
       onSuccess();
@@ -273,6 +327,7 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
       // Reset form
       setSelectedService('');
       setQuantity(1);
+      setServiceCart([]);
       setPaymentMethod('Cash');
       setAmountPaid('');
       setMobilePhone('');
@@ -368,6 +423,38 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
               </div>
             )}
 
+            {/* Service Cart */}
+            {serviceCart.length > 0 && (
+              <div className="space-y-2 p-3 bg-blue-50 rounded-md border-2 border-blue-200">
+                <div className="flex items-center justify-between">
+                  <Label className="text-blue-900 font-semibold">Services Cart ({serviceCart.length})</Label>
+                  <Badge variant="default" className="bg-blue-600">
+                    Total: TSh {calculateTotal().toLocaleString()}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {serviceCart.map((item) => (
+                    <div key={item.service.id} className="flex items-center justify-between p-2 bg-white rounded border">
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{item.service.service_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Qty: {item.quantity} × TSh {item.service.base_price.toLocaleString()} = TSh {(item.service.base_price * item.quantity).toLocaleString()}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeFromCart(item.service.id)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Select Service *</Label>
               <Select value={selectedService} onValueChange={setSelectedService}>
@@ -411,27 +498,40 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
 
             <div className="space-y-2">
               <Label>Quantity</Label>
-              <Input
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addToCart}
+                  disabled={!selectedService}
+                  className="bg-blue-50 hover:bg-blue-100"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add to Cart
+                </Button>
+              </div>
             </div>
 
-            {selectedServiceData && (
-              <div className="p-3 bg-green-50 rounded-md">
+            {serviceCart.length > 0 && (
+              <div className="p-3 bg-green-50 rounded-md border-2 border-green-200">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">Total Amount:</span>
+                  <span className="font-medium text-green-900">Cart Total:</span>
                   <span className="text-lg font-bold text-green-700">
-                    TSh {(selectedServiceData.base_price * quantity).toLocaleString()}
+                    TSh {calculateTotal().toLocaleString()}
                   </span>
                 </div>
               </div>
             )}
 
             {/* Payment Section */}
-            {selectedServiceData && (
+            {serviceCart.length > 0 && (
               <div className="space-y-3 p-4 border-2 border-blue-200 rounded-lg bg-blue-50/50">
                 <h4 className="font-semibold text-blue-900">Payment Details</h4>
                 
@@ -475,16 +575,16 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
                     placeholder="Enter amount"
                     value={amountPaid}
                     onChange={(e) => setAmountPaid(e.target.value)}
-                    min={selectedServiceData.base_price * quantity}
+                    min={calculateTotal()}
                   />
                 </div>
 
-                {amountPaid && parseFloat(amountPaid) > (selectedServiceData.base_price * quantity) && (
+                {amountPaid && parseFloat(amountPaid) > calculateTotal() && (
                   <div className="p-2 bg-green-100 rounded-md">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-green-800">Change:</span>
                       <span className="text-sm font-bold text-green-700">
-                        TSh {(parseFloat(amountPaid) - (selectedServiceData.base_price * quantity)).toLocaleString()}
+                        TSh {(parseFloat(amountPaid) - calculateTotal()).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -498,14 +598,14 @@ export function QuickServiceDialog({ open, onOpenChange, patient, onSuccess }: Q
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
           </Button>
-          <Button onClick={handleAssignService} disabled={submitting || !selectedService}>
+          <Button onClick={handleAssignService} disabled={submitting || serviceCart.length === 0}>
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Assigning...
               </>
             ) : (
-              'Assign Service'
+              `Assign ${serviceCart.length} Service${serviceCart.length !== 1 ? 's' : ''}`
             )}
           </Button>
         </DialogFooter>

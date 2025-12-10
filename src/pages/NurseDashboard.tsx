@@ -10,10 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { ServiceFormDialog } from '@/components/ServiceFormDialog';
 import api from '@/lib/api';
 import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format } from '
 
 export default function NurseDashboard() {
   const { user } = useAuth();
@@ -30,6 +31,11 @@ export default function NurseDashboard() {
   const [selectedPatientForLabTests, setSelectedPatientForLabTests] = useState<any>(null);
   const [availableLabTests, setAvailableLabTests] = useState<any[]>([]);
   const [selectedLabTests, setSelectedLabTests] = useState<string[]>([]);
+  const [showServiceFormDialog, setShowServiceFormDialog] = useState(false);
+  const [selectedVisitForForm, setSelectedVisitForForm] = useState<any>(null);
+  const [serviceFormTemplate, setServiceFormTemplate] = useState<any>(null);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [services, setServices] = useState<any
   const [showRegisterPatientDialog, setShowRegisterPatientDialog] = useState(false);
   const [newPatientForm, setNewPatientForm] = useState({
     full_name: '',
@@ -66,6 +72,11 @@ export default function NurseDashboard() {
     reason: '',
     department_id: ''
   });
+  const [showServiceFormDialog, setShowServiceFormDialog] = useState(false);
+  const [selectedVisitForForm, setSelectedVisitForForm] = useState<any>(null);
+  const [serviceFormTemplate, setServiceFormTemplate] = useState<any>(null);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [services, setServices] = useState<any[]>([]);
   const [stats, setStats] = useState({
     totalPatients: 0,
     todayAppointments: 0,
@@ -121,7 +132,43 @@ export default function NurseDashboard() {
 
   const handleCompleteQuickService = async (visit: any) => {
     try {
-      // For quick services (vaccination, diagnostic, etc.), just mark as completed and discharge
+      // Check if service requires a form
+      if (!services.length) {
+        // Fetch services if not loaded
+        const servicesRes = await api.get('/services');
+        setServices(servicesRes.data.services || []);
+      }
+      
+      // Find the service from visit notes (extract service name)
+      const serviceMatch = visit.notes?.match(/Quick Service: ([^-]+)/);
+      const serviceName = serviceMatch ? serviceMatch[1].trim() : null;
+      
+      let service = null;
+      if (serviceName) {
+        service = services.find((s: any) => 
+          serviceName.includes(s.service_name) || s.service_name.includes(serviceName)
+        );
+      }
+      
+      // Check if service requires form
+      if (service && service.requires_form && service.form_template) {
+        // Show form dialog
+        setSelectedVisitForForm(visit);
+        setServiceFormTemplate(service.form_template);
+        setShowServiceFormDialog(true);
+        return;
+      }
+      
+      // No form required - direct discharge
+      await dischargeQuickServicePatient(visit);
+    } catch (error: any) {
+      console.error('Error completing quick service:', error);
+      toast.error(error.response?.data?.error || 'Failed to complete service');
+    }
+  };
+
+  const dischargeQuickServicePatient = async (visit: any) => {
+    try {
       await api.put(`/visits/${visit.id}`, {
         nurse_status: 'Completed',
         nurse_completed_at: new Date().toISOString(),
@@ -141,8 +188,38 @@ export default function NurseDashboard() {
         fetchData(false);
       }, 1000);
     } catch (error: any) {
-      console.error('Error completing quick service:', error);
-      toast.error(error.response?.data?.error || 'Failed to complete service');
+      console.error('Error discharging patient:', error);
+      toast.error(error.response?.data?.error || 'Failed to discharge patient');
+    }
+  };
+
+  const handleServiceFormSubmit = async (formData: any) => {
+    setFormSubmitting(true);
+    try {
+      // Save form data
+      await api.post('/service-forms', {
+        visit_id: selectedVisitForForm.id,
+        patient_id: selectedVisitForForm.patient_id,
+        form_data: formData,
+        completed_by: user?.id
+      });
+      
+      toast.success('Form saved successfully');
+      
+      // Close form dialog
+      setShowServiceFormDialog(false);
+      
+      // Discharge patient
+      await dischargeQuickServicePatient(selectedVisitForForm);
+      
+      // Reset form state
+      setSelectedVisitForForm(null);
+      setServiceFormTemplate(null);
+    } catch (error: any) {
+      console.error('Error saving form:', error);
+      toast.error(error.response?.data?.error || 'Failed to save form');
+    } finally {
+      setFormSubmitting(false);
     }
   };
 
@@ -1192,52 +1269,35 @@ export default function NurseDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Order Lab Tests Dialog */}
+      {/* Send to Lab Dialog - Simplified (Lab tech will enter tests) */}
       <Dialog open={showOrderLabTestsDialog} onOpenChange={setShowOrderLabTestsDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
-              Order Lab Tests
+              Send Patient to Lab
             </DialogTitle>
             <DialogDescription>
-              Select lab tests to order for {selectedPatientForLabTests?.patient?.full_name}
+              Send {selectedPatientForLabTests?.patient?.full_name} to lab for testing
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            {availableLabTests.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">No lab tests available</p>
-            ) : (
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {availableLabTests.map((test) => (
-                  <div
-                    key={test.id}
-                    className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-muted cursor-pointer"
-                    onClick={() => {
-                      setSelectedLabTests(prev =>
-                        prev.includes(test.service_name)
-                          ? prev.filter(t => t !== test.service_name)
-                          : [...prev, test.service_name]
-                      );
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedLabTests.includes(test.service_name)}
-                      onChange={() => {}}
-                      className="h-4 w-4"
-                    />
-                    <div className="flex-1">
-                      <p className="font-medium">{test.service_name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {test.service_type} - TSh {test.base_price?.toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-900">
+                <strong>Note:</strong> The lab technician will enter the specific tests and perform the procedures.
+              </p>
+            </div>
+
+            <div className="p-3 bg-gray-50 rounded-lg">
+              <p className="text-sm font-medium">Patient Information:</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {selectedPatientForLabTests?.patient?.full_name}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {selectedPatientForLabTests?.patient?.phone}
+              </p>
+            </div>
 
             <div className="flex gap-2 pt-4">
               <Button
@@ -1253,59 +1313,23 @@ export default function NurseDashboard() {
               </Button>
               <Button
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
-                disabled={selectedLabTests.length === 0}
                 onClick={async () => {
                   try {
-                    if (selectedLabTests.length === 0) {
-                      toast.error('Please select at least one lab test');
-                      return;
-                    }
-
                     const visit = selectedPatientForLabTests;
                     
-                    // Create lab test orders
-                    const labTestPromises = selectedLabTests.map(testName => {
-                      const testService = availableLabTests.find(t => t.service_name === testName);
-                      return api.post('/labs', {
-                        patient_id: visit.patient_id,
-                        visit_id: visit.id,
-                        test_name: testName,
-                        test_type: testService?.service_type || 'Laboratory',
-                        status: 'Pending',
-                        test_date: new Date().toISOString().split('T')[0],
-                        ordered_date: new Date().toISOString(),
-                        notes: 'Ordered by nurse'
-                      });
-                    });
-
-                    await Promise.all(labTestPromises);
-
-                    // Add lab tests to billing (patient-services)
-                    for (const testName of selectedLabTests) {
-                      const testService = availableLabTests.find(t => t.service_name === testName);
-                      if (testService) {
-                        await api.post('/patient-services', {
-                          patient_id: visit.patient_id,
-                          service_id: testService.id,
-                          service_name: testName,
-                          quantity: 1,
-                          unit_price: testService.base_price || 0,
-                          total_price: testService.base_price || 0,
-                          service_date: new Date().toISOString().split('T')[0],
-                          status: 'Pending'
-                        });
-                      }
-                    }
-
-                    // Update visit to send to lab
+                    // Just update visit to send to lab
+                    // Lab technician will enter the specific tests themselves
+                    // Set doctor_status to 'Not Required' so lab knows to send to billing (not doctor)
                     await api.put(`/visits/${visit.id}`, {
                       nurse_status: 'Completed',
                       nurse_completed_at: new Date().toISOString(),
                       current_stage: 'lab',
-                      lab_status: 'Pending'
+                      lab_status: 'Pending',
+                      doctor_status: 'Not Required', // Lab will route to billing instead of doctor
+                      notes: (visit.notes || '') + ' | Sent to lab by nurse - tests to be determined by lab tech'
                     });
 
-                    toast.success(`${selectedLabTests.length} lab test(s) ordered. Patient sent to lab.`);
+                    toast.success(`Patient sent to lab. Lab technician will enter the tests.`);
                     setShowOrderLabTestsDialog(false);
                     setSelectedPatientForLabTests(null);
                     setSelectedLabTests([]);
@@ -1314,13 +1338,13 @@ export default function NurseDashboard() {
                     // Refresh data
                     fetchData();
                   } catch (error: any) {
-                    console.error('Error ordering lab tests:', error);
-                    toast.error(error.response?.data?.error || 'Failed to order lab tests');
+                    console.error('Error sending patient to lab:', error);
+                    toast.error(error.response?.data?.error || 'Failed to send patient to lab');
                   }
                 }}
               >
                 <Activity className="h-4 w-4 mr-2" />
-                Order {selectedLabTests.length} Test(s) & Send to Lab
+                Send to Lab
               </Button>
             </div>
           </div>
@@ -1495,6 +1519,16 @@ export default function NurseDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Service Form Dialog */}
+      <ServiceFormDialog
+        open={showServiceFormDialog}
+        onOpenChange={setShowServiceFormDialog}
+        formTemplate={serviceFormTemplate}
+        visit={selectedVisitForForm}
+        onSubmit={handleServiceFormSubmit}
+        submitting={formSubmitting}
+      />
     </DashboardLayout>
   );
 }

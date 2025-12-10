@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ServiceFormDialog } from '@/components/ServiceFormDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/lib/api';
 import { fetchWithCache, invalidateCache } from '@/lib/cache';
@@ -61,6 +62,11 @@ export default function DoctorDashboard() {
   const [pendingVisits, setPendingVisits] = useState<any[]>([]);
   const [completedVisits, setCompletedVisits] = useState<any[]>([]);
   const [stats, setStats] = useState({ totalAppointments: 0, todayAppointments: 0, totalPatients: 0, pendingConsultations: 0 });
+  const [showServiceFormDialog, setShowServiceFormDialog] = useState(false);
+  const [selectedVisitForForm, setSelectedVisitForForm] = useState<any>(null);
+  const [serviceFormTemplate, setServiceFormTemplate] = useState<any>(null);
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true); // Initial load only
   const [refreshing, setRefreshing] = useState(false); // Background refresh
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -1064,6 +1070,38 @@ export default function DoctorDashboard() {
   // Handler for completing quick service (no consultation needed)
   const handleCompleteQuickService = async (visit: any) => {
     try {
+      // Check if service requires a form
+      if (!services.length) {
+        const servicesRes = await api.get('/services');
+        setServices(servicesRes.data.services || []);
+      }
+      
+      const serviceMatch = visit.notes?.match(/Quick Service: ([^-]+)/);
+      const serviceName = serviceMatch ? serviceMatch[1].trim() : null;
+      
+      let service = null;
+      if (serviceName) {
+        service = services.find((s: any) => 
+          serviceName.includes(s.service_name) || s.service_name.includes(serviceName)
+        );
+      }
+      
+      if (service && service.requires_form && service.form_template) {
+        setSelectedVisitForForm(visit);
+        setServiceFormTemplate(service.form_template);
+        setShowServiceFormDialog(true);
+        return;
+      }
+      
+      await dischargeQuickServicePatient(visit);
+    } catch (error: any) {
+      console.error('Error completing quick service:', error);
+      toast.error(error.response?.data?.error || 'Failed to complete service');
+    }
+  };
+
+  const dischargeQuickServicePatient = async (visit: any) => {
+    try {
       await api.put(`/visits/${visit.id}`, {
         doctor_status: 'Completed',
         doctor_completed_at: new Date().toISOString(),
@@ -1075,16 +1113,37 @@ export default function DoctorDashboard() {
 
       toast.success(`Service completed for ${visit.patient?.full_name}. Patient discharged.`);
       
-      // Remove from pending visits
       setPendingVisits(prev => prev.filter(v => v.id !== visit.id));
       
-      // Refresh data
       setTimeout(() => {
         fetchData(false);
       }, 1000);
     } catch (error: any) {
-      console.error('Error completing quick service:', error);
-      toast.error(error.response?.data?.error || 'Failed to complete service');
+      console.error('Error discharging patient:', error);
+      toast.error(error.response?.data?.error || 'Failed to discharge patient');
+    }
+  };
+
+  const handleServiceFormSubmit = async (formData: any) => {
+    setFormSubmitting(true);
+    try {
+      await api.post('/service-forms', {
+        visit_id: selectedVisitForForm.id,
+        patient_id: selectedVisitForForm.patient_id,
+        form_data: formData,
+        completed_by: user?.id
+      });
+      
+      toast.success('Form saved successfully');
+      setShowServiceFormDialog(false);
+      await dischargeQuickServicePatient(selectedVisitForForm);
+      setSelectedVisitForForm(null);
+      setServiceFormTemplate(null);
+    } catch (error: any) {
+      console.error('Error saving form:', error);
+      toast.error(error.response?.data?.error || 'Failed to save form');
+    } finally {
+      setFormSubmitting(false);
     }
   };
 
@@ -3745,6 +3804,16 @@ export default function DoctorDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Service Form Dialog */}
+      <ServiceFormDialog
+        open={showServiceFormDialog}
+        onOpenChange={setShowServiceFormDialog}
+        formTemplate={serviceFormTemplate}
+        visit={selectedVisitForForm}
+        onSubmit={handleServiceFormSubmit}
+        submitting={formSubmitting}
+      />
     </DashboardLayout>
   );
 }

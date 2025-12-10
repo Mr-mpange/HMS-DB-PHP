@@ -11,12 +11,15 @@ class MedicalService extends Model
 
     protected $fillable = [
         'service_code', 'service_name', 'service_type', 
-        'description', 'base_price', 'currency', 'is_active'
+        'description', 'base_price', 'currency', 'is_active',
+        'requires_form', 'form_template'
     ];
 
     protected $casts = [
         'base_price' => 'decimal:2',
         'is_active' => 'boolean',
+        'requires_form' => 'boolean',
+        'form_template' => 'array',
     ];
 
     public function patientServices()

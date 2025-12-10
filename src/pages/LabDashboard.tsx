@@ -64,8 +64,19 @@ export default function LabDashboard() {
     }
     
     try {
+      // Fetch lab tests
       const { data } = await api.get('/labs?limit=50');
       const testsData = data.labTests || data.tests || [];
+
+      // Also fetch visits in lab stage with no tests (sent by nurse)
+      const visitsRes = await api.get('/visits?current_stage=lab&lab_status=Pending&limit=50');
+      const visitsInLab = visitsRes.data.visits || [];
+      
+      // Filter visits that have no lab tests yet (sent by nurse)
+      const visitsWithoutTests = visitsInLab.filter(visit => {
+        const hasTests = testsData.some(test => test.patient_id === visit.patient_id);
+        return !hasTests;
+      });
 
       // Remove duplicates based on ID
       const uniqueTests = testsData?.filter((test, index, self) =>
@@ -73,7 +84,7 @@ export default function LabDashboard() {
       ) || [];
 
       // Calculate stats from ALL tests (before filtering)
-      const pending = uniqueTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length;
+      const pending = uniqueTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length + visitsWithoutTests.length;
       const inProgress = uniqueTests.filter(t => t.status === 'In Progress').length;
       const completed = uniqueTests.filter(t => t.status === 'Completed').length;
 
@@ -89,6 +100,7 @@ export default function LabDashboard() {
         raw: testsData?.length || 0,
         unique: uniqueTests.length,
         active: activeTests.length,
+        visitsWithoutTests: visitsWithoutTests.length,
         completed: completed,
         filtered: uniqueTests.length - activeTests.length,
         timestamp: new Date().toISOString(),
@@ -111,6 +123,26 @@ export default function LabDashboard() {
         acc[patientId].push(test);
         return acc;
       }, {});
+      
+      // Add visits without tests as empty groups (nurse sent, no tests entered yet)
+      visitsWithoutTests.forEach(visit => {
+        if (!grouped[visit.patient_id]) {
+          grouped[visit.patient_id] = [{
+            id: `visit-${visit.id}`,
+            patient_id: visit.patient_id,
+            visit_id: visit.id,
+            patient: visit.patient,
+            visit: visit,
+            test_name: 'No tests entered yet',
+            status: 'Awaiting Tests',
+            priority: 'Routine',
+            ordered_date: visit.created_at,
+            notes: 'Sent by nurse - tests to be entered by lab tech',
+            isPlaceholder: true // Flag to identify placeholder
+          }];
+        }
+      });
+      
       setGroupedTests(grouped);
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -308,6 +340,54 @@ export default function LabDashboard() {
     }
   };
 
+  // Handle discharge for direct-to-lab patients
+  const handleDischargePatient = async (patientId: string) => {
+    try {
+      // Get the patient's visit
+      const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&overall_status=Active&limit=1`);
+      const visits = data.visits || [];
+
+      if (visits && visits.length > 0) {
+        const visit = visits[0];
+        
+        // Check if this is a direct-to-lab visit (Quick Service Laboratory)
+        const isDirectToLab = visit.visit_type === 'Quick Service' && visit.notes?.includes('Laboratory');
+        
+        if (isDirectToLab) {
+          // Discharge the patient directly
+          await api.put(`/visits/${visit.id}`, {
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'completed',
+            overall_status: 'Completed',
+            discharge_time: new Date().toISOString(),
+            discharge_notes: 'Direct-to-lab service completed and patient discharged'
+          });
+          
+          toast.success('Patient discharged successfully');
+          
+          // Remove from local state
+          setGroupedTests(prev => {
+            const updated = { ...prev };
+            delete updated[patientId];
+            return updated;
+          });
+          setLabTests(prev => prev.filter(t => t.patient_id !== patientId));
+          
+          // Refresh data
+          setTimeout(() => fetchData(false), 1000);
+        } else {
+          toast.error('Only direct-to-lab patients can be discharged from lab');
+        }
+      } else {
+        toast.error('No active visit found for this patient');
+      }
+    } catch (error) {
+      console.error('Error discharging patient:', error);
+      toast.error('Failed to discharge patient');
+    }
+  };
+
   const updatePatientWorkflow = async (patientId: string) => {
     try {
       console.log('🔄 Starting workflow update for patient:', patientId);
@@ -319,22 +399,61 @@ export default function LabDashboard() {
       console.log('📋 Visits found:', visits.length, visits);
 
       if (visits && visits.length > 0) {
-        const visitId = visits[0].id;
+        const visit = visits[0];
+        const visitId = visit.id;
         console.log('✏️  Updating visit:', visitId);
         
-        const updateData = {
-          lab_status: 'Completed',
-          lab_completed_at: new Date().toISOString(),
-          current_stage: 'doctor',
-          doctor_status: 'Pending Review'
-        };
+        // Determine routing based on who ordered the tests and billing status:
+        // 1. Quick Service (billing_status = Completed) → Discharge patient
+        // 2. Nurse ordered (doctor_status = Not Required, billing_status != Completed) → Send to billing
+        // 3. Doctor ordered → Send back to doctor for review
         
-        console.log('📤 Sending update:', updateData);
+        const isQuickService = visit.billing_status === 'Completed' || visit.visit_type === 'Quick Service';
+        const orderedByNurse = visit.doctor_status === 'Not Required' && !isQuickService;
+        
+        let updateData;
+        if (isQuickService) {
+          // Quick Service - already paid, discharge patient
+          updateData = {
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'completed',
+            overall_status: 'Completed',
+            discharge_time: new Date().toISOString(),
+            discharge_notes: 'Quick Service lab tests completed - patient discharged'
+          };
+          console.log('📤 DISCHARGING patient (Quick Service - already paid):', updateData);
+        } else if (orderedByNurse) {
+          // Lab tests ordered by nurse → send to billing
+          updateData = {
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'billing',
+            billing_status: 'Pending'
+          };
+          console.log('📤 Sending to BILLING (ordered by nurse):', updateData);
+        } else {
+          // Lab tests ordered by doctor → send back to doctor for review
+          updateData = {
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'doctor',
+            doctor_status: 'Pending Review'
+          };
+          console.log('📤 Sending to DOCTOR for review (ordered by doctor):', updateData);
+        }
         
         const response = await api.put(`/visits/${visitId}`, updateData);
         
         console.log('✅ Visit updated successfully!', response.data);
-        toast.success('Lab tests completed. Patient sent back to doctor for review.');
+        
+        if (isQuickService) {
+          toast.success('Lab tests completed. Patient discharged (already paid).');
+        } else if (orderedByNurse) {
+          toast.success('Lab tests completed. Patient sent to billing for payment.');
+        } else {
+          toast.success('Lab tests completed. Patient sent back to doctor for review.');
+        }
       } else {
         console.warn('⚠️  No active lab visit found, creating new visit for patient:', patientId);
         
@@ -618,18 +737,26 @@ export default function LabDashboard() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="bg-blue-50">
-                                {tests.length} test{tests.length !== 1 ? 's' : ''}
-                              </Badge>
-                              {pendingCount > 0 && (
-                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 text-xs">
-                                  {pendingCount} pending
+                              {tests[0]?.isPlaceholder ? (
+                                <Badge variant="outline" className="bg-orange-50 text-orange-700">
+                                  Awaiting Tests
                                 </Badge>
-                              )}
-                              {inProgressCount > 0 && (
-                                <Badge variant="outline" className="bg-blue-100 text-blue-700 text-xs">
-                                  {inProgressCount} in progress
-                                </Badge>
+                              ) : (
+                                <>
+                                  <Badge variant="outline" className="bg-blue-50">
+                                    {tests.length} test{tests.length !== 1 ? 's' : ''}
+                                  </Badge>
+                                  {pendingCount > 0 && (
+                                    <Badge variant="outline" className="bg-yellow-50 text-yellow-700 text-xs">
+                                      {pendingCount} pending
+                                    </Badge>
+                                  )}
+                                  {inProgressCount > 0 && (
+                                    <Badge variant="outline" className="bg-blue-100 text-blue-700 text-xs">
+                                      {inProgressCount} in progress
+                                    </Badge>
+                                  )}
+                                </>
                               )}
                             </div>
                           </TableCell>
@@ -649,7 +776,11 @@ export default function LabDashboard() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {inProgressCount > 0 ? (
+                            {tests[0]?.isPlaceholder ? (
+                              <Badge variant="outline" className="bg-orange-50 text-orange-800">
+                                Sent by Nurse
+                              </Badge>
+                            ) : inProgressCount > 0 ? (
                               <Badge variant="info" className="bg-blue-100 text-blue-800">
                                 In Progress
                               </Badge>
@@ -672,32 +803,73 @@ export default function LabDashboard() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  console.log('View Tests clicked for patient:', patientId);
-                                  console.log('All tests for patient:', tests);
-                                  // Show all tests for this patient (including completed ones)
-                                  setSelectedPatientTests(tests);
-                                  setIsViewMode(true); // Set view mode
-                                  setBatchResults({}); // Clear results
-                                  setBatchDialogOpen(true);
-                                }}
-                                className="flex items-center gap-1"
-                              >
-                                <FlaskConical className="h-3 w-3" />
-                                View Tests
-                              </Button>
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => handleBatchTestSubmit(patientId)}
-                                className="flex items-center gap-1"
-                              >
-                                <CheckCircle className="h-3 w-3" />
-                                Submit Results
-                              </Button>
+                              {tests[0]?.isPlaceholder ? (
+                                // Patient sent by nurse - no tests entered yet
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => {
+                                    // Open dialog to add tests for this patient
+                                    setSelectedPatientTests(tests);
+                                    setAddTestDialogOpen(true);
+                                  }}
+                                  className="flex items-center gap-1 bg-orange-600 hover:bg-orange-700"
+                                >
+                                  <FlaskConical className="h-3 w-3" />
+                                  Enter Tests
+                                </Button>
+                              ) : (
+                                <>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      console.log('View Tests clicked for patient:', patientId);
+                                      console.log('All tests for patient:', tests);
+                                      // Show all tests for this patient (including completed ones)
+                                      setSelectedPatientTests(tests);
+                                      setIsViewMode(true); // Set view mode
+                                      setBatchResults({}); // Clear results
+                                      setBatchDialogOpen(true);
+                                    }}
+                                    className="flex items-center gap-1"
+                                  >
+                                    <FlaskConical className="h-3 w-3" />
+                                    View Tests
+                                  </Button>
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    onClick={() => handleBatchTestSubmit(patientId)}
+                                    className="flex items-center gap-1"
+                                  >
+                                    <CheckCircle className="h-3 w-3" />
+                                    Submit Results
+                                  </Button>
+                                  {(() => {
+                                    // Check if this is a direct-to-lab patient (Quick Service)
+                                    const isDirectToLab = tests.some(t => 
+                                      t.visit?.visit_type === 'Quick Service' && 
+                                      t.visit?.notes?.includes('Laboratory')
+                                    );
+                                    
+                                    if (isDirectToLab && completedCount === tests.length) {
+                                      return (
+                                        <Button
+                                          variant="default"
+                                          size="sm"
+                                          onClick={() => handleDischargePatient(patientId)}
+                                          className="flex items-center gap-1 bg-green-600 hover:bg-green-700"
+                                        >
+                                          <CheckCircle className="h-3 w-3" />
+                                          Discharge
+                                        </Button>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -883,10 +1055,46 @@ export default function LabDashboard() {
                           onClick={async () => {
                             if (confirm(`Cancel test: ${test.test_name}?\n\nThis will remove the test from the patient's order.`)) {
                               try {
-                                await api.delete(`/lab-tests/${test.id}`);
+                                // Update test status to Cancelled instead of deleting
+                                await api.put(`/labs/${test.id}`, { 
+                                  status: 'Cancelled',
+                                  cancelled_at: new Date().toISOString()
+                                });
                                 toast.success(`Test "${test.test_name}" cancelled`);
-                                // Remove from local state
-                                setSelectedPatientTests(prev => prev.filter(t => t.id !== test.id));
+                                
+                                // Remove from local state in dialog
+                                const updatedTests = selectedPatientTests.filter(t => t.id !== test.id);
+                                setSelectedPatientTests(updatedTests);
+                                
+                                // Update grouped tests - only remove patient if NO tests remain
+                                setLabTests(prev => prev.map(t => 
+                                  t.id === test.id ? { ...t, status: 'Cancelled' } : t
+                                ).filter(t => t.status !== 'Cancelled'));
+                                
+                                setGroupedTests(prev => {
+                                  const updated = { ...prev };
+                                  const patientId = test.patient_id;
+                                  
+                                  // Filter out cancelled test
+                                  const remainingTests = (updated[patientId] || []).filter(t => t.id !== test.id);
+                                  
+                                  // Only remove patient from queue if NO tests remain
+                                  if (remainingTests.length === 0) {
+                                    delete updated[patientId];
+                                  } else {
+                                    updated[patientId] = remainingTests;
+                                  }
+                                  
+                                  return updated;
+                                });
+                                
+                                // If no more tests for this patient, close dialog
+                                if (updatedTests.length === 0) {
+                                  setBatchDialogOpen(false);
+                                  setSelectedPatientTests([]);
+                                  setBatchResults({});
+                                }
+                                
                                 // Refresh data
                                 await fetchData(false);
                               } catch (error) {
