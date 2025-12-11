@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import { updateFavicon, updatePageTitle } from "@/lib/favicon";
 
 // Eager load critical routes (login/landing)
@@ -52,19 +53,20 @@ const App = () => {
   // This prevents repeated API calls on the auth page
 
   return (
-    <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter
-        future={{
-          v7_startTransition: true,
-          v7_relativeSplatPath: true,
-        }}
-      >
-        <AuthProvider>
-          <Suspense fallback={<LoadingFallback />}>
-            <Routes>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
+          <AuthProvider>
+            <Suspense fallback={<LoadingFallback />}>
+              <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route
@@ -167,12 +169,15 @@ const App = () => {
               path="/billing/payment-success"
               element={<PaymentSuccess />}
             />
+            {/* Catch-all route for unmatched paths */}
+            <Route path="*" element={<NotFound />} />
           </Routes>
-          </Suspense>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+            </Suspense>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+    </ErrorBoundary>
   );
 };
 

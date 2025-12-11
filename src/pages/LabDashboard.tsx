@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import { FlaskConical, AlertCircle, CheckCircle, Clock, Loader2 } from 'lucide-react';
+import { FlaskConical, AlertCircle, CheckCircle, Clock, Loader2, Printer } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function LabDashboard() {
@@ -27,6 +27,7 @@ export default function LabDashboard() {
   const [addTestDialogOpen, setAddTestDialogOpen] = useState(false);
   const [labTestServices, setLabTestServices] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState(''); // Search functionality
+  const [showPrintOption, setShowPrintOption] = useState(false); // Show print before submit
   const [newTestData, setNewTestData] = useState({
     test_name: '',
     test_type: 'Laboratory',
@@ -83,18 +84,25 @@ export default function LabDashboard() {
         index === self.findIndex(t => t.id === test.id)
       ) || [];
 
-      // Calculate stats from ALL tests (before filtering)
-      const pending = uniqueTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length + visitsWithoutTests.length;
-      const inProgress = uniqueTests.filter(t => t.status === 'In Progress').length;
-      const completed = uniqueTests.filter(t => t.status === 'Completed').length;
-
-      setStats({ pending, inProgress, completed });
-
-      // Filter to only show tests that are NOT completed
-      // Completed tests should not appear in the lab queue
+      // Filter to only show tests that are NOT completed or cancelled
       const activeTests = uniqueTests.filter(t => 
         t.status !== 'Completed' && t.status !== 'Cancelled'
       );
+
+      // Calculate stats from ACTIVE tests (what's actually displayed)
+      const pending = activeTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length;
+      const inProgress = activeTests.filter(t => t.status === 'In Progress').length;
+      const completed = uniqueTests.filter(t => t.status === 'Completed').length;
+      
+      // Add visits without tests to pending count only if they actually exist and are displayed
+      const actualVisitsWithoutTests = visitsWithoutTests.filter(visit => {
+        // Only count visits that don't already have a patient in activeTests
+        return !activeTests.some(test => test.patient_id === visit.patient_id);
+      });
+      
+      const finalPending = pending + actualVisitsWithoutTests.length;
+
+      setStats({ pending: finalPending, inProgress, completed });
 
       console.log('Lab tests data:', {
         raw: testsData?.length || 0,
@@ -109,7 +117,8 @@ export default function LabDashboard() {
           name: t.test_name, 
           patient: t.patient?.full_name,
           status: t.status 
-        }))
+        })),
+        samplePatientFound: activeTests.some(t => t.patient?.full_name === 'Lab Test Patient')
       });
 
       setLabTests(activeTests);
@@ -176,6 +185,23 @@ export default function LabDashboard() {
         )
       );
       toast.info(`Started ${pendingTests.length} test(s)`);
+    }
+
+    // Check if this patient needs print (all cases going to billing need print)
+    try {
+      const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
+      const visits = data.visits || [];
+      
+      if (visits.length > 0) {
+        const visit = visits[0];
+        const orderedByDoctor = visit.doctor_status !== 'Not Required' && visit.doctor_id;
+        
+        // Show print option for cases going to billing (not doctor review)
+        setShowPrintOption(!orderedByDoctor);
+      }
+    } catch (error) {
+      console.error('Error checking visit info:', error);
+      setShowPrintOption(false);
     }
 
     setSelectedPatientTests(patientTests);
@@ -261,6 +287,133 @@ export default function LabDashboard() {
     }));
   };
 
+  // Print lab results function
+  const printLabResults = (patientTests: any[], patientInfo: any, visitInfo: any) => {
+    const orderedByDoctor = visitInfo?.doctor_status !== 'Not Required' && visitInfo?.doctor_id;
+    const goingToBilling = !orderedByDoctor;
+
+    // Create print content and inject into page (NO POPUP!)
+    const printContent = `
+      <div id="lab-results-print" style="display: none;">
+        <style>
+          @media print {
+            body * { visibility: hidden; }
+            #lab-results-print, #lab-results-print * { visibility: visible; }
+            #lab-results-print { position: absolute; left: 0; top: 0; width: 100%; }
+          }
+        </style>
+        <div class="print-content">
+          <div class="header">
+            <h1>Lab Test Results - ${patientInfo?.full_name}</h1>
+          </div>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+            .patient-info { margin-bottom: 20px; }
+            .results-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .results-table th, .results-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            .results-table th { background-color: #f2f2f2; }
+            .abnormal { color: #dc2626; font-weight: bold; }
+            .normal { color: #16a34a; }
+            .footer { margin-top: 30px; border-top: 1px solid #ddd; padding-top: 10px; }
+            .discharge-notice { background-color: #fef3c7; border: 1px solid #f59e0b; padding: 10px; margin: 20px 0; border-radius: 4px; }
+            @media print {
+              body { margin: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>LABORATORY TEST RESULTS</h1>
+            <p>Hospital Management System</p>
+          </div>
+          
+          <div class="patient-info">
+            <h3>Patient Information</h3>
+            <p><strong>Name:</strong> ${patientInfo?.full_name || 'N/A'}</p>
+            <p><strong>Phone:</strong> ${patientInfo?.phone || 'N/A'}</p>
+            <p><strong>Date of Birth:</strong> ${patientInfo?.date_of_birth ? format(new Date(patientInfo.date_of_birth), 'MMM dd, yyyy') : 'N/A'}</p>
+            <p><strong>Test Date:</strong> ${format(new Date(), 'MMM dd, yyyy HH:mm')}</p>
+            <p><strong>Visit Type:</strong> ${visitInfo?.visit_type || 'Standard'}</p>
+          </div>
+
+          ${goingToBilling ? `
+            <div class="discharge-notice">
+              <strong>💳 BILLING REQUIRED:</strong> Patient must go to billing for payment after printing this report. No discharge without payment.
+            </div>
+          ` : `
+            <div class="discharge-notice">
+              <strong>👨‍⚕️ DOCTOR REVIEW:</strong> Patient will be sent back to doctor for review of lab results.
+            </div>
+          `}
+
+          <h3>Test Results</h3>
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Test Name</th>
+                <th>Result</th>
+                <th>Unit</th>
+                <th>Reference Range</th>
+                <th>Status</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${patientTests.map(test => {
+                const result = batchResults[test.id];
+                if (!result || !result.result_value) return '';
+                
+                return `
+                  <tr>
+                    <td>${test.test_name}</td>
+                    <td><strong>${result.result_value}</strong></td>
+                    <td>${result.unit || '-'}</td>
+                    <td>${result.reference_range || '-'}</td>
+                    <td class="${result.abnormal_flag ? 'abnormal' : 'normal'}">
+                      ${result.abnormal_flag ? 'ABNORMAL' : 'NORMAL'}
+                    </td>
+                    <td>${result.notes || '-'}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <p><strong>Performed by:</strong> Lab Technician</p>
+            <p><strong>Report generated:</strong> ${format(new Date(), 'MMM dd, yyyy HH:mm')}</p>
+            <p><strong>Status:</strong> ${goingToBilling ? 'PENDING BILLING (MANDATORY)' : 'SENT TO DOCTOR FOR REVIEW'}</p>
+          </div>
+
+        </div>
+      </div>
+    `;
+
+    // Remove any existing print content
+    const existingPrint = document.getElementById('lab-results-print');
+    if (existingPrint) {
+      existingPrint.remove();
+    }
+
+    // Add print content to page
+    document.body.insertAdjacentHTML('beforeend', printContent);
+
+    // Trigger print
+    setTimeout(() => {
+      window.print();
+      
+      // Clean up after printing
+      setTimeout(() => {
+        const printElement = document.getElementById('lab-results-print');
+        if (printElement) {
+          printElement.remove();
+        }
+      }, 1000);
+    }, 100);
+  };
+
   const handleSubmitBatchResults = async () => {
     try {
       const resultsToInsert = [];
@@ -329,6 +482,7 @@ export default function LabDashboard() {
       setSelectedPatientTests([]);
       setBatchResults({});
       setIsViewMode(false);
+      setShowPrintOption(false);
       
       // Refresh data after a delay to ensure backend has processed
       setTimeout(() => {
@@ -403,36 +557,14 @@ export default function LabDashboard() {
         const visitId = visit.id;
         console.log('✏️  Updating visit:', visitId);
         
-        // Determine routing based on who ordered the tests and billing status:
-        // 1. Quick Service (billing_status = Completed) → Discharge patient
-        // 2. Nurse ordered (doctor_status = Not Required, billing_status != Completed) → Send to billing
-        // 3. Doctor ordered → Send back to doctor for review
+        // NEW WORKFLOW: ALL patients must go to billing first (no direct discharge from lab)
+        // 1. Doctor ordered tests → Send back to doctor for review first
+        // 2. All other cases (nurse ordered, direct lab, etc.) → Send to billing for payment
         
-        const isQuickService = visit.billing_status === 'Completed' || visit.visit_type === 'Quick Service';
-        const orderedByNurse = visit.doctor_status === 'Not Required' && !isQuickService;
+        const orderedByDoctor = visit.doctor_status !== 'Not Required' && visit.doctor_id;
         
         let updateData;
-        if (isQuickService) {
-          // Quick Service - already paid, discharge patient
-          updateData = {
-            lab_status: 'Completed',
-            lab_completed_at: new Date().toISOString(),
-            current_stage: 'completed',
-            overall_status: 'Completed',
-            discharge_time: new Date().toISOString(),
-            discharge_notes: 'Quick Service lab tests completed - patient discharged'
-          };
-          console.log('📤 DISCHARGING patient (Quick Service - already paid):', updateData);
-        } else if (orderedByNurse) {
-          // Lab tests ordered by nurse → send to billing
-          updateData = {
-            lab_status: 'Completed',
-            lab_completed_at: new Date().toISOString(),
-            current_stage: 'billing',
-            billing_status: 'Pending'
-          };
-          console.log('📤 Sending to BILLING (ordered by nurse):', updateData);
-        } else {
+        if (orderedByDoctor) {
           // Lab tests ordered by doctor → send back to doctor for review
           updateData = {
             lab_status: 'Completed',
@@ -441,18 +573,25 @@ export default function LabDashboard() {
             doctor_status: 'Pending Review'
           };
           console.log('📤 Sending to DOCTOR for review (ordered by doctor):', updateData);
+        } else {
+          // ALL other cases → send to billing (nurse ordered, direct lab, etc.)
+          updateData = {
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'billing',
+            billing_status: 'Pending'
+          };
+          console.log('📤 Sending to BILLING (mandatory payment):', updateData);
         }
         
         const response = await api.put(`/visits/${visitId}`, updateData);
         
         console.log('✅ Visit updated successfully!', response.data);
         
-        if (isQuickService) {
-          toast.success('Lab tests completed. Patient discharged (already paid).');
-        } else if (orderedByNurse) {
-          toast.success('Lab tests completed. Patient sent to billing for payment.');
-        } else {
+        if (orderedByDoctor) {
           toast.success('Lab tests completed. Patient sent back to doctor for review.');
+        } else {
+          toast.success('Lab tests completed. Patient sent to billing for payment.');
         }
       } else {
         console.warn('⚠️  No active lab visit found, creating new visit for patient:', patientId);
@@ -1174,9 +1313,36 @@ export default function LabDashboard() {
                   setSelectedPatientTests([]);
                   setBatchResults({});
                   setIsViewMode(false);
+                  setShowPrintOption(false);
                 }}>
                   Cancel
                 </Button>
+                
+                {showPrintOption && (
+                  <Button 
+                    variant="outline" 
+                    onClick={async () => {
+                      // Get visit info for print
+                      try {
+                        const patientId = selectedPatientTests[0]?.patient_id;
+                        if (patientId) {
+                          const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
+                          const visit = data.visits?.[0];
+                          const patient = selectedPatientTests[0]?.patient;
+                          
+                          printLabResults(selectedPatientTests, patient, visit);
+                        }
+                      } catch (error) {
+                        console.error('Error getting visit info for print:', error);
+                        toast.error('Failed to print results');
+                      }
+                    }}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Results
+                  </Button>
+                )}
+                
                 <Button onClick={handleSubmitBatchResults}>
                   <CheckCircle className="h-4 w-4 mr-2" />
                   Submit All Results

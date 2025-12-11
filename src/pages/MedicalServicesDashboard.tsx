@@ -122,17 +122,25 @@ export default function MedicalServicesDashboard() {
 
     setLoading(true);
     try {
-      console.log('Fetching medical services data...');
+      console.log('🔄 Fetching medical services data...');
       const { data: servicesData, error: servicesError } = await getMedicalServices();
       
       if (servicesError) {
-        console.error('Error fetching services:', servicesError);
+        console.error('❌ Error fetching services:', servicesError);
         toast.error('Failed to load medical services. Check console for details.');
       } else {
-        console.log('Received services:', servicesData);
+        console.log('✅ Received services:', servicesData);
+        console.log('📊 Services count:', servicesData?.length || 0);
         setServices(servicesData || []);
-        if (servicesData && servicesData.length > 0) {
-          toast.success(`Loaded ${servicesData.length} medical services`);
+        
+        // Always show a message about loaded services
+        const count = servicesData?.length || 0;
+        console.log(`📋 Setting ${count} services in state`);
+        
+        if (count > 0) {
+          toast.success(`Loaded ${count} medical services`);
+        } else {
+          toast.info('No medical services found');
         }
       }
       
@@ -164,6 +172,7 @@ export default function MedicalServicesDashboard() {
         toast.error('Failed to add medical service');
       } else {
         toast.success('Medical service added successfully');
+        console.log('✅ Service added successfully, refreshing data...');
         setShowAddDialog(false);
         setNewService({
           service_code: '',
@@ -173,7 +182,11 @@ export default function MedicalServicesDashboard() {
           base_price: 0,
           currency: 'TSh'
         });
-        fetchData(); // Refresh the list
+        
+        // Force refresh with a small delay
+        setTimeout(() => {
+          fetchData();
+        }, 500);
       }
     } catch (error) {
       console.error('Error adding service:', error);

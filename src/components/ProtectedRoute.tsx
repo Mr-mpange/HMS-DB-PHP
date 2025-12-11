@@ -20,10 +20,25 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
   }
 
   if (!user) {
+    // Prevent redirect loop if already on auth page
+    if (window.location.pathname === '/auth') {
+      return <>{children}</>;
+    }
     return <Navigate to="/auth" replace />;
   }
 
   if (requiredRole && !hasRole(requiredRole)) {
+    // Prevent redirect loop if already on home page
+    if (window.location.pathname === '/') {
+      return (
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-red-600 mb-4">Access Denied</h1>
+            <p className="text-gray-600">You don't have permission to access this page.</p>
+          </div>
+        </div>
+      );
+    }
     return <Navigate to="/" replace />;
   }
 

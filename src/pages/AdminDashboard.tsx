@@ -2178,10 +2178,12 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Low Stock Inventory Report */}
-        <LowStockInventoryReport />
+        <div className="no-print">
+          <LowStockInventoryReport />
+        </div>
 
         {/* System Settings Card */}
-        <Card className="shadow-lg border-blue-200">
+        <Card className="shadow-lg border-blue-200 no-print">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -2728,7 +2730,9 @@ export default function AdminDashboard() {
         </Card>
 
         {/* Patient Reports Section - For searching individual patient medical history */}
-        <PatientReports />
+        <div className="no-print">
+          <PatientReports />
+        </div>
 
         {/* Medical services management moved to Medical Services page */}
         <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>

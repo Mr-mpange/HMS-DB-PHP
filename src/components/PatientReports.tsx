@@ -223,23 +223,364 @@ export default function PatientReports() {
       return;
     }
     
-    // Remove any existing low stock print styles temporarily
-    const lowStockStyles = document.querySelector('[data-print-style="low-stock-report"]');
-    if (lowStockStyles) {
-      lowStockStyles.remove();
+    // Get the patient report content
+    const patientPrint = document.getElementById('patient-report-print');
+    if (!patientPrint) {
+      toast.error('Report content not found');
+      return;
     }
     
-    // Add patient report specific class to body for targeting
-    document.body.classList.add('printing-patient-report');
+    // Create print element with proper isolation
+    const printDiv = document.createElement('div');
+    printDiv.id = 'patient-report-print-content';
+    printDiv.className = 'patient-print-only';
+    printDiv.style.display = 'none'; // Hide on screen
     
-    window.print();
+    // Create and add styles to head (not as innerHTML)
+    const styleElement = document.createElement('style');
+    styleElement.id = 'patient-print-styles';
+    styleElement.textContent = `
+      /* Hide patient print content on screen */
+      .patient-print-only {
+        display: none;
+      }
+      
+      /* Show only patient print content when printing */
+      @media print {
+        @page {
+          margin: 1cm;
+          size: A4;
+        }
+        
+        /* Hide everything first */
+        body * {
+          visibility: hidden !important;
+        }
+        
+        /* Show only patient report */
+        .patient-print-only {
+          display: block !important;
+          visibility: visible !important;
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          z-index: 9999 !important;
+          font-family: 'Times New Roman', serif !important;
+          line-height: 1.6 !important;
+          color: #000 !important;
+          padding: 0 !important;
+          background: white !important;
+        }
+        
+        .patient-print-only * {
+          visibility: visible !important;
+          display: block !important;
+        }
+        
+        /* Header styling */
+        .patient-print-only .report-header {
+          text-align: center !important;
+          border-bottom: 3px solid #1e40af !important;
+          padding: 20px 0 !important;
+          margin-bottom: 25px !important;
+          background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .patient-print-only img {
+          display: block !important;
+          visibility: visible !important;
+          width: 80px !important;
+          height: 80px !important;
+          margin: 0 auto 15px !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .patient-print-only .hospital-name {
+          font-size: 28px !important;
+          font-weight: bold !important;
+          color: #1e40af !important;
+          margin: 10px 0 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 2px !important;
+        }
+        
+        .patient-print-only .report-title {
+          font-size: 20px !important;
+          color: #475569 !important;
+          margin: 5px 0 !important;
+          font-weight: 600 !important;
+        }
+        
+        .patient-print-only .contact-info {
+          font-size: 12px !important;
+          color: #64748b !important;
+          margin: 3px 0 !important;
+        }
+        
+        /* Content sections */
+        .patient-print-only .info-section {
+          background: #f8fafc !important;
+          padding: 15px !important;
+          margin: 20px 0 !important;
+          border-left: 4px solid #3b82f6 !important;
+          border-radius: 0 6px 6px 0 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .patient-print-only .section-title {
+          font-size: 16px !important;
+          font-weight: bold !important;
+          color: #1e40af !important;
+          margin: 0 0 15px 0 !important;
+          border-bottom: 1px solid #cbd5e1 !important;
+          padding-bottom: 5px !important;
+        }
+        
+        .patient-print-only .info-grid {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          gap: 10px 20px !important;
+        }
+        
+        .patient-print-only .info-item {
+          margin: 8px 0 !important;
+        }
+        
+        .patient-print-only .info-label {
+          font-weight: bold !important;
+          color: #374151 !important;
+          font-size: 13px !important;
+        }
+        
+        .patient-print-only .info-value {
+          color: #1f2937 !important;
+          font-size: 14px !important;
+          margin-top: 2px !important;
+        }
+        
+        /* Report ID box */
+        .patient-print-only .report-id {
+          background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+          padding: 15px !important;
+          text-align: center !important;
+          margin: 20px 0 !important;
+          border: 2px solid #3b82f6 !important;
+          border-radius: 8px !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .patient-print-only .report-id-title {
+          font-size: 16px !important;
+          font-weight: bold !important;
+          color: #1e40af !important;
+          margin-bottom: 5px !important;
+        }
+        
+        .patient-print-only .report-id-details {
+          font-family: 'Courier New', monospace !important;
+          font-size: 12px !important;
+          color: #374151 !important;
+        }
+        
+        /* Footer */
+        .patient-print-only .report-footer {
+          margin-top: 40px !important;
+          border-top: 3px solid #1e40af !important;
+          padding-top: 20px !important;
+          text-align: center !important;
+          font-size: 11px !important;
+          color: #6b7280 !important;
+        }
+        
+        .patient-print-only .disclaimer {
+          background: #fef3c7 !important;
+          border: 1px solid #f59e0b !important;
+          padding: 10px !important;
+          margin-top: 20px !important;
+          border-radius: 4px !important;
+          font-size: 10px !important;
+          text-align: center !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      }
+    `;
     
-    // Remove the class after printing
+    // Remove existing styles if any
+    const existingStyles = document.getElementById('patient-print-styles');
+    if (existingStyles) {
+      existingStyles.remove();
+    }
+    
+    // Add styles to head
+    document.head.appendChild(styleElement);
+    
+    // Calculate patient age
+    const calculateAge = (dob: string) => {
+      if (!dob) return 'N/A';
+      const birthDate = new Date(dob);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    };
+
+    // Generate report ID
+    const reportId = `PAT-RPT-${format(new Date(), 'yyyyMMdd')}-${selectedPatient.id.slice(-8).toUpperCase()}`;
+
+    // Build content with professional styling
+    const content = `
+      <div class="report-header">
+        <img src="/placeholder.svg" alt="Hospital Logo" style="width: 80px; height: 80px; margin: 0 auto 15px; display: block;" />
+        <div class="hospital-name">${systemSettings.hospital_name}</div>
+        <div class="report-title">PATIENT MEDICAL HISTORY REPORT</div>
+        <div class="contact-info">📍 ${systemSettings.hospital_address}</div>
+        <div class="contact-info">📞 ${systemSettings.hospital_phone} | ✉️ ${systemSettings.hospital_email}</div>
+        <div class="contact-info">Medical Records Department</div>
+      </div>
+
+      <div class="report-id">
+        <div class="report-id-title">📋 OFFICIAL MEDICAL HISTORY REPORT</div>
+        <div class="report-id-details">
+          Report ID: ${reportId} | Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')} | ${systemSettings.hospital_name}
+        </div>
+      </div>
+
+      <div class="info-section">
+        <div class="section-title">👤 Patient Information</div>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Full Name:</div>
+            <div class="info-value">${selectedPatient.full_name || `${selectedPatient.first_name} ${selectedPatient.last_name}`}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Patient ID:</div>
+            <div class="info-value">${selectedPatient.id}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Phone Number:</div>
+            <div class="info-value">${selectedPatient.phone}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Gender:</div>
+            <div class="info-value">${selectedPatient.gender}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Date of Birth:</div>
+            <div class="info-value">${selectedPatient.date_of_birth ? format(new Date(selectedPatient.date_of_birth), 'MMM dd, yyyy') + ` (Age: ${calculateAge(selectedPatient.date_of_birth)})` : 'N/A'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Blood Group:</div>
+            <div class="info-value">${selectedPatient.blood_group || 'Not Specified'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Email:</div>
+            <div class="info-value">${selectedPatient.email || 'Not Provided'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Address:</div>
+            <div class="info-value">${selectedPatient.address || 'Not Provided'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-section">
+        <div class="section-title">📊 Medical History Summary</div>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Total Appointments:</div>
+            <div class="info-value">${patientHistory.appointments?.length || 0}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Total Prescriptions:</div>
+            <div class="info-value">${patientHistory.prescriptions?.length || 0}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Total Lab Tests:</div>
+            <div class="info-value">${patientHistory.labTests?.length || 0}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Total Amount Spent:</div>
+            <div class="info-value">TSh ${(patientHistory.totalSpent || 0).toLocaleString()}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Registration Date:</div>
+            <div class="info-value">${selectedPatient.created_at ? format(new Date(selectedPatient.created_at), 'MMM dd, yyyy') : 'N/A'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Last Visit:</div>
+            <div class="info-value">${patientHistory.appointments?.length > 0 ? format(new Date(patientHistory.appointments[0].appointment_date), 'MMM dd, yyyy') : 'No visits recorded'}</div>
+          </div>
+        </div>
+      </div>
+
+      ${patientHistory.prescriptions?.length > 0 ? `
+        <div class="info-section">
+          <div class="section-title">💊 Recent Prescriptions</div>
+          ${patientHistory.prescriptions.slice(0, 3).map((rx: any, index: number) => `
+            <div class="info-item">
+              <div class="info-label">Prescription ${index + 1}:</div>
+              <div class="info-value">${format(new Date(rx.prescription_date || rx.created_at), 'MMM dd, yyyy')} - ${rx.medications?.length || 0} medication(s)</div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <div class="report-footer">
+        <div><strong>Generated by:</strong> ${systemSettings.hospital_name}</div>
+        <div><strong>Report Date:</strong> ${format(new Date(), 'PPP')} at ${format(new Date(), 'p')}</div>
+        <div><strong>Authorized by:</strong> Medical Records Department</div>
+        
+        <div class="disclaimer">
+          <strong>CONFIDENTIAL MEDICAL RECORD</strong><br>
+          This document contains confidential patient information protected by medical privacy laws.<br>
+          Unauthorized disclosure is strictly prohibited. For queries: ${systemSettings.hospital_phone}
+        </div>
+      </div>
+    `;
+    
+    printDiv.innerHTML = content;
+
+    // Remove any existing print content
+    const existingPrint = document.getElementById('patient-report-print-content');
+    if (existingPrint) {
+      existingPrint.remove();
+    }
+
+    // Add print content to page
+    document.body.appendChild(printDiv);
+    
+    console.log('✅ Patient report content added to page');
+
+    // Trigger print
     setTimeout(() => {
-      document.body.classList.remove('printing-patient-report');
-    }, 1000);
+      console.log('🖨️ Printing patient report');
+      window.print();
+      
+      // Clean up after printing
+      setTimeout(() => {
+        const printElement = document.getElementById('patient-report-print-content');
+        const styleElement = document.getElementById('patient-print-styles');
+        if (printElement) {
+          printElement.remove();
+        }
+        if (styleElement) {
+          styleElement.remove();
+        }
+        console.log('🧹 Patient report content and styles cleaned up');
+      }, 1000);
+    }, 100);
     
-    toast.success('Printing patient report');
+    toast.success('Print dialog opened');
   };
 
   const filteredPatients = patients.filter(p => {
@@ -261,44 +602,17 @@ export default function PatientReports() {
 
   return (
     <>
+      {/* No complex print styles needed - using new window approach */}
       {selectedPatient && patientHistory && (
-        <style data-print-style="patient-report">{`
-          @media print {
-            /* HIGHEST PRIORITY - Hide everything when patient report is active */
-            body * { 
-              visibility: hidden !important;
-              display: none !important;
-            }
-            
-            /* FORCE HIDE low stock report specifically */
-            #low-stock-report-print,
-            #low-stock-report-print *,
-            [data-print-style="low-stock-report"],
-            [data-print-style="low-stock-report"] * {
-              visibility: hidden !important;
-              display: none !important;
-              position: absolute !important;
-              left: -99999px !important;
-              z-index: -1 !important;
-            }
-            
-            /* Show ONLY patient report with highest priority */
-            #patient-report-print {
-              visibility: visible !important;
-              display: block !important;
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: auto !important;
-              overflow: visible !important;
-              z-index: 99999 !important;
-            }
-            
-            #patient-report-print * { 
-              visibility: visible !important;
-              display: block !important;
-              height: auto !important;
+        <div>{/* Placeholder for any future print styles if needed */}</div>
+      )}
+
+      {selectedPatient && patientHistory && (
+        <style>{`
+          /* Simple styles for the hidden print div */
+          #patient-report-print {
+            display: none;
+          }
               
           
           /* Ensure proper display for elements */

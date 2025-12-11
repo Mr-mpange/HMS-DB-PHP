@@ -63,7 +63,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const { data } = await Promise.race([
               api.get('/auth/me'),
               new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Request timeout - backend not responding')), 3000)
+                setTimeout(() => reject(new Error('Request timeout - backend not responding')), 5000)
               )
             ]) as any;
             
@@ -101,12 +101,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               // Invalid token
               console.log('Invalid token, removing from localStorage');
               localStorage.removeItem('auth_token');
+              setUser(null);
+              setSession(null);
+              setRoles([]);
+              setPrimaryRole(null);
               setRolesLoaded(true);
             }
           } catch (error: any) {
             console.error('Session check failed:', error);
             console.error('Error message:', error.message);
-            localStorage.removeItem('auth_token');
+            
+            // Don't remove token on network errors, only on auth errors
+            if (error.response?.status === 401 || error.response?.status === 403) {
+              console.log('Auth error, removing token');
+              localStorage.removeItem('auth_token');
+            } else {
+              console.log('Network/timeout error, keeping token for retry');
+            }
+            
             setUser(null);
             setSession(null);
             setRoles([]);
@@ -115,10 +127,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         } else {
           console.log('No auth token found, setting rolesLoaded to true');
+          setUser(null);
+          setSession(null);
+          setRoles([]);
+          setPrimaryRole(null);
           setRolesLoaded(true);
         }
       } catch (error) {
         console.error('Unexpected error in checkSession:', error);
+        // Ensure state is always set even on unexpected errors
+        setUser(null);
+        setSession(null);
+        setRoles([]);
+        setPrimaryRole(null);
         setRolesLoaded(true);
       } finally {
         // Always set loading to false, no matter what
@@ -225,17 +246,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
-    // Clear local storage
-    localStorage.removeItem('auth_token');
-    
-    // Clear state
-    setUser(null);
-    setSession(null);
-    setRoles([]);
-    setPrimaryRole(null);
-    
-    // Navigate to auth page
-    navigate('/auth');
+    try {
+      // Clear local storage
+      localStorage.removeItem('auth_token');
+      
+      // Clear state
+      setUser(null);
+      setSession(null);
+      setRoles([]);
+      setPrimaryRole(null);
+      
+      // Navigate to auth page only if not already there
+      if (window.location.pathname !== '/auth') {
+        navigate('/auth');
+      }
+    } catch (error) {
+      console.error('Error during sign out:', error);
+      // Force redirect even if there's an error
+      window.location.href = '/auth';
+    }
   };
 
   const refreshRoles = async () => {

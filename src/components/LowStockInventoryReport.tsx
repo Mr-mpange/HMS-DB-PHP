@@ -54,18 +54,227 @@ export default function LowStockInventoryReport() {
       return;
     }
 
-    // Add specific class to body to indicate we're printing low stock report
-    document.body.classList.add('printing-low-stock-report');
+    // Create a new window for printing with proper title
+    const printWindow = window.open('', 'LowStockReport', 'width=800,height=600,scrollbars=yes,resizable=yes');
+    if (!printWindow) {
+      toast.error('Please allow popups for printing');
+      return;
+    }
+
+    // Generate report ID
+    const reportId = `INV-LSR-${format(new Date(), 'yyyyMMdd')}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
     
-    // Use the same print logic as Patient Reports - direct print without new tab
-    window.print();
+    // Count critical items
+    const criticalItems = lowStockMeds.filter(med => (med.stock_quantity || med.quantity_in_stock || 0) <= 5);
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Low Stock Inventory Report</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.4;
+            color: #000;
+          }
+          
+          .header {
+            text-align: center;
+            border-bottom: 3px solid #dc2626;
+            padding: 20px 0;
+            margin-bottom: 25px;
+          }
+          
+          .logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 15px;
+            display: block;
+          }
+          
+          .hospital-name {
+            font-size: 28px;
+            font-weight: bold;
+            color: #dc2626;
+            margin: 10px 0;
+            text-transform: uppercase;
+          }
+          
+          .report-title {
+            font-size: 20px;
+            color: #991b1b;
+            margin: 5px 0;
+            font-weight: 600;
+          }
+          
+          .contact-info {
+            font-size: 12px;
+            color: #7f1d1d;
+            margin: 3px 0;
+          }
+          
+          .alert-box {
+            background: #fef2f2;
+            border: 2px solid #dc2626;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+          }
+          
+          .alert-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #991b1b;
+            margin-bottom: 5px;
+          }
+          
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            border: 2px solid #dc2626;
+          }
+          
+          th {
+            background: #fee2e2;
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: bold;
+            border: 1px solid #dc2626;
+            color: #991b1b;
+            font-size: 14px;
+          }
+          
+          td {
+            padding: 10px 8px;
+            border: 1px solid #cbd5e1;
+            font-size: 13px;
+          }
+          
+          .critical-row {
+            background: #fef2f2;
+          }
+          
+          .status-critical {
+            color: #dc2626;
+            font-weight: bold;
+          }
+          
+          .status-low {
+            color: #f59e0b;
+            font-weight: bold;
+          }
+          
+          .footer {
+            margin-top: 30px;
+            border-top: 2px solid #dc2626;
+            padding-top: 15px;
+            text-align: center;
+            font-size: 11px;
+          }
+          
+          .disclaimer {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            padding: 10px;
+            margin-top: 20px;
+            font-size: 10px;
+            text-align: center;
+          }
+          
+          @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <img src="/placeholder.svg" alt="Hospital Logo" class="logo" />
+          <div class="hospital-name">HASET Medical Center</div>
+          <div class="report-title">🚨 LOW STOCK INVENTORY REPORT</div>
+          <div class="contact-info">📍 Dar es Salaam, Tanzania</div>
+          <div class="contact-info">📞 +255 XXX XXX XXX | ✉️ pharmacy@hasetmedical.com</div>
+          <div class="contact-info">Pharmacy Department - Inventory Management</div>
+        </div>
+
+        <div class="alert-box">
+          <div class="alert-title">⚠️ INVENTORY ALERT</div>
+          <div class="alert-text">
+            Report ID: ${reportId} | Generated: ${format(new Date(), 'PPP')} at ${format(new Date(), 'p')}<br>
+            Total Low Stock Items: <strong>${lowStockMeds.length}</strong> | Critical Items (≤5 units): <strong>${criticalItems.length}</strong>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Medication Name</th>
+              <th>Generic Name</th>
+              <th>Form</th>
+              <th>Strength</th>
+              <th>Current Stock</th>
+              <th>Reorder Level</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lowStockMeds.map((med) => {
+              const stock = med.stock_quantity || med.quantity_in_stock || 0;
+              const isCritical = stock <= 5;
+              return `
+                <tr${isCritical ? ' class="critical-row"' : ''}>
+                  <td><strong>${med.name}</strong></td>
+                  <td>${med.generic_name || 'Not specified'}</td>
+                  <td>${med.dosage_form || 'Tablet'}</td>
+                  <td>${med.strength || '-'}</td>
+                  <td style="text-align: center;"><strong>${stock}</strong></td>
+                  <td style="text-align: center;">${med.reorder_level}</td>
+                  <td class="${isCritical ? 'status-critical' : 'status-low'}">
+                    ${isCritical ? '🔴 CRITICAL' : '⚠️ Low Stock'}
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <div><strong>Pharmacy Department</strong> | HASET Medical Center</div>
+          <div><strong>Report Generated:</strong> ${format(new Date(), 'PPP')} at ${format(new Date(), 'p')}</div>
+          <div><strong>Generated by:</strong> ${user?.name || user?.full_name || 'Admin'}</div>
+          
+          <div class="disclaimer">
+            <strong>URGENT ACTION REQUIRED</strong><br>
+            This report shows medications with stock levels at or below reorder thresholds.<br>
+            Critical items (≤5 units) require immediate reordering to prevent stockouts.<br>
+            <strong>Contact Procurement:</strong> +255 XXX XXX XXX | <strong>Report ID:</strong> ${reportId}
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(printContent);
+    printWindow.document.close();
     
-    // Remove the class after printing
+    // Wait for content to load, then print
+    printWindow.onload = () => {
+      printWindow.print();
+      printWindow.close();
+    };
+    
+    // Fallback if onload doesn't fire
     setTimeout(() => {
-      document.body.classList.remove('printing-low-stock-report');
+      if (!printWindow.closed) {
+        printWindow.print();
+        printWindow.close();
+      }
     }, 1000);
     
-    toast.success('Printing Low Stock Inventory Report');
+    toast.success('Print dialog opened');
   };
 
   if (loading) {
@@ -86,61 +295,17 @@ export default function LowStockInventoryReport() {
 
   return (
     <>
-      {/* Print Styles */}
-      {lowStockMeds.length > 0 && (
-        <style data-print-style="low-stock-report">{`
-          @media print {
-            /* Only apply when printing low stock report */
-            body.printing-low-stock-report * { 
-              visibility: hidden !important;
-            }
-            
-            /* FORCE HIDE patient report when printing low stock */
-            body.printing-low-stock-report #patient-report-print,
-            body.printing-low-stock-report #patient-report-print *,
-            body.printing-low-stock-report [data-print-style="patient-report"],
-            body.printing-low-stock-report [data-print-style="patient-report"] * {
-              visibility: hidden !important;
-              display: none !important;
-              position: absolute !important;
-              left: -99999px !important;
-            }
-            
-            /* Show ONLY the low stock report when body has the class */
-            body.printing-low-stock-report #low-stock-report-print {
-              visibility: visible !important;
-              display: block !important;
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: 100% !important;
-              z-index: 9999 !important;
-            }
-            
-            body.printing-low-stock-report #low-stock-report-print * { 
-              visibility: visible !important;
-            }
-            
-            /* Print styles */
-            #low-stock-report-print {
-              font-family: Arial, sans-serif !important;
-              font-size: 12pt !important;
-              line-height: 1.4 !important;
-              color: black !important;
-              background: white !important;
-              padding: 20px !important;
-            }
-            
-            #low-stock-report-print h1 {
-              font-size: 18pt !important;
-              font-weight: bold !important;
-              text-align: center !important;
-              margin-bottom: 20px !important;
-              color: #dc2626 !important;
-              border-bottom: 2px solid #dc2626 !important;
-              padding-bottom: 10px !important;
-            }
+      <style>{`
+        @media print {
+          #low-stock-report-print h1 {
+            font-size: 18pt !important;
+            font-weight: bold !important;
+            text-align: center !important;
+            margin-bottom: 20px !important;
+            color: #dc2626 !important;
+            border-bottom: 2px solid #dc2626 !important;
+            padding-bottom: 10px !important;
+          }
             
             #low-stock-report-print table {
               width: 100% !important;
@@ -173,7 +338,6 @@ export default function LowStockInventoryReport() {
             }
           }
         `}</style>
-      )}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -317,7 +481,7 @@ export default function LowStockInventoryReport() {
                     backgroundColor: isCritical ? '#fef2f2' : (index % 2 === 0 ? '#f9f9f9' : 'white')
                   }}>
                     <td style={{ border: '1px solid #ccc', padding: '8px', fontWeight: 'bold' }}>{med.name}</td>
-                    <td style={{ border: '1px solid #ccc', padding: '8px' }}>{med.generic_name || '-'}</td>
+                    <td style={{ border: '1px solid #ccc', padding: '8px' }}>{med.generic_name || 'Not specified'}</td>
                     <td style={{ border: '1px solid #ccc', padding: '8px' }}>{med.dosage_form || 'Tablet'}</td>
                     <td style={{ border: '1px solid #ccc', padding: '8px' }}>{med.strength || '-'}</td>
                     <td style={{ border: '1px solid #ccc', padding: '8px', fontWeight: 'bold' }}>{stock}</td>

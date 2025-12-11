@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ServiceFormDialog } from '@/components/ServiceFormDialog';
 import api from '@/lib/api';
-import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search } from 'lucide-react';
+import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -83,6 +83,1290 @@ export default function NurseDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [pendingVisits, setPendingVisits] = useState<any[]>([]);
+  const [showReprintDialog, setShowReprintDialog] = useState(false);
+  const [reprintPatient, setReprintPatient] = useState<any>(null);
+  const [labReportSearchQuery, setLabReportSearchQuery] = useState('');
+  const [labReportSearchResults, setLabReportSearchResults] = useState<any[]>([]);
+  const [searchingLabReports, setSearchingLabReports] = useState(false);
+
+  // FIXED: Professional lab report print function that actually works
+  const printLabReport = (patient: any, labTests: any[]) => {
+    console.log('🖨️ Starting print for patient:', patient);
+    console.log('🧪 Lab tests:', labTests);
+    
+    // Validate required data
+    if (!patient) {
+      toast.error('Patient data is required for printing');
+      return;
+    }
+    
+    if (!labTests || labTests.length === 0) {
+      toast.error('No lab test data available for printing');
+      return;
+    }
+    
+    console.log('✅ Print validation passed - Patient:', patient.full_name, 'Tests:', labTests.length);
+    
+    // Use static data (no API calls that can fail)
+    const billingInfo = null;
+    const systemSettings = {
+      hospital_name: 'HASET Medical Center',
+      hospital_address: 'Dar es Salaam, Tanzania',
+      hospital_phone: '+255 XXX XXX XXX',
+      hospital_email: 'info@hasetmedical.com'
+    };
+
+    // Generate patient age safely
+    let patientAge = 'N/A';
+    try {
+      if (patient?.date_of_birth) {
+        const dob = new Date(patient.date_of_birth);
+        patientAge = String(new Date().getFullYear() - dob.getFullYear());
+      }
+    } catch (e) {
+      patientAge = 'N/A';
+    }
+
+    // Generate report ID safely
+    const today = new Date();
+    const dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, '0') + String(today.getDate()).padStart(2, '0');
+    const reportId = `HMC-LAB-${dateStr}-${String(patient?.id || '000').slice(-8)}`;
+
+    console.log('📋 Generated report ID:', reportId);
+    console.log('🏥 Using hospital settings:', systemSettings);
+    console.log('💳 Using billing info:', billingInfo);
+    console.log('🧪 Lab tests to print:', labTests.map(t => ({ name: t.test_name, status: t.status, results: !!t.results })));
+
+    // Generate current date/time strings safely
+    const currentDate = today.toLocaleDateString();
+    const currentTime = today.toLocaleTimeString();
+    const currentDateTime = `${currentDate} ${currentTime}`;
+
+    // Format patient DOB safely
+    let patientDOB = 'N/A';
+    try {
+      if (patient?.date_of_birth) {
+        patientDOB = new Date(patient.date_of_birth).toLocaleDateString() + ` (Age: ${patientAge})`;
+      }
+    } catch (e) {
+      patientDOB = 'N/A';
+    }
+
+    // Create print element with proper approach
+    const printDiv = document.createElement('div');
+    printDiv.id = 'lab-report-print-content';
+    printDiv.className = 'print-only-content';
+    printDiv.style.display = 'none'; // Hide on screen
+    
+    // Create and add styles to head (not as innerHTML)
+    const styleElement = document.createElement('style');
+    styleElement.id = 'lab-print-styles';
+    styleElement.textContent = `
+      /* Hide print content on screen */
+      .print-only-content {
+        display: none;
+      }
+      
+      /* Show only print content when printing */
+      @media print {
+        @page {
+          margin: 1cm;
+          size: A4;
+        }
+        
+        body * {
+          visibility: hidden !important;
+        }
+        
+        .print-only-content {
+          display: block !important;
+          visibility: visible !important;
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          z-index: 9999 !important;
+          font-family: 'Times New Roman', serif !important;
+          line-height: 1.6 !important;
+          color: #000 !important;
+          padding: 0 !important;
+          background: white !important;
+        }
+        
+        .print-only-content * {
+          visibility: visible !important;
+          display: block !important;
+        }
+        
+        /* Header styling */
+        .print-only-content .report-header {
+          text-align: center !important;
+          border-bottom: 3px solid #1e40af !important;
+          padding: 20px 0 !important;
+          margin-bottom: 25px !important;
+          background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .print-only-content img {
+          display: block !important;
+          visibility: visible !important;
+          width: 80px !important;
+          height: 80px !important;
+          margin: 0 auto 15px !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .print-only-content .hospital-name {
+          font-size: 28px !important;
+          font-weight: bold !important;
+          color: #1e40af !important;
+          margin: 10px 0 !important;
+          text-transform: uppercase !important;
+          letter-spacing: 2px !important;
+        }
+        
+        .print-only-content .report-title {
+          font-size: 20px !important;
+          color: #475569 !important;
+          margin: 5px 0 !important;
+          font-weight: 600 !important;
+        }
+        
+        .print-only-content .contact-info {
+          font-size: 12px !important;
+          color: #64748b !important;
+          margin: 3px 0 !important;
+        }
+        
+        /* Content sections */
+        .print-only-content .info-section {
+          background: #f8fafc !important;
+          padding: 15px !important;
+          margin: 20px 0 !important;
+          border-left: 4px solid #3b82f6 !important;
+          border-radius: 0 6px 6px 0 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .print-only-content .section-title {
+          font-size: 16px !important;
+          font-weight: bold !important;
+          color: #1e40af !important;
+          margin: 0 0 15px 0 !important;
+          border-bottom: 1px solid #cbd5e1 !important;
+          padding-bottom: 5px !important;
+        }
+        
+        .print-only-content .info-grid {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          gap: 10px 20px !important;
+        }
+        
+        .print-only-content .info-item {
+          margin: 8px 0 !important;
+        }
+        
+        .print-only-content .info-label {
+          font-weight: bold !important;
+          color: #374151 !important;
+          font-size: 13px !important;
+        }
+        
+        .print-only-content .info-value {
+          color: #1f2937 !important;
+          font-size: 14px !important;
+          margin-top: 2px !important;
+        }
+        
+        /* Test sections */
+        .print-only-content .test-section {
+          margin: 20px 0 !important;
+          border: 1px solid #e2e8f0 !important;
+          border-radius: 6px !important;
+          overflow: hidden !important;
+          page-break-inside: avoid !important;
+        }
+        
+        .print-only-content .test-header {
+          background: #3b82f6 !important;
+          color: white !important;
+          padding: 12px 15px !important;
+          font-weight: bold !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .print-only-content .test-content {
+          padding: 15px !important;
+          background: white !important;
+        }
+        
+        /* Report ID box */
+        .print-only-content .report-id {
+          background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%) !important;
+          padding: 15px !important;
+          text-align: center !important;
+          margin: 20px 0 !important;
+          border: 2px solid #3b82f6 !important;
+          border-radius: 8px !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .print-only-content .report-id-title {
+          font-size: 16px !important;
+          font-weight: bold !important;
+          color: #1e40af !important;
+          margin-bottom: 5px !important;
+        }
+        
+        .print-only-content .report-id-details {
+          font-family: 'Courier New', monospace !important;
+          font-size: 12px !important;
+          color: #374151 !important;
+        }
+        
+        /* Billing notice */
+        .print-only-content .billing-notice {
+          background: #fef3c7 !important;
+          border: 2px solid #f59e0b !important;
+          padding: 15px !important;
+          margin: 15px 0 !important;
+          text-align: center !important;
+          border-radius: 6px !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        /* Footer */
+        .print-only-content .report-footer {
+          margin-top: 40px !important;
+          border-top: 3px solid #1e40af !important;
+          padding-top: 20px !important;
+        }
+        
+        .print-only-content .signatures {
+          display: grid !important;
+          grid-template-columns: 1fr 1fr !important;
+          gap: 40px !important;
+          margin-top: 40px !important;
+        }
+        
+        .print-only-content .signature-box {
+          text-align: center !important;
+        }
+        
+        .print-only-content .signature-line {
+          border-top: 2px solid #374151 !important;
+          padding-top: 8px !important;
+          margin-top: 40px !important;
+          font-weight: bold !important;
+        }
+        
+        .print-only-content .signature-subtitle {
+          font-size: 11px !important;
+          color: #6b7280 !important;
+          margin-top: 5px !important;
+        }
+        
+        .print-only-content .disclaimer {
+          background: #fef3c7 !important;
+          border: 1px solid #f59e0b !important;
+          padding: 10px !important;
+          margin-top: 20px !important;
+          border-radius: 4px !important;
+          font-size: 10px !important;
+          text-align: center !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+      }
+    `;
+    
+    // Remove existing styles if any
+    const existingStyles = document.getElementById('lab-print-styles');
+    if (existingStyles) {
+      existingStyles.remove();
+    }
+    
+    // Add styles to head
+    document.head.appendChild(styleElement);
+    
+    // Build content with professional styling
+    const content = `
+      <div class="report-header">
+        <img src="/placeholder.svg" alt="Hospital Logo" style="width: 80px; height: 80px; margin: 0 auto 15px; display: block;" />
+        <div class="hospital-name">${systemSettings.hospital_name}</div>
+        <div class="report-title">LABORATORY TEST REPORT</div>
+        <div class="contact-info">📍 ${systemSettings.hospital_address}</div>
+        <div class="contact-info">📞 ${systemSettings.hospital_phone} | ✉️ ${systemSettings.hospital_email}</div>
+        <div class="contact-info">Laboratory Department</div>
+      </div>
+
+      <div class="report-id">
+        <div class="report-id-title">📋 OFFICIAL LABORATORY REPORT</div>
+        <div class="report-id-details">
+          Report ID: ${reportId} | Generated: ${currentDateTime} | ${systemSettings.hospital_name}
+        </div>
+      </div>
+
+      <div class="info-section">
+        <div class="section-title">👤 Patient Information</div>
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Patient ID:</div>
+            <div class="info-value">PAT-${String(patient?.id || '000').slice(-6)}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Full Name:</div>
+            <div class="info-value">${patient?.full_name || 'N/A'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Phone Number:</div>
+            <div class="info-value">${patient?.phone || 'N/A'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Date of Birth:</div>
+            <div class="info-value">${patientDOB}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Gender:</div>
+            <div class="info-value">${patient?.gender || 'N/A'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Blood Group:</div>
+            <div class="info-value">${patient?.blood_group || 'Not Specified'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="billing-notice">
+        <strong>💳 BILLING STATUS:</strong> Patient must complete payment at billing counter before discharge.<br>
+        <small>Lab test charges will be calculated at billing. This report can be reprinted if needed.</small>
+      </div>
+
+      ${labTests.map((test, index) => `
+        <div class="test-section">
+          <div class="test-header">
+            🔬 ${index + 1}. ${test.test_name || 'Lab Test'}
+            <div style="font-size: 12px; font-weight: normal; margin-top: 5px;">
+              Status: ✅ Completed | Date: ${test.completed_at ? new Date(test.completed_at).toLocaleDateString() : 'N/A'} | 
+              Technician: ${test.performed_by || 'Lab Staff'}
+            </div>
+          </div>
+          <div class="test-content">
+            <div class="info-item">
+              <div class="info-label">Test Code:</div>
+              <div class="info-value">${test.test_code || test.id || 'N/A'}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Category:</div>
+              <div class="info-value">${test.test_type || test.category || 'General'}</div>
+            </div>
+            <div class="info-item">
+              <div class="info-label">Result:</div>
+              <div class="info-value">${test.result_value || 'Test completed - Results available'}</div>
+            </div>
+            ${test.reference_range ? `
+              <div class="info-item">
+                <div class="info-label">Reference Range:</div>
+                <div class="info-value">${test.reference_range}</div>
+              </div>
+            ` : ''}
+            ${test.notes ? `
+              <div class="info-item">
+                <div class="info-label">Notes:</div>
+                <div class="info-value">${test.notes}</div>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `).join('')}
+
+      <div class="report-footer">
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">🔬 Laboratory Technician:</div>
+            <div class="info-value">${labTests[0]?.performed_by || 'Lab Staff'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">👩‍⚕️ Reviewed by:</div>
+            <div class="info-value">Nurse ${user?.full_name || 'Staff'}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">🏥 Department:</div>
+            <div class="info-value">Laboratory Services</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">📅 Generated:</div>
+            <div class="info-value">${currentDateTime}</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">💻 System:</div>
+            <div class="info-value">${systemSettings.hospital_name} - HMS v2.0</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">🏥 Status:</div>
+            <div class="info-value"><strong>READY FOR BILLING</strong></div>
+          </div>
+        </div>
+
+        <div class="signatures">
+          <div class="signature-box">
+            <div class="signature-line">Laboratory Technician</div>
+            <div class="signature-subtitle">Print Name, Signature & Date</div>
+            <div class="signature-subtitle">License No: _____________</div>
+          </div>
+          <div class="signature-box">
+            <div class="signature-line">Reviewing Nurse</div>
+            <div class="signature-subtitle">Print Name, Signature & Date</div>
+            <div class="signature-subtitle">License No: _____________</div>
+          </div>
+        </div>
+
+        <div class="disclaimer">
+          <strong>IMPORTANT NOTICE:</strong> This is an official laboratory report generated by ${systemSettings.hospital_name}.<br>
+          Any alterations or modifications to this report are strictly prohibited.<br>
+          For queries, contact the Laboratory Department at ${systemSettings.hospital_phone}
+        </div>
+      </div>
+    `;
+    
+    printDiv.innerHTML = content;
+
+    // Remove any existing print content
+    const existingPrint = document.getElementById('lab-report-print-content');
+    if (existingPrint) {
+      existingPrint.remove();
+    }
+
+    // Add print content to page
+    document.body.appendChild(printDiv);
+    
+    console.log('✅ Print content added to page');
+    console.log('📄 Print content preview:', printDiv.innerHTML.substring(0, 500) + '...');
+
+    // Trigger print
+    setTimeout(() => {
+      console.log('🖨️ Triggering print dialog');
+      window.print();
+      toast.success(`Lab report for ${patient.full_name} opened for printing`);
+      
+      // Clean up after printing
+      setTimeout(() => {
+        const printElement = document.getElementById('lab-report-print-content');
+        const styleElement = document.getElementById('lab-print-styles');
+        if (printElement) {
+          printElement.remove();
+        }
+        if (styleElement) {
+          styleElement.remove();
+        }
+        console.log('🧹 Lab report content and styles cleaned up');
+      }, 1000);
+    }, 100);
+  };
+
+  // Generate HTML content for printing
+  const generatePrintHTML = (patient: any, labTests: any[], billingInfo: any) => {
+    return `
+      <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 0; 
+              padding: 20px; 
+              line-height: 1.5; 
+              color: #333;
+              background: white;
+            }
+            .letterhead { 
+              text-align: center; 
+              border-bottom: 3px solid #1e40af; 
+              padding: 20px; 
+              margin-bottom: 25px; 
+              background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            }
+            .logo-section {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              margin-bottom: 15px;
+            }
+            .text-logo {
+              font-size: 60px;
+              margin-right: 20px;
+              width: 80px;
+              height: 80px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              border-radius: 50%;
+              border: 3px solid #1e40af;
+              background: white;
+            }
+            .hospital-name h1 { 
+              color: #1e40af; 
+              margin: 0; 
+              font-size: 28px; 
+              font-weight: bold;
+              text-transform: uppercase;
+              letter-spacing: 1px;
+            }
+            .hospital-name .subtitle { 
+              color: #475569; 
+              margin: 5px 0 0 0; 
+              font-size: 18px;
+              font-weight: 600;
+              text-transform: uppercase;
+            }
+            .letterhead .hospital-info { 
+              color: #64748b; 
+              margin: 3px 0; 
+              font-size: 13px;
+            }
+            .patient-section { 
+              background: #f8fafc; 
+              padding: 15px; 
+              margin-bottom: 20px; 
+              border-left: 4px solid #3b82f6;
+            }
+            .patient-section h3 { 
+              color: #1e40af; 
+              margin: 0 0 15px 0; 
+              font-size: 16px;
+            }
+            .patient-grid-print {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 10px 20px;
+            }
+            .patient-row {
+              margin: 8px 0;
+              overflow: hidden;
+              border-bottom: 1px dotted #cbd5e1;
+              padding-bottom: 5px;
+            }
+            .patient-row .label {
+              font-weight: bold;
+              color: #374151;
+              font-size: 13px;
+            }
+            .patient-row .value {
+              color: #1f2937;
+              font-size: 14px;
+              margin-top: 2px;
+            }
+            .test-container { 
+              margin-bottom: 25px; 
+              border: 1px solid #e2e8f0;
+              page-break-inside: avoid;
+            }
+            .test-header { 
+              background: #3b82f6; 
+              color: white;
+              padding: 12px 15px; 
+              margin: 0;
+            }
+            .test-header h4 { 
+              margin: 0; 
+              font-size: 16px;
+            }
+            .test-info {
+              font-size: 13px;
+              margin-top: 5px;
+            }
+            .results-table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin: 0;
+            }
+            .results-table th { 
+              background: #f1f5f9; 
+              padding: 10px 8px; 
+              text-align: left;
+              font-weight: bold; 
+              color: #374151;
+              border-bottom: 2px solid #e2e8f0;
+              font-size: 14px;
+            }
+            .results-table td { 
+              padding: 10px 8px; 
+              border-bottom: 1px solid #f1f5f9;
+              font-size: 14px;
+            }
+            .parameter-name { 
+              font-weight: bold;
+            }
+            .result-value { 
+              font-weight: bold;
+              color: #1e40af;
+            }
+            .status-normal { 
+              color: #16a34a; 
+              font-weight: bold;
+              background: #dcfce7;
+              padding: 3px 6px;
+              border-radius: 3px;
+              font-size: 11px;
+            }
+            .status-abnormal { 
+              color: #dc2626; 
+              font-weight: bold;
+              background: #fee2e2;
+              padding: 3px 6px;
+              border-radius: 3px;
+              font-size: 11px;
+            }
+            .interpretation-box { 
+              background: #eff6ff; 
+              padding: 12px; 
+              border-left: 4px solid #3b82f6; 
+              margin: 15px;
+            }
+            .interpretation-title {
+              font-weight: bold;
+              color: #1e40af;
+              margin-bottom: 5px;
+            }
+            .billing-notice { 
+              background: #fef3c7; 
+              border: 2px solid #f59e0b; 
+              padding: 15px; 
+              margin: 15px 0; 
+              text-align: center;
+              border-radius: 6px;
+            }
+            .billing-notice strong {
+              color: #92400e;
+              font-size: 16px;
+            }
+            .payment-info {
+              text-align: left;
+            }
+            .payment-details {
+              margin-top: 8px;
+              font-size: 14px;
+              color: #374151;
+              background: rgba(255,255,255,0.7);
+              padding: 10px;
+              border-radius: 4px;
+            }
+            .footer-section { 
+              margin-top: 30px; 
+              border-top: 3px solid #1e40af; 
+              padding-top: 20px; 
+            }
+            .footer-section h4 {
+              color: #1e40af;
+              margin: 0 0 15px 0;
+              font-size: 16px;
+            }
+            .footer-grid-print {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 10px 20px;
+              margin-bottom: 20px;
+            }
+            .footer-row {
+              margin: 8px 0;
+              overflow: hidden;
+              border-bottom: 1px dotted #cbd5e1;
+              padding-bottom: 5px;
+            }
+            .footer-row .label {
+              font-weight: bold;
+              color: #374151;
+              font-size: 13px;
+            }
+            .footer-row .value {
+              color: #1f2937;
+              font-size: 14px;
+              margin-top: 2px;
+            }
+            .disclaimer {
+              background: #fef3c7;
+              border: 1px solid #f59e0b;
+              padding: 10px;
+              margin-top: 20px;
+              border-radius: 4px;
+              font-size: 11px;
+              text-align: center;
+            }
+            .signature-area { 
+              margin-top: 40px; 
+              overflow: hidden;
+            }
+            .signature-box { 
+              float: left;
+              width: 45%;
+              text-align: center;
+              margin: 0 2.5%;
+            }
+            .signature-line {
+              border-top: 2px solid #374151; 
+              padding-top: 8px;
+              margin-top: 40px;
+              font-weight: bold;
+            }
+            .signature-subtitle {
+              font-size: 12px; 
+              color: #6b7280;
+              margin-top: 5px;
+            }
+            .report-id {
+              background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+              padding: 15px;
+              text-align: center;
+              margin: 20px 0;
+              border: 2px solid #3b82f6;
+              border-radius: 8px;
+            }
+            .report-header {
+              font-size: 16px;
+              font-weight: bold;
+              color: #1e40af;
+              margin-bottom: 5px;
+            }
+            .report-details {
+              font-family: monospace;
+              font-size: 12px;
+              color: #374151;
+            }
+            .clearfix::after {
+              content: "";
+              display: table;
+              clear: both;
+            }
+            @media print {
+              body { margin: 0; padding: 15px; }
+              .no-print { display: none !important; }
+              .test-container { page-break-inside: avoid; }
+              .letterhead { background: white !important; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="letterhead">
+            <div class="logo-section">
+              <div class="text-logo">🏥</div>
+              <div class="hospital-name">
+                <h1>HOSPITAL MANAGEMENT SYSTEM</h1>
+                <div class="subtitle">LABORATORY TEST REPORT</div>
+              </div>
+            </div>
+            <div class="hospital-info">📍 Healthcare Services Department</div>
+            <div class="hospital-info">📞 Emergency: +255-XXX-XXXX | 🌐 www.hospital.com</div>
+            <div class="hospital-info">✉️ lab@hospital.com | Laboratory Services</div>
+          </div>
+          
+          <div class="patient-section">
+            <h3>👤 Patient Information</h3>
+            <div class="patient-grid-print">
+              <div class="patient-row">
+                <div class="label">Patient ID:</div>
+                <div class="value">${patient?.id ? `PAT-${String(patient.id).padStart(6, '0')}` : 'N/A'}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Full Name:</div>
+                <div class="value">${patient?.full_name || 'N/A'}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Phone Number:</div>
+                <div class="value">${patient?.phone || 'N/A'}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Date of Birth:</div>
+                <div class="value">${(() => {
+                  if (!patient?.date_of_birth) return 'N/A';
+                  try {
+                    const dob = new Date(patient.date_of_birth);
+                    const age = new Date().getFullYear() - dob.getFullYear();
+                    return format(dob, 'MMM dd, yyyy') + ` (Age: ${age})`;
+                  } catch (e) {
+                    return 'Invalid date';
+                  }
+                })()}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Gender:</div>
+                <div class="value">${patient?.gender || 'N/A'}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Blood Group:</div>
+                <div class="value">${patient?.blood_group || 'Not Specified'}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Address:</div>
+                <div class="value">${patient?.address || 'Not Provided'}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Registration Date:</div>
+                <div class="value">${(() => {
+                  if (!patient?.created_at) return 'N/A';
+                  try {
+                    return format(new Date(patient.created_at), 'MMM dd, yyyy');
+                  } catch (e) {
+                    return 'Invalid date';
+                  }
+                })()}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Report Generated:</div>
+                <div class="value">${format(new Date(), 'MMM dd, yyyy HH:mm')}</div>
+              </div>
+              <div class="patient-row">
+                <div class="label">Generated By:</div>
+                <div class="value">Nurse ${user?.full_name || 'Staff'}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="report-id">
+            <div class="report-header">
+              <strong>📋 OFFICIAL LABORATORY REPORT</strong>
+            </div>
+            <div class="report-details">
+              Report ID: MRH-LAB-${format(new Date(), 'yyyyMMdd')}-${String(patient?.id || Math.floor(Math.random() * 1000)).padStart(4, '0')} | 
+              Generated: ${format(new Date(), 'yyyy-MM-dd HH:mm:ss')} | 
+              Mbeya Referral Hospital
+            </div>
+          </div>
+
+          <div class="billing-notice">
+            ${billingInfo ? `
+              <div class="payment-info">
+                <strong>💳 PAYMENT STATUS: ${billingInfo.payment_status || 'PENDING'}</strong><br>
+                <div class="payment-details">
+                  Total Amount: ${billingInfo.total_amount ? `${billingInfo.currency || 'TZS'} ${billingInfo.total_amount.toLocaleString()}` : 'Calculating...'}<br>
+                  ${billingInfo.payment_method ? `Payment Method: ${billingInfo.payment_method}<br>` : ''}
+                  ${billingInfo.payment_date ? `Paid On: ${format(new Date(billingInfo.payment_date), 'MMM dd, yyyy HH:mm')}<br>` : ''}
+                  ${billingInfo.receipt_number ? `Receipt No: ${billingInfo.receipt_number}<br>` : ''}
+                  Status: ${billingInfo.payment_status === 'Paid' ? '✅ PAYMENT COMPLETED' : '⏳ PAYMENT REQUIRED AT BILLING COUNTER'}
+                </div>
+              </div>
+            ` : `
+              <strong>💳 BILLING STATUS:</strong> Patient must complete payment at billing counter before discharge.<br>
+              <small>Lab test charges will be calculated at billing. This report can be reprinted if needed.</small>
+            `}
+          </div>
+
+          ${labTests.map((test, index) => {
+            let results = {};
+            let interpretation = '';
+            let testDate = '';
+            
+            try {
+              if (typeof test.results === 'string') {
+                const parsedResults = JSON.parse(test.results);
+                results = parsedResults?.results || parsedResults || {};
+                interpretation = parsedResults?.interpretation || '';
+                testDate = parsedResults?.test_date || '';
+              } else if (test.results && typeof test.results === 'object') {
+                results = test.results?.results || test.results;
+                interpretation = test.results?.interpretation || '';
+                testDate = test.results?.test_date || '';
+              }
+            } catch (e) {
+              console.error('Error parsing test results:', e);
+              results = {};
+            }
+
+            const hasResults = Object.keys(results).length > 0;
+
+            return `
+              <div class="test-container">
+                <div class="test-header">
+                  <h4>🔬 ${index + 1}. ${test.test_name || 'Lab Test'}</h4>
+                  <div class="test-info">
+                    Test Code: ${test.test_code || test.id || 'N/A'} | 
+                    Category: ${test.test_type || test.category || 'General'} | 
+                    Status: ✅ Completed | 
+                    Performed: ${(() => {
+                      const testPerformedDate = testDate || test.completed_at || test.test_date;
+                      if (!testPerformedDate) return 'N/A';
+                      try {
+                        return format(new Date(testPerformedDate), 'MMM dd, yyyy HH:mm');
+                      } catch (e) {
+                        return 'Invalid date';
+                      }
+                    })()} | 
+                    Technician: ${test.performed_by || 'Lab Staff'}
+                  </div>
+                </div>
+                
+                ${hasResults ? `
+                  <table class="results-table">
+                    <thead>
+                      <tr>
+                        <th>Parameter</th>
+                        <th>Result</th>
+                        <th>Unit</th>
+                        <th>Reference Range</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${Object.entries(results).map(([param, data]: [string, any]) => {
+                        const isNormal = data.status === 'Normal' || data.status === 'normal';
+                        return `
+                          <tr>
+                            <td class="parameter-name">${param}</td>
+                            <td class="result-value">${data.value || data.result_value || 'N/A'}</td>
+                            <td>${data.unit || '-'}</td>
+                            <td>${data.normal_range || data.reference_range || '-'}</td>
+                            <td>
+                              <span class="${isNormal ? 'status-normal' : 'status-abnormal'}">
+                                ${isNormal ? 'NORMAL' : 'ABNORMAL'}
+                              </span>
+                            </td>
+                          </tr>
+                        `;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                ` : `
+                  <div style="padding: 20px; text-align: center; color: #6b7280;">
+                    <p>Test completed - Detailed results being processed</p>
+                    ${test.results && typeof test.results === 'string' ? `
+                      <div style="background: #f8fafc; padding: 15px; margin: 10px 0; text-align: left;">
+                        <strong>Raw Results:</strong><br>
+                        <pre style="white-space: pre-wrap; font-family: monospace; font-size: 12px;">${test.results}</pre>
+                      </div>
+                    ` : ''}
+                  </div>
+                `}
+                
+                ${interpretation ? `
+                  <div class="interpretation-box">
+                    <div class="interpretation-title">Clinical Interpretation:</div>
+                    <div>${interpretation}</div>
+                  </div>
+                ` : hasResults ? `
+                  <div class="interpretation-box">
+                    <div class="interpretation-title">Clinical Interpretation:</div>
+                    <div>
+                      ${Object.values(results).every((r: any) => r.status === 'Normal' || r.status === 'normal') 
+                        ? 'All parameters are within normal limits. No immediate medical intervention required.' 
+                        : 'Some parameters may require medical attention. Please consult with healthcare provider.'}
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+
+          <div class="footer-section">
+            <h4>📋 Report Verification & Authorization</h4>
+            <div class="footer-grid-print">
+              <div class="footer-row">
+                <div class="label">🔬 Laboratory Technician:</div>
+                <div class="value">${labTests[0]?.performed_by || 'Lab Staff'}</div>
+              </div>
+              <div class="footer-row">
+                <div class="label">👩‍⚕️ Reviewed by Nurse:</div>
+                <div class="value">${user?.full_name || 'Nursing Staff'}</div>
+              </div>
+              <div class="footer-row">
+                <div class="label">🏥 Department:</div>
+                <div class="value">Laboratory Services</div>
+              </div>
+              <div class="footer-row">
+                <div class="label">📅 Report Generated:</div>
+                <div class="value">${format(new Date(), 'MMM dd, yyyy HH:mm')}</div>
+              </div>
+              <div class="footer-row">
+                <div class="label">💻 System:</div>
+                <div class="value">Mbeya Referral Hospital - HMS v2.0</div>
+              </div>
+              <div class="footer-row">
+                <div class="label">🏥 Status:</div>
+                <div class="value"><strong>READY FOR BILLING & DISCHARGE</strong></div>
+              </div>
+            </div>
+            
+            <div class="signature-area clearfix">
+              <div class="signature-box">
+                <div class="signature-line">Laboratory Technician</div>
+                <div class="signature-subtitle">Print Name, Signature & Date</div>
+                <div class="signature-subtitle">License No: _____________</div>
+              </div>
+              <div class="signature-box">
+                <div class="signature-line">Reviewing Nurse</div>
+                <div class="signature-subtitle">Print Name, Signature & Date</div>
+                <div class="signature-subtitle">License No: _____________</div>
+              </div>
+            </div>
+            
+            <div class="disclaimer">
+              <p><strong>IMPORTANT NOTICE:</strong> This is an official laboratory report generated by Mbeya Referral Hospital. 
+              Any alterations or modifications to this report are strictly prohibited. For queries, contact the Laboratory Department at +255-25-2503364.</p>
+            </div>
+          </div>
+      </style>
+      
+      <div class="letterhead">
+        <div class="logo-section">
+          <div class="text-logo">🏥</div>
+          <div class="hospital-name">
+            <h1>MBEYA REFERRAL HOSPITAL</h1>
+            <div class="subtitle">LABORATORY TEST REPORT</div>
+          </div>
+        </div>
+        <div class="hospital-info">📍 P.O. Box 419, Mbeya, Tanzania</div>
+        <div class="hospital-info">📞 Emergency: +255-25-2503364 | 🌐 www.mbeyahospital.go.tz</div>
+        <div class="hospital-info">✉️ info@mbeyahospital.go.tz | Laboratory Department</div>
+      </div>
+      
+      <div class="patient-section">
+        <h3>👤 Patient Information</h3>
+        <div class="patient-grid-print">
+          <div class="patient-row">
+            <div class="label">Patient ID:</div>
+            <div class="value">\${patient?.id ? \`PAT-\${String(patient.id).padStart(6, '0')}\` : 'N/A'}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Full Name:</div>
+            <div class="value">\${patient?.full_name || 'N/A'}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Phone Number:</div>
+            <div class="value">\${patient?.phone || 'N/A'}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Date of Birth:</div>
+            <div class="value">\${(() => {
+              if (!patient?.date_of_birth) return 'N/A';
+              try {
+                const dob = new Date(patient.date_of_birth);
+                const age = new Date().getFullYear() - dob.getFullYear();
+                return format(dob, 'MMM dd, yyyy') + \` (Age: \${age})\`;
+              } catch (e) {
+                return 'Invalid date';
+              }
+            })()}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Gender:</div>
+            <div class="value">\${patient?.gender || 'N/A'}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Blood Group:</div>
+            <div class="value">\${patient?.blood_group || 'Not Specified'}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Address:</div>
+            <div class="value">\${patient?.address || 'Not Provided'}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Registration Date:</div>
+            <div class="value">\${(() => {
+              if (!patient?.created_at) return 'N/A';
+              try {
+                return format(new Date(patient.created_at), 'MMM dd, yyyy');
+              } catch (e) {
+                return 'Invalid date';
+              }
+            })()}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Report Generated:</div>
+            <div class="value">\${format(new Date(), 'MMM dd, yyyy HH:mm')}</div>
+          </div>
+          <div class="patient-row">
+            <div class="label">Generated By:</div>
+            <div class="value">Nurse \${user?.full_name || 'Staff'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-id">
+        <div class="report-header">
+          <strong>📋 OFFICIAL LABORATORY REPORT</strong>
+        </div>
+        <div class="report-details">
+          Report ID: MRH-LAB-\${format(new Date(), 'yyyyMMdd')}-\${String(patient?.id || Math.floor(Math.random() * 1000)).padStart(4, '0')} | 
+          Generated: \${format(new Date(), 'yyyy-MM-dd HH:mm:ss')} | 
+          Mbeya Referral Hospital
+        </div>
+      </div>
+
+      <div class="billing-notice">
+        \${billingInfo ? \`
+          <div class="payment-info">
+            <strong>💳 PAYMENT STATUS: \${billingInfo.payment_status || 'PENDING'}</strong><br>
+            <div class="payment-details">
+              Total Amount: \${billingInfo.total_amount ? \`\${billingInfo.currency || 'TZS'} \${billingInfo.total_amount.toLocaleString()}\` : 'Calculating...'}<br>
+              \${billingInfo.payment_method ? \`Payment Method: \${billingInfo.payment_method}<br>\` : ''}
+              \${billingInfo.payment_date ? \`Paid On: \${format(new Date(billingInfo.payment_date), 'MMM dd, yyyy HH:mm')}<br>\` : ''}
+              \${billingInfo.receipt_number ? \`Receipt No: \${billingInfo.receipt_number}<br>\` : ''}
+              Status: \${billingInfo.payment_status === 'Paid' ? '✅ PAYMENT COMPLETED' : '⏳ PAYMENT REQUIRED AT BILLING COUNTER'}
+            </div>
+          </div>
+        \` : \`
+          <strong>💳 BILLING STATUS:</strong> Patient must complete payment at billing counter before discharge.<br>
+          <small>Lab test charges will be calculated at billing. This report can be reprinted if needed.</small>
+        \`}
+      </div>
+
+      \${labTests.map((test, index) => {
+        let results = {};
+        let interpretation = '';
+        let testDate = '';
+        
+        try {
+          if (typeof test.results === 'string') {
+            const parsedResults = JSON.parse(test.results);
+            results = parsedResults?.results || parsedResults || {};
+            interpretation = parsedResults?.interpretation || '';
+            testDate = parsedResults?.test_date || '';
+          } else if (test.results && typeof test.results === 'object') {
+            results = test.results?.results || test.results;
+            interpretation = test.results?.interpretation || '';
+            testDate = test.results?.test_date || '';
+          }
+        } catch (e) {
+          console.error('Error parsing test results:', e);
+          results = {};
+        }
+
+        const hasResults = Object.keys(results).length > 0;
+
+        return \`
+          <div class="test-container">
+            <div class="test-header">
+              <h4>🔬 \${index + 1}. \${test.test_name || 'Lab Test'}</h4>
+              <div class="test-info">
+                Test Code: \${test.test_code || test.id || 'N/A'} | 
+                Category: \${test.test_type || test.category || 'General'} | 
+                Status: ✅ Completed | 
+                Performed: \${(() => {
+                  const testPerformedDate = testDate || test.completed_at || test.test_date;
+                  if (!testPerformedDate) return 'N/A';
+                  try {
+                    return format(new Date(testPerformedDate), 'MMM dd, yyyy HH:mm');
+                  } catch (e) {
+                    return 'Invalid date';
+                  }
+                })()} | 
+                Technician: \${test.performed_by || 'Lab Staff'}
+              </div>
+            </div>
+            
+            \${hasResults ? \`
+              <table class="results-table">
+                <thead>
+                  <tr>
+                    <th>Parameter</th>
+                    <th>Result</th>
+                    <th>Unit</th>
+                    <th>Reference Range</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  \${Object.entries(results).map(([param, data]: [string, any]) => {
+                    const isNormal = data.status === 'Normal' || data.status === 'normal';
+                    return \`
+                      <tr>
+                        <td class="parameter-name">\${param}</td>
+                        <td class="result-value">\${data.value || data.result_value || 'N/A'}</td>
+                        <td>\${data.unit || '-'}</td>
+                        <td>\${data.normal_range || data.reference_range || '-'}</td>
+                        <td>
+                          <span class="\${isNormal ? 'status-normal' : 'status-abnormal'}">
+                            \${isNormal ? 'NORMAL' : 'ABNORMAL'}
+                          </span>
+                        </td>
+                      </tr>
+                    \`;
+                  }).join('')}
+                </tbody>
+              </table>
+            \` : \`
+              <div style="padding: 20px; text-align: center; color: #6b7280;">
+                <p>Test completed - Detailed results being processed</p>
+                \${test.results && typeof test.results === 'string' ? \`
+                  <div style="background: #f8fafc; padding: 15px; margin: 10px 0; text-align: left;">
+                    <strong>Raw Results:</strong><br>
+                    <pre style="white-space: pre-wrap; font-family: monospace; font-size: 12px;">\${test.results}</pre>
+                  </div>
+                \` : ''}
+              </div>
+            \`}
+            
+            \${interpretation ? \`
+              <div class="interpretation-box">
+                <div class="interpretation-title">Clinical Interpretation:</div>
+                <div>\${interpretation}</div>
+              </div>
+            \` : hasResults ? \`
+              <div class="interpretation-box">
+                <div class="interpretation-title">Clinical Interpretation:</div>
+                <div>
+                  \${Object.values(results).every((r: any) => r.status === 'Normal' || r.status === 'normal') 
+                    ? 'All parameters are within normal limits. No immediate medical intervention required.' 
+                    : 'Some parameters may require medical attention. Please consult with healthcare provider.'}
+                </div>
+              </div>
+            \` : ''}
+          </div>
+        \`;
+      }).join('')}
+
+      <div class="footer-section">
+        <h4>📋 Report Verification & Authorization</h4>
+        <div class="footer-grid-print">
+          <div class="footer-row">
+            <div class="label">🔬 Laboratory Technician:</div>
+            <div class="value">\${labTests[0]?.performed_by || 'Lab Staff'}</div>
+          </div>
+          <div class="footer-row">
+            <div class="label">👩‍⚕️ Reviewed by Nurse:</div>
+            <div class="value">\${user?.full_name || 'Nursing Staff'}</div>
+          </div>
+          <div class="footer-row">
+            <div class="label">🏥 Department:</div>
+            <div class="value">Laboratory Services</div>
+          </div>
+          <div class="footer-row">
+            <div class="label">📅 Report Generated:</div>
+            <div class="value">\${format(new Date(), 'MMM dd, yyyy HH:mm')}</div>
+          </div>
+          <div class="footer-row">
+            <div class="label">💻 System:</div>
+            <div class="value">Mbeya Referral Hospital - HMS v2.0</div>
+          </div>
+          <div class="footer-row">
+            <div class="label">🏥 Status:</div>
+            <div class="value"><strong>READY FOR BILLING & DISCHARGE</strong></div>
+          </div>
+        </div>
+        
+        <div class="signature-area clearfix">
+          <div class="signature-box">
+            <div class="signature-line">Laboratory Technician</div>
+            <div class="signature-subtitle">Print Name, Signature & Date</div>
+            <div class="signature-subtitle">License No: _____________</div>
+          </div>
+          <div class="signature-box">
+            <div class="signature-line">Reviewing Nurse</div>
+            <div class="signature-subtitle">Print Name, Signature & Date</div>
+            <div class="signature-subtitle">License No: _____________</div>
+          </div>
+        </div>
+        
+        <div class="disclaimer">
+          <p><strong>IMPORTANT NOTICE:</strong> This is an official laboratory report generated by Mbeya Referral Hospital. 
+          Any alterations or modifications to this report are strictly prohibited. For queries, contact the Laboratory Department at +255-25-2503364.</p>
+        </div>
+      </div>
+    `;
+  };
 
   // Handler functions
   const handleRecordVitals = (patient: any) => {
@@ -244,6 +1528,65 @@ export default function NurseDashboard() {
     }
   };
 
+  // Search lab reports for patients
+  const searchLabReports = async (query: string) => {
+    if (!query.trim()) {
+      setLabReportSearchResults([]);
+      return;
+    }
+
+    setSearchingLabReports(true);
+    try {
+      // First search for patients
+      const patientsResponse = await api.get(`/patients?search=${encodeURIComponent(query)}&limit=10`);
+      const patients = patientsResponse.data.patients || [];
+      
+      // For each patient, get their completed lab tests
+      const patientsWithLabReports = [];
+      
+      for (const patient of patients) {
+        try {
+          const labsResponse = await api.get(`/labs?patient_id=${patient.id}&status=Completed`);
+          const completedTests = labsResponse.data.labTests || labsResponse.data.tests || [];
+          
+          if (completedTests.length > 0) {
+            // Group tests by visit/date for better organization
+            const testsByDate = completedTests.reduce((acc: any, test: any) => {
+              let testDate = 'Unknown';
+              if (test.completed_at) {
+                try {
+                  testDate = format(new Date(test.completed_at), 'yyyy-MM-dd');
+                } catch (e) {
+                  testDate = 'Invalid date';
+                }
+              }
+              if (!acc[testDate]) {
+                acc[testDate] = [];
+              }
+              acc[testDate].push(test);
+              return acc;
+            }, {});
+            
+            patientsWithLabReports.push({
+              ...patient,
+              labReportDates: Object.keys(testsByDate).sort().reverse(), // Most recent first
+              labTestsByDate: testsByDate
+            });
+          }
+        } catch (error) {
+          console.error(`Error fetching labs for patient ${patient.id}:`, error);
+        }
+      }
+      
+      setLabReportSearchResults(patientsWithLabReports);
+    } catch (error: any) {
+      console.error('Lab report search error:', error);
+      toast.error(error.response?.data?.error || 'Failed to search lab reports');
+    } finally {
+      setSearchingLabReports(false);
+    }
+  };
+
   // Real-time search effect
   useEffect(() => {
     if (!showPatientSearch) return;
@@ -254,6 +1597,17 @@ export default function NurseDashboard() {
 
     return () => clearTimeout(timeoutId);
   }, [searchQuery, showPatientSearch]);
+
+  // Real-time lab report search effect
+  useEffect(() => {
+    if (!showReprintDialog) return;
+    
+    const timeoutId = setTimeout(() => {
+      searchLabReports(labReportSearchQuery);
+    }, 500); // Debounce for 500ms
+
+    return () => clearTimeout(timeoutId);
+  }, [labReportSearchQuery, showReprintDialog]);
 
   const submitVitals = async () => {
     if (!selectedPatient) return;
@@ -620,6 +1974,9 @@ export default function NurseDashboard() {
                           const response = await api.get(`/labs?patient_id=${visit.patient_id}`);
                           const tests = response.data.labTests || response.data.tests || [];
                           
+                          console.log('🔬 Raw lab tests from API:', tests);
+                          console.log('🔬 Visit details:', { id: visit.id, patient_id: visit.patient_id, visit_type: visit.visit_type });
+                          
                           // Filter to only show:
                           // 1. Completed tests
                           // 2. Tests from this specific visit (nurse-ordered, not doctor-ordered)
@@ -629,9 +1986,22 @@ export default function NurseDashboard() {
                             const isFromThisVisit = t.visit_id === visit.id || t.visit?.id === visit.id;
                             const isLabOnlyVisit = visit.visit_type === 'Lab Only';
                             
+                            console.log('🔬 Test filter check:', {
+                              test_id: t.id,
+                              test_name: t.test_name,
+                              status: t.status,
+                              isCompleted,
+                              visit_id: t.visit_id,
+                              isFromThisVisit,
+                              isLabOnlyVisit,
+                              shouldInclude: isCompleted && (isFromThisVisit || isLabOnlyVisit)
+                            });
+                            
                             // Only show if completed AND (from this visit OR this is a Lab Only visit)
                             return isCompleted && (isFromThisVisit || isLabOnlyVisit);
                           });
+                          
+                          console.log('🔬 Filtered completed tests:', completedTests);
                           
                           if (completedTests.length === 0) {
                             toast.info('No completed lab tests found for this visit');
@@ -680,7 +2050,15 @@ export default function NurseDashboard() {
                         Phone: {visit.patient?.phone} • Blood Group: {visit.patient?.blood_group || 'N/A'}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Checked in: {format(new Date(visit.reception_completed_at || visit.created_at), 'MMM dd, yyyy HH:mm')}
+                        Checked in: {(() => {
+                          const checkInTime = visit.reception_completed_at || visit.created_at;
+                          if (!checkInTime) return 'N/A';
+                          try {
+                            return format(new Date(checkInTime), 'MMM dd, yyyy HH:mm');
+                          } catch (e) {
+                            return 'Invalid date';
+                          }
+                        })()}
                       </p>
                       {visit.visit_type && visit.visit_type !== 'Consultation' && (
                         <Badge variant="outline" className="mt-1">{visit.visit_type}</Badge>
@@ -753,6 +2131,31 @@ export default function NurseDashboard() {
             >
               <Users className="h-5 w-5 mr-2" />
               Search Patients
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Lab Report Search & Reprint */}
+        <Card className="shadow-lg border-purple-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-purple-700">
+              <Search className="h-5 w-5" />
+              Lab Report Search & Reprint
+            </CardTitle>
+            <CardDescription>Search and reprint previous lab reports for patients</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <Button
+              variant="outline"
+              className="w-full text-purple-700 border-purple-300 hover:bg-purple-100"
+              onClick={() => {
+                setShowReprintDialog(true);
+                setSearchQuery('');
+                setSearchResults([]);
+              }}
+            >
+              <Printer className="h-5 w-5 mr-2" />
+              Search & Reprint Lab Reports
             </Button>
           </CardContent>
         </Card>
@@ -1086,7 +2489,14 @@ export default function NurseDashboard() {
                         <div>
                           <p className="font-medium">{patient.full_name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {patient.phone} • DOB: {format(new Date(patient.date_of_birth), 'MMM dd, yyyy')}
+                            {patient.phone} • DOB: {(() => {
+                              if (!patient.date_of_birth) return 'N/A';
+                              try {
+                                return format(new Date(patient.date_of_birth), 'MMM dd, yyyy');
+                              } catch (e) {
+                                return 'Invalid date';
+                              }
+                            })()}
                           </p>
                         </div>
                         <Badge variant={patient.status === 'Active' ? 'default' : 'secondary'}>
@@ -1230,13 +2640,28 @@ export default function NurseDashboard() {
             </Button>
             <Button
               className="flex-1 bg-green-600 hover:bg-green-700"
-              onClick={() => {
-                // Print the results
-                window.print();
+              onClick={async () => {
+                console.log('🖨️ Print button clicked');
+                console.log('🖨️ Selected visit:', selectedVisitForResults);
+                console.log('🖨️ Patient data:', selectedVisitForResults?.patient);
+                console.log('🖨️ Lab test results:', labTestResults);
+                
+                if (!selectedVisitForResults?.patient) {
+                  toast.error('Patient information is missing');
+                  return;
+                }
+                
+                if (!labTestResults || labTestResults.length === 0) {
+                  toast.error('No lab test results to print');
+                  return;
+                }
+                
+                // Use professional print function
+                await printLabReport(selectedVisitForResults?.patient, labTestResults);
               }}
             >
-              <Activity className="h-4 w-4 mr-2" />
-              Print Results
+              <Printer className="h-4 w-4 mr-2" />
+              Print Lab Report
             </Button>
             <Button
               className="flex-1"
@@ -1524,6 +2949,135 @@ export default function NurseDashboard() {
         onSubmit={handleServiceFormSubmit}
         submitting={formSubmitting}
       />
+
+      {/* Lab Report Search & Reprint Dialog */}
+      <Dialog open={showReprintDialog} onOpenChange={setShowReprintDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              Search & Reprint Lab Reports
+            </DialogTitle>
+            <DialogDescription>
+              Search for patients and reprint their previous lab reports
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="lab-report-search">Search by patient name or phone</Label>
+              <Input
+                id="lab-report-search"
+                placeholder="Enter patient name or phone number..."
+                value={labReportSearchQuery}
+                onChange={(e) => setLabReportSearchQuery(e.target.value)}
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Start typing to search for patients with lab reports
+              </p>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto">
+              {searchingLabReports ? (
+                <div className="text-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                  <p className="text-muted-foreground">Searching lab reports...</p>
+                </div>
+              ) : labReportSearchResults.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">
+                  {labReportSearchQuery ? 'No patients with lab reports found' : 'Enter search term to find patients with lab reports'}
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {labReportSearchResults.map((patient) => (
+                    <Card key={patient.id} className="border-purple-200">
+                      <CardHeader className="pb-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <CardTitle className="text-lg">{patient.full_name}</CardTitle>
+                            <CardDescription>
+                              Phone: {patient.phone} • DOB: {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM dd, yyyy') : 'N/A'}
+                            </CardDescription>
+                          </div>
+                          <Badge variant="secondary">
+                            {patient.labReportDates?.length || 0} Report{patient.labReportDates?.length !== 1 ? 's' : ''}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-muted-foreground">Available Lab Reports:</p>
+                          <div className="grid gap-2">
+                            {patient.labReportDates?.map((date: string) => {
+                              const testsForDate = patient.labTestsByDate[date] || [];
+                              return (
+                                <div key={date} className="flex items-center justify-between p-3 border rounded-lg bg-purple-50">
+                                  <div>
+                                    <p className="font-medium">{(() => {
+                                      if (!date || date === 'Unknown' || date === 'Invalid date') return date;
+                                      try {
+                                        return format(new Date(date), 'MMM dd, yyyy');
+                                      } catch (e) {
+                                        return 'Invalid date';
+                                      }
+                                    })()}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {testsForDate.length} test{testsForDate.length !== 1 ? 's' : ''}: {testsForDate.map((t: any) => t.test_name).join(', ')}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    size="sm"
+                                    className="bg-purple-600 hover:bg-purple-700"
+                                    onClick={async () => {
+                                      try {
+                                        // Print the lab report for this date
+                                        await printLabReport(patient, testsForDate);
+                                        const dateStr = (() => {
+                                          if (!date || date === 'Unknown' || date === 'Invalid date') return date;
+                                          try {
+                                            return format(new Date(date), 'MMM dd, yyyy');
+                                          } catch (e) {
+                                            return 'Invalid date';
+                                          }
+                                        })();
+                                        toast.success(`Lab report for ${dateStr} opened for printing`);
+                                      } catch (error) {
+                                        console.error('Error reprinting lab report:', error);
+                                        toast.error('Failed to reprint lab report');
+                                      }
+                                    }}
+                                  >
+                                    <Printer className="h-4 w-4 mr-2" />
+                                    Reprint
+                                  </Button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowReprintDialog(false);
+                setLabReportSearchQuery('');
+                setLabReportSearchResults([]);
+              }}
+            >
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }
