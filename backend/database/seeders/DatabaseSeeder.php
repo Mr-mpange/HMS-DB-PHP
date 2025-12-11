@@ -18,6 +18,8 @@ class DatabaseSeeder extends Seeder
         // Seed insurance companies
         $this->call([
             InsuranceCompaniesSeeder::class,
+            LocalUsersSeeder::class,
+            AppointmentTestSeeder::class,
         ]);
 
         // User::factory(10)->create();

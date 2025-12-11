@@ -186,7 +186,7 @@ export default function DoctorDashboard() {
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [appointmentToComplete, setAppointmentToComplete] = useState<any>(null);
   const [completionNotes, setCompletionNotes] = useState('');
-  const [nextAction, setNextAction] = useState<'discharge' | 'pharmacy'>('discharge');
+  const [nextAction, setNextAction] = useState<'discharge' | 'pharmacy' | 'lab' | 'return_to_lab'>('discharge');
   const [isCompletingWithAction, setIsCompletingWithAction] = useState(false); // Track if completing with lab/pharmacy
 
   const handleCompleteAppointment = async (appointment: any) => {
@@ -1147,6 +1147,8 @@ export default function DoctorDashboard() {
     }
   };
 
+
+
   // Handler for ordering lab tests
   const handleOrderLabTests = async (visit: any) => {
     setSelectedVisit(visit);
@@ -1281,6 +1283,16 @@ export default function DoctorDashboard() {
       return;
     }
 
+    // Debug: Log the selectedVisit data structure
+    console.log('DEBUG: selectedVisit data structure:', {
+      selectedVisit_id: selectedVisit.id,
+      selectedVisit_appointment_id: selectedVisit.appointment_id,
+      selectedVisit_appointment: selectedVisit.appointment,
+      selectedVisit_keys: Object.keys(selectedVisit),
+      selectedVisit_patient_id: selectedVisit.patient_id,
+      selectedVisit_full_object: selectedVisit
+    });
+
     try {
       // Create lab test orders one by one to better handle errors
       const labTests = labTestForm.selectedTests.map(testId => {
@@ -1309,7 +1321,7 @@ export default function DoctorDashboard() {
             doctor_id: user.id,
             test_name: test.test_name,
             test_type: test.test_type || 'Laboratory',
-            test_date: new Date().toISOString().split('T')[0],
+            test_date: new Date().toISOString().split('T')[0], // Today's date for new orders
             status: 'Pending',
             notes: test.notes
           });
@@ -1321,7 +1333,17 @@ export default function DoctorDashboard() {
           createdTests.push(response.data);
         } catch (testError: any) {
           console.error('Error creating lab test:', testError);
-          throw new Error(`Failed to create test "${test.test_name}": ${testError.message}`);
+          console.error('Error response:', testError.response?.data);
+          console.error('Test data being sent:', {
+            patient_id: test.patient_id,
+            doctor_id: user.id,
+            test_name: test.test_name,
+            test_type: test.test_type || 'Laboratory',
+            test_date: new Date().toISOString().split('T')[0],
+            status: 'Pending',
+            notes: test.notes
+          });
+          throw new Error(`Failed to create test "${test.test_name}": ${testError.response?.data?.message || testError.message}`);
         }
       }
 
@@ -1362,8 +1384,37 @@ export default function DoctorDashboard() {
       // Update or create patient visit to lab stage
       // Patient will return to doctor after lab is completed
       if (selectedVisit.id) {
+        let visitId = selectedVisit.id;
+        const appointmentId = selectedVisit.appointment_id || selectedVisit.appointment?.id;
+        
+        console.log('DEBUG: Initial visit ID:', visitId);
+        console.log('DEBUG: Associated appointment ID:', appointmentId);
+        
+        // Check if selectedVisit.id is actually an appointment ID (data structure issue)
+        // If appointment_id is undefined, it means selectedVisit is an appointment object
+        if (!appointmentId && selectedVisit.patient_id) {
+          console.log('DEBUG: selectedVisit appears to be an appointment object, finding correct visit...');
+          try {
+            // Find the correct visit using the appointment ID
+            const visitsResponse = await api.get(`/visits?appointment_id=${selectedVisit.id}&limit=1`);
+            const visits = visitsResponse.data.visits || [];
+            
+            if (visits.length > 0) {
+              visitId = visits[0].id;
+              console.log('DEBUG: Found correct visit ID:', visitId);
+            } else {
+              throw new Error('No visit found for this appointment');
+            }
+          } catch (findError) {
+            console.error('Error finding visit:', findError);
+            throw new Error('Could not find visit for this appointment');
+          }
+        }
+        
+        console.log('DEBUG: Final visit ID to update:', visitId);
+        
         // Update existing visit
-        const visitResponse = await api.put(`/visits/${selectedVisit.id}`, {
+        const visitResponse = await api.put(`/visits/${visitId}`, {
           current_stage: 'lab',
           lab_status: 'Pending',
           doctor_status: 'Pending Review', // Doctor needs to review lab results
@@ -2419,16 +2470,28 @@ export default function DoctorDashboard() {
                   </TableHeader>
                   <TableBody>
                     {pendingVisits
-                      .filter(visit => 
-                        visit.lab_completed_at && 
-                        !visit.lab_results_reviewed && 
-                        visit.doctor_status !== 'Completed' && 
-                        visit.current_stage === 'doctor' &&
-                        visit.overall_status === 'Active'
-                      )
+                      .filter(visit => {
+                        // Basic visit conditions
+                        const basicConditions = visit.lab_completed_at && 
+                          !visit.lab_results_reviewed && 
+                          visit.doctor_status !== 'Completed' && 
+                          visit.current_stage === 'doctor' &&
+                          visit.overall_status === 'Active';
+                        
+                        // Only show if there are actually completed tests (not just cancelled ones)
+                        const hasCompletedTests = (visit.labTests || []).some((test: any) => 
+                          test.status === 'Completed'
+                        );
+                        
+                        return basicConditions && hasCompletedTests;
+                      })
                       .map((visit) => {
-                        const labTestCount = visit.labTests?.length || 0;
-                        const hasAbnormal = (visit.labTests || [])
+                        // Only count completed tests, exclude cancelled ones
+                        const completedTests = (visit.labTests || []).filter((test: any) => 
+                          test.status === 'Completed'
+                        );
+                        const labTestCount = completedTests.length;
+                        const hasAbnormal = completedTests
                           .some((test: any) => {
                             if (Array.isArray(test.lab_results)) {
                               return test.lab_results.some((r: any) => r.abnormal_flag);
@@ -2495,6 +2558,15 @@ export default function DoctorDashboard() {
                                 >
                                   <Eye className="h-3 w-3" />
                                   View Results
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOrderLabTests(visit)}
+                                  className="flex items-center gap-1 border-orange-300 text-orange-700 hover:bg-orange-50"
+                                >
+                                  <TestTube className="h-3 w-3" />
+                                  Return to Lab
                                 </Button>
                                 <Button
                                   variant="default"
@@ -2575,8 +2647,11 @@ export default function DoctorDashboard() {
                     visit.overall_status === 'Active'
                   )
                   .map((visit) => {
-                    const hasLabResults = (visit.labTests && visit.labTests.length > 0) || (visit.allCompletedLabTests && visit.allCompletedLabTests.length > 0);
-                    const hasAbnormal = hasLabResults && [...(visit.labTests || []), ...(visit.allCompletedLabTests || [])]
+                    // Only count completed tests, exclude cancelled ones
+                    const completedLabTests = (visit.labTests || []).filter((test: any) => test.status === 'Completed');
+                    const allCompletedTests = (visit.allCompletedLabTests || []).filter((test: any) => test.status === 'Completed');
+                    const hasLabResults = completedLabTests.length > 0 || allCompletedTests.length > 0;
+                    const hasAbnormal = hasLabResults && [...completedLabTests, ...allCompletedTests]
                       .some((test: any) => {
                         if (Array.isArray(test.lab_results)) {
                           return test.lab_results.some((r: any) => r.abnormal_flag);
@@ -2615,6 +2690,11 @@ export default function DoctorDashboard() {
                         {visit.visit_type === 'Quick Service' && visit.notes && (
                           <div className="text-xs text-blue-600 mt-1">📋 {visit.notes}</div>
                         )}
+                        {visit.lab_completed_at && visit.doctor_status === 'Pending Review' && (
+                          <Badge variant="outline" className="mt-1 text-xs bg-blue-50 text-blue-700 border-blue-300">
+                            🔬 Returning from Lab
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -2650,7 +2730,7 @@ export default function DoctorDashboard() {
                       {hasLabResults ? (
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="bg-green-50 text-green-700 text-xs">
-                            {[...(visit.labTests || []), ...(visit.allCompletedLabTests || [])].length} test(s)
+                            {completedLabTests.length + allCompletedTests.length} test(s)
                           </Badge>
                           {hasAbnormal && (
                             <Badge variant="destructive" className="text-xs">
@@ -2725,6 +2805,17 @@ export default function DoctorDashboard() {
                               <TestTube className="h-3 w-3" />
                               Order Lab Test
                             </Button>
+                            {hasLabResults && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOrderLabTests(visit)}
+                                className="flex items-center gap-1 border-orange-300 text-orange-700 hover:bg-orange-50"
+                              >
+                                <TestTube className="h-3 w-3" />
+                                Return to Lab
+                              </Button>
+                            )}
                             <Button
                               variant="default"
                               size="sm"
@@ -3455,10 +3546,14 @@ export default function DoctorDashboard() {
                         const isChecked = e.target.checked;
                         if (isChecked) {
                           setSelectedMedications(prev => [...prev, med.id]);
+                          
+                          // Auto-fill only dosage based on medication strength
+                          const autoFillDosage = med.strength || '';
+                          
                           setPrescriptionForms(prev => ({
                             ...prev,
                             [med.id]: {
-                              dosage: '',
+                              dosage: autoFillDosage,
                               frequency: '',
                               duration: '',
                               quantity: '',
@@ -3489,6 +3584,7 @@ export default function DoctorDashboard() {
                       <div className="text-sm text-muted-foreground">
                         {med.strength && `${med.strength} `}
                         {med.dosage_form && `(${med.dosage_form})`}
+                        {med.generic_name && med.generic_name !== med.name && ` • Generic: ${med.generic_name}`}
                         {med.stock_quantity !== undefined && ` • Stock: ${med.stock_quantity}`}
                         {med.quantity_in_stock !== undefined && ` • Stock: ${med.quantity_in_stock}`}
                       </div>
@@ -3692,11 +3788,44 @@ export default function DoctorDashboard() {
                 <div className="flex items-center space-x-2">
                   <input
                     type="radio"
+                    id="lab"
+                    name="nextAction"
+                    value="lab"
+                    checked={nextAction === 'lab'}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy' | 'lab' | 'return_to_lab')}
+                  />
+                  <Label htmlFor="lab" className="cursor-pointer">
+                    <span className="font-medium text-blue-700">Send to Lab</span>
+                    <span className="block text-xs text-muted-foreground">Order lab tests - patient goes to laboratory</span>
+                  </Label>
+                </div>
+
+                {/* Show Return to Lab option for patients who have lab results */}
+                {appointmentToComplete?.labTests && appointmentToComplete.labTests.length > 0 && (
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="return_to_lab"
+                      name="nextAction"
+                      value="return_to_lab"
+                      checked={nextAction === 'return_to_lab'}
+                      onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy' | 'lab' | 'return_to_lab')}
+                    />
+                    <Label htmlFor="return_to_lab" className="cursor-pointer">
+                      <span className="font-medium text-orange-700">Return to Lab</span>
+                      <span className="block text-xs text-muted-foreground">Order additional lab tests - patient returns to laboratory</span>
+                    </Label>
+                  </div>
+                )}
+
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
                     id="pharmacy"
                     name="nextAction"
                     value="pharmacy"
                     checked={nextAction === 'pharmacy'}
-                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy')}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy' | 'lab')}
                   />
                   <Label htmlFor="pharmacy" className="cursor-pointer">
                     <span className="font-medium text-purple-700">Send to Pharmacy</span>
@@ -3711,7 +3840,7 @@ export default function DoctorDashboard() {
                     name="nextAction"
                     value="discharge"
                     checked={nextAction === 'discharge'}
-                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy')}
+                    onChange={(e) => setNextAction(e.target.value as 'discharge' | 'pharmacy' | 'lab')}
                   />
                   <Label htmlFor="discharge" className="cursor-pointer">
                     <span className="font-medium text-green-700">Discharge Patient</span>
@@ -3736,7 +3865,7 @@ export default function DoctorDashboard() {
               <Button 
                 onClick={async () => {
                   try {
-                    if (nextAction === 'lab') {
+                    if (nextAction === 'lab' || nextAction === 'return_to_lab') {
                       // Save completion notes first, then open lab test order form
                       setIsCompletingWithAction(true);
                       setShowCompleteDialog(false);
@@ -3794,6 +3923,8 @@ export default function DoctorDashboard() {
                   </>
                 ) : nextAction === 'lab' ? (
                   'Order Lab Tests'
+                ) : nextAction === 'return_to_lab' ? (
+                  'Order Additional Lab Tests'
                 ) : nextAction === 'pharmacy' ? (
                   'Write Prescription'
                 ) : (

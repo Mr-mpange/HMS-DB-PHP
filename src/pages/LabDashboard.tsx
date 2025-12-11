@@ -85,9 +85,28 @@ export default function LabDashboard() {
       ) || [];
 
       // Filter to only show tests that are NOT completed or cancelled
-      const activeTests = uniqueTests.filter(t => 
-        t.status !== 'Completed' && t.status !== 'Cancelled'
-      );
+      // For patients returning to lab, only show tests ordered today or recently
+      const today = new Date().toISOString().split('T')[0];
+      const activeTests = uniqueTests.filter(t => {
+        // Always show non-completed tests
+        if (t.status === 'Completed' || t.status === 'Cancelled') {
+          return false;
+        }
+        
+        // For pending tests, only show if they were ordered today or recently
+        // This prevents showing old completed tests that were re-ordered
+        if (t.status === 'Pending' || t.status === 'Ordered') {
+          // Use created_at for accurate timestamp, fallback to test_date
+          const testDate = t.created_at || t.test_date;
+          if (testDate) {
+            const testDateOnly = new Date(testDate).toISOString().split('T')[0];
+            return testDateOnly === today;
+          }
+        }
+        
+        // Show all in-progress tests regardless of date
+        return true;
+      });
 
       // Calculate stats from ACTIVE tests (what's actually displayed)
       const pending = activeTests.filter(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected').length;
@@ -861,8 +880,11 @@ export default function LabDashboard() {
                       const hasSTAT = tests.some(t => t.priority === 'STAT');
                       const hasUrgent = tests.some(t => t.priority === 'Urgent');
                       const latestTest = tests.sort((a, b) => {
-                        const dateA = a.ordered_date ? new Date(a.ordered_date).getTime() : 0;
-                        const dateB = b.ordered_date ? new Date(b.ordered_date).getTime() : 0;
+                        // Use created_at for accurate sorting, fallback to other dates
+                        const dateA = a.created_at ? new Date(a.created_at).getTime() : 
+                                     (a.ordered_date ? new Date(a.ordered_date).getTime() : 0);
+                        const dateB = b.created_at ? new Date(b.created_at).getTime() : 
+                                     (b.ordered_date ? new Date(b.ordered_date).getTime() : 0);
                         return dateB - dateA;
                       })[0];
 
@@ -932,7 +954,8 @@ export default function LabDashboard() {
                           <TableCell>
                             <div className="text-sm">
                               {(() => {
-                                const dateToUse = latestTest.ordered_date || latestTest.test_date || latestTest.created_at;
+                                // Use created_at for accurate timestamp, fallback to other dates
+                                const dateToUse = latestTest.created_at || latestTest.ordered_date || latestTest.test_date;
                                 if (dateToUse && !isNaN(new Date(dateToUse).getTime())) {
                                   return format(new Date(dateToUse), 'MMM dd, HH:mm');
                                 }
@@ -1089,7 +1112,8 @@ export default function LabDashboard() {
                       <div className="flex items-center gap-2 text-sm bg-blue-50 p-2 rounded border border-blue-200">
                         <Clock className="h-4 w-4 text-blue-600" />
                         <span><strong>Ordered:</strong> {(() => {
-                          const dateToUse = test.ordered_date || test.test_date || test.created_at;
+                          // Use created_at for accurate timestamp, fallback to other dates
+                          const dateToUse = test.created_at || test.ordered_date || test.test_date;
                           if (dateToUse && !isNaN(new Date(dateToUse).getTime())) {
                             return format(new Date(dateToUse), 'MMM dd, yyyy HH:mm');
                           }
