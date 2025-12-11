@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ServiceFormDialog } from '@/components/ServiceFormDialog';
 import api from '@/lib/api';
-import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search, Printer } from 'lucide-react';
+import { Calendar, Users, Activity, Heart, Thermometer, Loader2, Stethoscope, Clock, Search, Printer, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 
@@ -1774,10 +1774,13 @@ export default function NurseDashboard() {
       const visitsResponse = await api.get('/visits?current_stage=nurse&overall_status=Active');
       const allVisits = Array.isArray(visitsResponse.data.visits) ? visitsResponse.data.visits : [];
       
-      // Filter for visits that are pending for nurse (Pending, null, undefined, or empty string)
+      // Filter for visits that are pending for nurse (including patients returning from lab)
       const visitsData = allVisits.filter(v => 
         v.current_stage === 'nurse' && 
-        (!v.nurse_status || v.nurse_status === 'Pending' || v.nurse_status === '')
+        (!v.nurse_status || 
+         v.nurse_status === 'Pending' || 
+         v.nurse_status === 'Pending Review' || // Patients returning from lab
+         v.nurse_status === '')
       );
       
       console.log('👥 Nurse Dashboard - Visits fetched:', {
@@ -2521,7 +2524,10 @@ export default function NurseDashboard() {
               Lab Test Results - {selectedVisitForResults?.patient?.full_name}
             </DialogTitle>
             <DialogDescription>
-              Lab tests ordered by nurse - Review and print results for the patient
+              {selectedVisitForResults?.visit_type === 'Lab Only' 
+                ? 'Lab tests ordered by nurse - Review results and acknowledge completion'
+                : 'Lab tests ordered by nurse - Review and print results for the patient'
+              }
             </DialogDescription>
           </DialogHeader>
 
@@ -2587,10 +2593,52 @@ export default function NurseDashboard() {
                             </TableBody>
                           </Table>
                         ) : test.results ? (
-                          <div className="p-4 bg-muted rounded-lg">
-                            <p className="font-medium mb-2">Results:</p>
-                            <p className="whitespace-pre-wrap">{typeof test.results === 'string' ? test.results : JSON.stringify(test.results, null, 2)}</p>
-                          </div>
+                          (() => {
+                            try {
+                              // Parse the JSON results and display them nicely
+                              const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                              const testResults = parsedResults.results || {};
+                              
+                              return (
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Parameter</TableHead>
+                                      <TableHead>Result</TableHead>
+                                      <TableHead>Unit</TableHead>
+                                      <TableHead>Reference Range</TableHead>
+                                      <TableHead>Status</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {Object.entries(testResults).map(([testName, result]: [string, any]) => (
+                                      <TableRow key={testName}>
+                                        <TableCell className="font-medium">{testName}</TableCell>
+                                        <TableCell className="font-semibold">{result.value || '-'}</TableCell>
+                                        <TableCell>{result.unit || '-'}</TableCell>
+                                        <TableCell>{result.normal_range || '-'}</TableCell>
+                                        <TableCell>
+                                          {result.status === 'Abnormal' ? (
+                                            <Badge variant="destructive">Abnormal</Badge>
+                                          ) : (
+                                            <Badge variant="secondary">Normal</Badge>
+                                          )}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              );
+                            } catch (error) {
+                              // Fallback to raw display if parsing fails
+                              return (
+                                <div className="p-4 bg-muted rounded-lg">
+                                  <p className="font-medium mb-2">Results:</p>
+                                  <p className="whitespace-pre-wrap">{typeof test.results === 'string' ? test.results : JSON.stringify(test.results, null, 2)}</p>
+                                </div>
+                              );
+                            }
+                          })()
                         ) : (
                           <p className="text-muted-foreground">No detailed results available</p>
                         )}
@@ -2638,53 +2686,101 @@ export default function NurseDashboard() {
             >
               Cancel
             </Button>
-            <Button
-              className="flex-1 bg-green-600 hover:bg-green-700"
-              onClick={async () => {
-                console.log('🖨️ Print button clicked');
-                console.log('🖨️ Selected visit:', selectedVisitForResults);
-                console.log('🖨️ Patient data:', selectedVisitForResults?.patient);
-                console.log('🖨️ Lab test results:', labTestResults);
-                
-                if (!selectedVisitForResults?.patient) {
-                  toast.error('Patient information is missing');
-                  return;
-                }
-                
-                if (!labTestResults || labTestResults.length === 0) {
-                  toast.error('No lab test results to print');
-                  return;
-                }
-                
-                // Use professional print function
-                await printLabReport(selectedVisitForResults?.patient, labTestResults);
-              }}
-            >
-              <Printer className="h-4 w-4 mr-2" />
-              Print Lab Report
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={async () => {
-                try {
-                  // Update visit to send to billing
-                  await api.put(`/visits/${selectedVisitForResults.id}`, {
-                    current_stage: 'billing',
-                    billing_status: 'Pending',
-                    nurse_report_printed_at: new Date().toISOString()
-                  });
-                  toast.success('Patient sent to billing.');
-                  setShowLabResultsDialog(false);
-                  setLabResultsReady(prev => prev.filter(v => v.id !== selectedVisitForResults.id));
-                  setSelectedVisitForResults(null);
-                  setLabTestResults([]);
-                } catch (error) {
-                  toast.error('Failed to send patient to billing');
-                }
-              }}
-            >
-              Send to Billing
-            </Button>
+            
+            {/* Only show print and billing options for non-nurse workflows */}
+            {selectedVisitForResults?.visit_type !== 'Lab Only' && (
+              <>
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={async () => {
+                    console.log('🖨️ Print button clicked');
+                    console.log('🖨️ Selected visit:', selectedVisitForResults);
+                    console.log('🖨️ Patient data:', selectedVisitForResults?.patient);
+                    console.log('🖨️ Lab test results:', labTestResults);
+                    
+                    if (!selectedVisitForResults?.patient) {
+                      toast.error('Patient information is missing');
+                      return;
+                    }
+                    
+                    if (!labTestResults || labTestResults.length === 0) {
+                      toast.error('No lab test results to print');
+                      return;
+                    }
+                    
+                    // Check billing status before printing
+                    const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
+                    const canPrint = await checkBillingBeforePrint(selectedVisitForResults.patient.id);
+                    
+                    if (!canPrint) {
+                      return; // Billing check failed, don't print
+                    }
+                    
+                    // Use professional print function
+                    await printLabReport(selectedVisitForResults?.patient, labTestResults);
+                  }}
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  Print Lab Report
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={async () => {
+                    try {
+                      // Update visit to send to billing
+                      await api.put(`/visits/${selectedVisitForResults.id}`, {
+                        current_stage: 'billing',
+                        billing_status: 'Pending',
+                        nurse_report_printed_at: new Date().toISOString()
+                      });
+                      toast.success('Patient sent to billing.');
+                      setShowLabResultsDialog(false);
+                      setLabResultsReady(prev => prev.filter(v => v.id !== selectedVisitForResults.id));
+                      setSelectedVisitForResults(null);
+                      setLabTestResults([]);
+                    } catch (error) {
+                      toast.error('Failed to send patient to billing');
+                    }
+                  }}
+                >
+                  Send to Billing
+                </Button>
+              </>
+            )}
+            
+            {/* For nurse-ordered tests (Lab Only), just show a close/acknowledge button */}
+            {selectedVisitForResults?.visit_type === 'Lab Only' && (
+              <Button
+                className="flex-1"
+                onClick={async () => {
+                  try {
+                    // Update visit to complete the nurse workflow
+                    await api.put(`/visits/${selectedVisitForResults.id}`, {
+                      nurse_status: 'Completed',
+                      current_stage: 'completed',
+                      overall_status: 'Completed',
+                      discharge_time: new Date().toISOString(),
+                      discharge_notes: 'Nurse-ordered lab tests completed and reviewed'
+                    });
+                    
+                    toast.success('Lab results reviewed. Patient workflow completed.');
+                    setShowLabResultsDialog(false);
+                    setLabResultsReady(prev => prev.filter(v => v.id !== selectedVisitForResults.id));
+                    setSelectedVisitForResults(null);
+                    setLabTestResults([]);
+                    
+                    // Refresh the nurse dashboard to remove completed visit
+                    fetchData();
+                  } catch (error) {
+                    console.error('Error completing nurse workflow:', error);
+                    toast.error('Failed to complete workflow');
+                  }
+                }}
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Acknowledge Results
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -3031,6 +3127,14 @@ export default function NurseDashboard() {
                                     className="bg-purple-600 hover:bg-purple-700"
                                     onClick={async () => {
                                       try {
+                                        // Check billing status before reprinting
+                                        const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
+                                        const canPrint = await checkBillingBeforePrint(patient.id);
+                                        
+                                        if (!canPrint) {
+                                          return; // Billing check failed, don't print
+                                        }
+                                        
                                         // Print the lab report for this date
                                         await printLabReport(patient, testsForDate);
                                         const dateStr = (() => {

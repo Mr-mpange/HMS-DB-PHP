@@ -206,7 +206,7 @@ export default function LabDashboard() {
       toast.info(`Started ${pendingTests.length} test(s)`);
     }
 
-    // Check if this patient needs print (all cases going to billing need print)
+    // Check if this patient needs print (only cases going to billing need print)
     try {
       const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
       const visits = data.visits || [];
@@ -214,9 +214,11 @@ export default function LabDashboard() {
       if (visits.length > 0) {
         const visit = visits[0];
         const orderedByDoctor = visit.doctor_status !== 'Not Required' && visit.doctor_id;
+        const orderedByNurse = visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required';
         
-        // Show print option for cases going to billing (not doctor review)
-        setShowPrintOption(!orderedByDoctor);
+        // Show print option ONLY for cases going to billing (not doctor review or nurse review)
+        // Hide print for: doctor-ordered tests (go to doctor) and nurse-ordered tests (go back to nurse)
+        setShowPrintOption(!orderedByDoctor && !orderedByNurse);
       }
     } catch (error) {
       console.error('Error checking visit info:', error);
@@ -309,7 +311,8 @@ export default function LabDashboard() {
   // Print lab results function
   const printLabResults = (patientTests: any[], patientInfo: any, visitInfo: any) => {
     const orderedByDoctor = visitInfo?.doctor_status !== 'Not Required' && visitInfo?.doctor_id;
-    const goingToBilling = !orderedByDoctor;
+    const orderedByNurse = visitInfo?.nurse_status === 'Completed' && visitInfo?.doctor_status === 'Not Required';
+    const goingToBilling = !orderedByDoctor && !orderedByNurse;
 
     // Create print content and inject into page (NO POPUP!)
     const printContent = `
@@ -361,6 +364,10 @@ export default function LabDashboard() {
             <div class="discharge-notice">
               <strong>💳 BILLING REQUIRED:</strong> Patient must go to billing for payment after printing this report. No discharge without payment.
             </div>
+          ` : orderedByNurse ? `
+            <div class="discharge-notice">
+              <strong>👩‍⚕️ NURSE REVIEW:</strong> Patient will be sent back to nurse for review of lab results and next steps.
+            </div>
           ` : `
             <div class="discharge-notice">
               <strong>👨‍⚕️ DOCTOR REVIEW:</strong> Patient will be sent back to doctor for review of lab results.
@@ -403,7 +410,7 @@ export default function LabDashboard() {
           <div class="footer">
             <p><strong>Performed by:</strong> Lab Technician</p>
             <p><strong>Report generated:</strong> ${format(new Date(), 'MMM dd, yyyy HH:mm')}</p>
-            <p><strong>Status:</strong> ${goingToBilling ? 'PENDING BILLING (MANDATORY)' : 'SENT TO DOCTOR FOR REVIEW'}</p>
+            <p><strong>Status:</strong> ${goingToBilling ? 'PENDING BILLING (MANDATORY)' : orderedByNurse ? 'SENT TO NURSE FOR REVIEW' : 'SENT TO DOCTOR FOR REVIEW'}</p>
           </div>
 
         </div>
@@ -576,11 +583,13 @@ export default function LabDashboard() {
         const visitId = visit.id;
         console.log('✏️  Updating visit:', visitId);
         
-        // NEW WORKFLOW: ALL patients must go to billing first (no direct discharge from lab)
-        // 1. Doctor ordered tests → Send back to doctor for review first
-        // 2. All other cases (nurse ordered, direct lab, etc.) → Send to billing for payment
+        // IMPROVED WORKFLOW: Determine where to send patient based on who ordered the tests
+        // 1. Doctor ordered tests → Send back to doctor for review
+        // 2. Nurse ordered tests → Send back to nurse for next steps
+        // 3. Direct lab orders → Send to billing
         
         const orderedByDoctor = visit.doctor_status !== 'Not Required' && visit.doctor_id;
+        const orderedByNurse = visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required';
         
         let updateData;
         if (orderedByDoctor) {
@@ -592,15 +601,24 @@ export default function LabDashboard() {
             doctor_status: 'Pending Review'
           };
           console.log('📤 Sending to DOCTOR for review (ordered by doctor):', updateData);
+        } else if (orderedByNurse) {
+          // Lab tests ordered by nurse → send back to nurse for next steps
+          updateData = {
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'nurse',
+            nurse_status: 'Pending Review' // Nurse needs to review lab results
+          };
+          console.log('📤 Sending back to NURSE for review (ordered by nurse):', updateData);
         } else {
-          // ALL other cases → send to billing (nurse ordered, direct lab, etc.)
+          // Direct lab orders or other cases → send to billing
           updateData = {
             lab_status: 'Completed',
             lab_completed_at: new Date().toISOString(),
             current_stage: 'billing',
             billing_status: 'Pending'
           };
-          console.log('📤 Sending to BILLING (mandatory payment):', updateData);
+          console.log('📤 Sending to BILLING (direct lab order):', updateData);
         }
         
         const response = await api.put(`/visits/${visitId}`, updateData);
@@ -609,9 +627,14 @@ export default function LabDashboard() {
         
         if (orderedByDoctor) {
           toast.success('Lab tests completed. Patient sent back to doctor for review.');
+        } else if (orderedByNurse) {
+          toast.success('Lab tests completed. Patient sent back to nurse for review.');
         } else {
           toast.success('Lab tests completed. Patient sent to billing for payment.');
         }
+        
+        // Refresh the lab dashboard to remove completed patient from queue
+        await fetchLabTests();
       } else {
         console.warn('⚠️  No active lab visit found, creating new visit for patient:', patientId);
         
@@ -643,6 +666,9 @@ export default function LabDashboard() {
           }
           
           toast.success('Lab results sent to doctor for review');
+          
+          // Refresh the lab dashboard
+          await fetchLabTests();
         } else {
           toast.warning('Could not create visit - no doctor assigned');
         }
@@ -1350,6 +1376,14 @@ export default function LabDashboard() {
                       try {
                         const patientId = selectedPatientTests[0]?.patient_id;
                         if (patientId) {
+                          // Check billing status before printing
+                          const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
+                          const canPrint = await checkBillingBeforePrint(patientId);
+                          
+                          if (!canPrint) {
+                            return; // Billing check failed, don't print
+                          }
+                          
                           const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
                           const visit = data.visits?.[0];
                           const patient = selectedPatientTests[0]?.patient;

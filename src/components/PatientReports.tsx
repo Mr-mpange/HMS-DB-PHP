@@ -217,11 +217,24 @@ export default function PatientReports() {
     fetchPatientHistory(patient.id);
   };
 
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!selectedPatient || !patientHistory) {
       toast.error('Please select a patient first');
       return;
     }
+
+    // Check billing status before printing
+    try {
+      const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
+      const canPrint = await checkBillingBeforePrint(selectedPatient.id);
+      
+      if (!canPrint) {
+        return; // Billing check failed, don't print
+      }
+    } catch (error) {
+      console.error('Error checking billing status:', error);
+      toast.error('Unable to verify billing status');
+   
     
     // Get the patient report content
     const patientPrint = document.getElementById('patient-report-print');

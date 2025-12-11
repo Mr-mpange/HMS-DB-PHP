@@ -12,7 +12,7 @@ import api from '@/lib/api';
 import { fetchWithCache, invalidateCache } from '@/lib/cache';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye, Stethoscope, TestTube } from 'lucide-react';
+import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye, Stethoscope, TestTube, FileText } from 'lucide-react';
 import { format, isAfter, isToday, parseISO, isBefore, addMinutes, addDays } from 'date-fns';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn, logActivity } from '@/lib/utils';
@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatInTimeZone } from 'date-fns-tz';
+import { PatientMedicalHistory } from '@/components/PatientMedicalHistory';
 
 interface LabTestResult {
   id: string;
@@ -81,6 +82,16 @@ export default function DoctorDashboard() {
   const [selectedLabTests, setSelectedLabTests] = useState<LabTestResult[]>([]);
   const [selectedPrescriptions, setSelectedPrescriptions] = useState<Prescription[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // Medical history dialog state
+  const [showMedicalHistory, setShowMedicalHistory] = useState(false);
+  const [selectedPatientForHistory, setSelectedPatientForHistory] = useState<any>(null);
+  
+  // Patient search state
+  const [showPatientSearch, setShowPatientSearch] = useState(false);
+  const [patientSearchTerm, setPatientSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   
   // New dialog states for consultation, lab tests, and prescriptions
   const [showConsultationDialog, setShowConsultationDialog] = useState(false);
@@ -1024,6 +1035,27 @@ export default function DoctorDashboard() {
     );
     setSelectedPrescriptions(uniquePrescriptions);
     setShowPrescriptions(true);
+  };
+
+  // Handler for searching patients
+  const searchPatients = async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const response = await api.get(`/patients?search=${encodeURIComponent(searchTerm)}&limit=20`);
+      const patients = response.data.patients || [];
+      setSearchResults(patients);
+    } catch (error) {
+      console.error('Error searching patients:', error);
+      toast.error('Failed to search patients');
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
   };
 
   // Handler for starting consultation
@@ -2064,6 +2096,121 @@ export default function DoctorDashboard() {
           </Card>
         </div>
 
+        {/* Patient History Search */}
+        <Card className="shadow-lg border-purple-200 bg-purple-50/30">
+          <CardHeader className="bg-purple-100/50">
+            <CardTitle className="flex items-center gap-2 text-purple-800">
+              <FileText className="h-5 w-5" />
+              Patient History Search
+            </CardTitle>
+            <CardDescription>Search and view medical history for any patient</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Search by name, phone, or ID..."
+                value={patientSearchTerm}
+                onChange={(e) => {
+                  setPatientSearchTerm(e.target.value);
+                  if (e.target.value.length >= 2) {
+                    searchPatients(e.target.value);
+                  } else {
+                    setSearchResults([]);
+                  }
+                }}
+                className="flex-1"
+              />
+              <Button
+                variant="outline"
+                onClick={() => searchPatients(patientSearchTerm)}
+                disabled={searchLoading || patientSearchTerm.length < 2}
+              >
+                {searchLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+                Search
+              </Button>
+            </div>
+
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <div className="border rounded-lg overflow-hidden bg-white">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Age/Gender</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {searchResults.map((patient) => {
+                      const age = patient.date_of_birth 
+                        ? new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()
+                        : 'N/A';
+                      
+                      return (
+                        <TableRow key={patient.id} className="hover:bg-purple-50/50">
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{patient.full_name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                ID: {patient.id.slice(0, 8)}...
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>{patient.phone}</TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {age} yrs / {patient.gender}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedPatientForHistory(patient);
+                                setShowMedicalHistory(true);
+                                setPatientSearchTerm('');
+                                setSearchResults([]);
+                              }}
+                              className="flex items-center gap-1 text-purple-600 border-purple-200 hover:bg-purple-50"
+                            >
+                              <FileText className="h-3 w-3" />
+                              View History
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {/* Search Instructions */}
+            {patientSearchTerm.length === 0 && (
+              <div className="text-center py-4 text-muted-foreground text-sm">
+                <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>Enter patient name, phone number, or ID to search</p>
+                <p className="text-xs mt-1">Minimum 2 characters required</p>
+              </div>
+            )}
+
+            {/* No Results */}
+            {patientSearchTerm.length >= 2 && searchResults.length === 0 && !searchLoading && (
+              <div className="text-center py-4 text-muted-foreground text-sm">
+                <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No patients found matching "{patientSearchTerm}"</p>
+                <p className="text-xs mt-1">Try a different search term</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Lab Results Modal */}
         <Dialog open={showLabResults} onOpenChange={setShowLabResults}>
@@ -2749,6 +2896,21 @@ export default function DoctorDashboard() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        {/* Medical History Button */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedPatientForHistory(visit.patient);
+                            setShowMedicalHistory(true);
+                          }}
+                          className="flex items-center gap-1 text-purple-600 border-purple-200 hover:bg-purple-50"
+                          title="View complete medical history"
+                        >
+                          <FileText className="h-3 w-3" />
+                          History
+                        </Button>
+                        
                         {hasLabResults && visit.lab_completed_at && (
                           <Button
                             variant="outline"
@@ -3075,6 +3237,7 @@ export default function DoctorDashboard() {
                         <TableHead>Visit Time</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Stage</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -3944,6 +4107,12 @@ export default function DoctorDashboard() {
         visit={selectedVisitForForm}
         onSubmit={handleServiceFormSubmit}
         submitting={formSubmitting}
+      />
+      {/* Medical History Dialog */}
+      <PatientMedicalHistory
+        open={showMedicalHistory}
+        onOpenChange={setShowMedicalHistory}
+        patient={selectedPatientForHistory}
       />
     </DashboardLayout>
   );

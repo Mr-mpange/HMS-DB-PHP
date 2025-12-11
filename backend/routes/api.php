@@ -144,23 +144,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/patients/{id}', [PatientController::class, 'update']);
     Route::delete('/patients/{id}', [PatientController::class, 'destroy']);
     
-    // Patient Search
-    Route::get('/patients/search', function(Request $request) {
-        $query = \App\Models\Patient::query();
-        
-        if ($request->has('query')) {
-            $searchTerm = $request->query;
-            $query->where(function($q) use ($searchTerm) {
-                $q->where('full_name', 'like', '%' . $searchTerm . '%')
-                  ->orWhere('phone', 'like', '%' . $searchTerm . '%')
-                  ->orWhere('email', 'like', '%' . $searchTerm . '%');
-            });
-        }
-        
-        $patients = $query->limit(20)->get();
-        return response()->json(['patients' => $patients]);
-    });
-    
     // Appointments
     Route::get('/appointments', [AppointmentController::class, 'index']);
     Route::get('/appointments/{id}', [AppointmentController::class, 'show']);
