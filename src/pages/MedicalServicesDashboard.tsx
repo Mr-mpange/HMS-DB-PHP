@@ -25,6 +25,7 @@ import {
 
 const SERVICE_TYPES = [
   'Consultation',
+  'Laboratory',
   'Procedure',
   'Test',
   'Therapy',
@@ -73,6 +74,7 @@ export default function MedicalServicesDashboard() {
 
   const serviceTypes = [
     'Consultation',
+    'Laboratory',
     'Procedure',
     'Surgery',
     'Emergency',
@@ -259,6 +261,7 @@ export default function MedicalServicesDashboard() {
   const generateServiceCode = () => {
     const type = newService.service_type;
     const prefix = type === 'Consultation' ? 'CONS' :
+                   type === 'Laboratory' ? 'LAB' :
                    type === 'Procedure' ? 'PROC' :
                    type === 'Surgery' ? 'SURG' :
                    type === 'Emergency' ? 'EMER' :
@@ -508,7 +511,7 @@ export default function MedicalServicesDashboard() {
                       id="service_code"
                       value={newService.service_code}
                       onChange={(e) => setNewService(prev => ({ ...prev, service_code: e.target.value }))}
-                      placeholder="CONS-001"
+                      placeholder="LAB-001, CONS-001, PROC-001"
                     />
                     <Button type="button" variant="outline" size="sm" onClick={generateServiceCode}>
                       Auto
@@ -595,7 +598,7 @@ export default function MedicalServicesDashboard() {
                       id="edit_service_code"
                       value={editingService.service_code}
                       onChange={(e) => setEditingService(prev => prev ? { ...prev, service_code: e.target.value } : null)}
-                      placeholder="CONS-001"
+                      placeholder="LAB-001, CONS-001, PROC-001"
                     />
                   </div>
                 </div>

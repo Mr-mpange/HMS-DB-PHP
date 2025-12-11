@@ -234,7 +234,8 @@ export default function PatientReports() {
     } catch (error) {
       console.error('Error checking billing status:', error);
       toast.error('Unable to verify billing status');
-   
+      return;
+    }
     
     // Get the patient report content
     const patientPrint = document.getElementById('patient-report-print');
