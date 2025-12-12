@@ -2540,10 +2540,7 @@ export default function NurseDashboard() {
               Lab Test Results - {selectedVisitForResults?.patient?.full_name}
             </DialogTitle>
             <DialogDescription>
-              {selectedVisitForResults?.visit_type === 'Lab Only' 
-                ? 'Lab tests ordered by nurse - Review results and acknowledge completion'
-                : 'Lab tests ordered by nurse - Review and print results for the patient'
-              }
+              Lab test results completed - Review results and send patient to billing for payment
             </DialogDescription>
           </DialogHeader>
 
@@ -2699,68 +2696,68 @@ export default function NurseDashboard() {
               Cancel
             </Button>
             
-            {/* Only show print and billing options for non-nurse workflows */}
-            {selectedVisitForResults?.visit_type !== 'Lab Only' && (
-              <>
-
-                <Button
-                  className="flex-1"
-                  onClick={async () => {
-                    try {
-                      // Update visit to send to billing
-                      await api.put(`/visits/${selectedVisitForResults.id}`, {
-                        current_stage: 'billing',
-                        billing_status: 'Pending',
-                        nurse_report_printed_at: new Date().toISOString()
-                      });
-                      toast.success('Patient sent to billing.');
-                      setShowLabResultsDialog(false);
-                      setLabResultsReady(prev => prev.filter(v => v.id !== selectedVisitForResults.id));
-                      setSelectedVisitForResults(null);
-                      setLabTestResults([]);
-                    } catch (error) {
-                      toast.error('Failed to send patient to billing');
+            {/* All patients must go to billing - no free results */}
+            <Button
+              className="flex-1"
+              onClick={async () => {
+                try {
+                  // Create billing entries for completed lab tests
+                  if (labTestResults && labTestResults.length > 0) {
+                    for (const test of labTestResults) {
+                      try {
+                        // Find the corresponding medical service for this lab test
+                        const servicesRes = await api.get('/labs/services');
+                        const services = servicesRes.data.services || [];
+                        const matchingService = services.find(s => 
+                          s.service_name === test.test_name || 
+                          s.service_name.includes(test.test_name) ||
+                          test.test_name.includes(s.service_name)
+                        );
+                        
+                        if (matchingService) {
+                          // Create patient-service entry for billing
+                          await api.post('/patient-services', {
+                            patient_id: selectedVisitForResults.patient_id,
+                            service_id: matchingService.id,
+                            quantity: 1,
+                            unit_price: matchingService.base_price,
+                            total_price: matchingService.base_price,
+                            service_date: new Date().toISOString().split('T')[0],
+                            status: 'Pending',
+                            notes: `Lab test: ${test.test_name} - completed and reviewed by nurse`
+                          });
+                          
+                          console.log(`✅ Added ${test.test_name} (TSh ${matchingService.base_price}) to patient bill`);
+                        }
+                      } catch (billingError) {
+                        console.error('Error adding lab test to billing:', billingError);
+                        // Continue with other tests
+                      }
                     }
-                  }}
-                >
-                  Send to Billing
-                </Button>
-              </>
-            )}
-            
-            {/* For nurse-ordered tests (Lab Only), just show a close/acknowledge button */}
-            {selectedVisitForResults?.visit_type === 'Lab Only' && (
-              <Button
-                className="flex-1"
-                onClick={async () => {
-                  try {
-                    // Update visit to complete the nurse workflow
-                    await api.put(`/visits/${selectedVisitForResults.id}`, {
-                      nurse_status: 'Completed',
-                      current_stage: 'completed',
-                      overall_status: 'Completed',
-                      discharge_time: new Date().toISOString(),
-                      discharge_notes: 'Nurse-ordered lab tests completed and reviewed'
-                    });
-                    
-                    toast.success('Lab results reviewed. Patient workflow completed.');
-                    setShowLabResultsDialog(false);
-                    setLabResultsReady(prev => prev.filter(v => v.id !== selectedVisitForResults.id));
-                    setSelectedVisitForResults(null);
-                    setLabTestResults([]);
-                    
-                    // Refresh the nurse dashboard to remove completed visit
-                    fetchData();
-                  } catch (error) {
-                    console.error('Error completing nurse workflow:', error);
-                    toast.error('Failed to complete workflow');
                   }
-                }}
-              >
-                <CheckCircle className="h-4 w-4 mr-2" />
-                Acknowledge Results
-              </Button>
-            )}
+                  
+                  // Update visit to send to billing - ALL patients must pay
+                  await api.put(`/visits/${selectedVisitForResults.id}`, {
+                    current_stage: 'billing',
+                    billing_status: 'Pending',
+                    nurse_status: 'Completed',
+                    nurse_completed_at: new Date().toISOString(),
+                    notes: (selectedVisitForResults.notes || '') + ' | Lab results reviewed by nurse - sent to billing for payment'
+                  });
+                  
+                  toast.success('Lab services added to bill. Patient sent to billing for payment.');
+                  setShowLabResultsDialog(false);
+                  setLabResultsReady(prev => prev.filter(v => v.id !== selectedVisitForResults.id));
+                  setSelectedVisitForResults(null);
+                  setLabTestResults([]);
+                } catch (error) {
+                  console.error('Error sending to billing:', error);
+                  toast.error('Failed to send patient to billing');
+                }
+              }}
+            >
+              Send to Billing
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
