@@ -2926,15 +2926,7 @@ export default function BillingDashboard() {
                         : 'No patients waiting for billing'}
                     </CardDescription>
                   </div>
-                  <Button
-                    onClick={printPendingInvoicesReport}
-                    variant="outline"
-                    size="sm"
-                    disabled={billingVisits.length === 0}
-                  >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print Report
-                  </Button>
+
                 </div>
               </CardHeader>
               <CardContent>
@@ -3114,15 +3106,7 @@ export default function BillingDashboard() {
                     <CardTitle>Paid Invoices</CardTitle>
                     <CardDescription>All fully paid invoices including Quick Service payments</CardDescription>
                   </div>
-                  <Button
-                    onClick={printPaidInvoicesReport}
-                    variant="outline"
-                    size="sm"
-                    disabled={invoices.filter(p => p.status === 'Paid').length === 0}
-                  >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print Report
-                  </Button>
+
                 </div>
               </CardHeader>
               <CardContent>
@@ -3214,15 +3198,7 @@ export default function BillingDashboard() {
                       All payments received today - {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     </CardDescription>
                   </div>
-                  <Button
-                    onClick={printTodaysPaymentsReport}
-                    variant="outline"
-                    size="sm"
-                    disabled={rawPaymentsData.length === 0}
-                  >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print Report
-                  </Button>
+
                 </div>
               </CardHeader>
               <CardContent>
@@ -3362,15 +3338,7 @@ export default function BillingDashboard() {
                     <CardDescription>Submit and track NHIF claims</CardDescription>
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      onClick={printInsuranceClaimsReport}
-                      variant="outline"
-                      size="sm"
-                      disabled={insuranceClaims.length === 0}
-                    >
-                      <Printer className="h-4 w-4 mr-2" />
-                      Print Report
-                    </Button>
+
                     <Button onClick={() => setClaimDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
                       <Plus className="mr-2 h-4 w-4" />
                       Submit New Claim

@@ -2896,20 +2896,7 @@ export default function DoctorDashboard() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        {/* Medical History Button */}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedPatientForHistory(visit.patient);
-                            setShowMedicalHistory(true);
-                          }}
-                          className="flex items-center gap-1 text-purple-600 border-purple-200 hover:bg-purple-50"
-                          title="View complete medical history"
-                        >
-                          <FileText className="h-3 w-3" />
-                          History
-                        </Button>
+
                         
                         {hasLabResults && visit.lab_completed_at && (
                           <Button
