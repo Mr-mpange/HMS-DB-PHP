@@ -1067,8 +1067,16 @@ export default function ReceptionistDashboard() {
 
         if (nextStage === 'nurse') {
           visitData['nurse_status'] = nextStatus;
+          visitData['doctor_status'] = 'Not Required';
+          visitData['pharmacy_status'] = 'Not Required';
+          visitData['lab_status'] = 'Pending';
+          visitData['billing_status'] = 'Not Required';
         } else if (nextStage === 'pharmacy') {
           visitData['pharmacy_status'] = nextStatus;
+          visitData['doctor_status'] = 'Not Required';
+          visitData['nurse_status'] = 'Not Required';
+          visitData['lab_status'] = 'Not Required';
+          visitData['billing_status'] = 'Pending';
         }
 
         await api.post('/visits', visitData);
@@ -3235,11 +3243,16 @@ export default function ReceptionistDashboard() {
                             const visitData = {
                               patient_id: patient.id,
                               visit_date: new Date().toISOString().split('T')[0],
+                              visit_type: 'Pharmacy Only',
                               status: 'Active',
                               current_stage: 'pharmacy',
                               reception_status: 'Checked In',
                               reception_completed_at: new Date().toISOString(),
+                              doctor_status: 'Not Required',
+                              nurse_status: 'Not Required',
+                              lab_status: 'Not Required',
                               pharmacy_status: 'Pending',
+                              billing_status: 'Pending',
                               overall_status: 'Active',
                               notes: 'Direct to pharmacy - prescription to be created by pharmacy staff'
                             };
@@ -3339,11 +3352,16 @@ export default function ReceptionistDashboard() {
                       const visitData = {
                         patient_id: newPatient.id,
                         visit_date: new Date().toISOString().split('T')[0],
+                        visit_type: 'Pharmacy Only',
                         status: 'Active',
                         current_stage: 'pharmacy',
                         reception_status: 'Checked In',
                         reception_completed_at: new Date().toISOString(),
+                        doctor_status: 'Not Required',
+                        nurse_status: 'Not Required',
+                        lab_status: 'Not Required',
                         pharmacy_status: 'Pending',
+                        billing_status: 'Pending',
                         overall_status: 'Active',
                         notes: 'Direct to pharmacy - prescription to be created by pharmacy staff'
                       };
