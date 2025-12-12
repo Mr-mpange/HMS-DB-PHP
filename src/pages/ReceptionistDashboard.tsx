@@ -985,7 +985,7 @@ export default function ReceptionistDashboard() {
     try {
       // Check if patient already has an active visit TODAY
       const today = new Date().toISOString().split('T')[0];
-      const visitsRes = await api.get(`/visits?patient_id=${patient.id}&status=Active&from=${today}&to=${today}&limit=1`);
+      const visitsRes = await api.get(`/visits?patient_id=${patient.id}&overall_status=Active&from=${today}&to=${today}&limit=1`);
       if (visitsRes.status !== 200 || visitsRes.data.error) {
         throw new Error(visitsRes.data.error || 'Failed to check existing visits');
       }

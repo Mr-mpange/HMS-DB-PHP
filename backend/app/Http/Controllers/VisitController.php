@@ -64,6 +64,15 @@ class VisitController extends Controller
             $query->where('billing_status', $request->billing_status);
         }
 
+        // Date range filters
+        if ($request->has('from')) {
+            $query->whereDate('visit_date', '>=', $request->from);
+        }
+
+        if ($request->has('to')) {
+            $query->whereDate('visit_date', '<=', $request->to);
+        }
+
         $visits = $query->orderBy('visit_date', 'desc')
                        ->paginate($request->get('limit', 50));
 
