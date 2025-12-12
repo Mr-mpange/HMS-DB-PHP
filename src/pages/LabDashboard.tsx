@@ -34,13 +34,6 @@ export default function LabDashboard() {
     priority: 'Routine',
     notes: ''
   });
-  
-  // Patient search for adding tests to existing patients
-  const [showPatientSearchDialog, setShowPatientSearchDialog] = useState(false);
-  const [patientSearchTerm, setPatientSearchTerm] = useState('');
-  const [patientSearchResults, setPatientSearchResults] = useState<any[]>([]);
-  const [selectedPatientForTests, setSelectedPatientForTests] = useState<any>(null);
-  const [searchingPatients, setSearchingPatients] = useState(false);
 
   useEffect(() => {
     fetchData(true); // Initial load with loading screen
@@ -53,36 +46,6 @@ export default function LabDashboard() {
       clearInterval(interval);
     };
   }, []);
-
-  // Search for existing patients
-  const searchPatients = async (query: string) => {
-    if (!query.trim()) {
-      setPatientSearchResults([]);
-      return;
-    }
-
-    setSearchingPatients(true);
-    try {
-      const response = await api.get(`/patients?search=${encodeURIComponent(query)}&limit=10`);
-      setPatientSearchResults(response.data.patients || []);
-    } catch (error) {
-      console.error('Error searching patients:', error);
-      setPatientSearchResults([]);
-    } finally {
-      setSearchingPatients(false);
-    }
-  };
-
-  // Patient search effect with debouncing
-  useEffect(() => {
-    if (!showPatientSearchDialog) return;
-    
-    const timeoutId = setTimeout(() => {
-      searchPatients(patientSearchTerm);
-    }, 300);
-
-    return () => clearTimeout(timeoutId);
-  }, [patientSearchTerm, showPatientSearchDialog]);
 
   const fetchLabTestServices = async () => {
     try {
@@ -895,8 +858,8 @@ export default function LabDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {/* Search Bar and Add Patient Tests Button */}
-            <div className="mb-4 flex gap-4 items-center">
+            {/* Search Bar */}
+            <div className="mb-4">
               <Input
                 type="text"
                 placeholder="Search by patient name, phone, or test name..."
@@ -904,18 +867,6 @@ export default function LabDashboard() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="max-w-md"
               />
-              <Button
-                onClick={() => {
-                  setShowPatientSearchDialog(true);
-                  setPatientSearchTerm('');
-                  setPatientSearchResults([]);
-                  setSelectedPatientForTests(null);
-                }}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                <FlaskConical className="h-4 w-4 mr-2" />
-                Add Tests for Existing Patient
-              </Button>
             </div>
             <div className="border rounded-lg overflow-hidden">
               <Table>
@@ -1574,217 +1525,7 @@ export default function LabDashboard() {
             </div>
           </DialogContent>
         </Dialog>
-
-        {/* Patient Search Dialog for Adding Tests */}
-        <Dialog open={showPatientSearchDialog} onOpenChange={setShowPatientSearchDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FlaskConical className="h-5 w-5" />
-                Add Lab Tests for Existing Patient
-              </DialogTitle>
-              <DialogDescription>
-                Search for an existing patient to add lab tests
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              {!selectedPatientForTests ? (
-                <>
-                  <div>
-                    <Label htmlFor="patient-search">Search Patient</Label>
-                    <Input
-                      id="patient-search"
-                      placeholder="Enter patient name or phone number..."
-                      value={patientSearchTerm}
-                      onChange={(e) => setPatientSearchTerm(e.target.value)}
-                      autoFocus
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Start typing to search for existing patients
-                    </p>
-                  </div>
-
-                  <div className="max-h-60 overflow-y-auto">
-                    {searchingPatients ? (
-                      <div className="text-center py-8">
-                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                        <p className="text-muted-foreground">Searching patients...</p>
-                      </div>
-                    ) : patientSearchResults.length === 0 ? (
-                      <p className="text-center text-muted-foreground py-8">
-                        {patientSearchTerm ? 'No patients found' : 'Enter search term to find patients'}
-                      </p>
-                    ) : (
-                      <div className="space-y-2">
-                        {patientSearchResults.map((patient) => (
-                          <Card key={patient.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setSelectedPatientForTests(patient)}>
-                            <CardContent className="p-4">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <h4 className="font-medium">{patient.full_name}</h4>
-                                  <p className="text-sm text-muted-foreground">Phone: {patient.phone}</p>
-                                  <p className="text-sm text-muted-foreground">
-                                    DOB: {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM dd, yyyy') : 'N/A'}
-                                  </p>
-                                </div>
-                                <Button size="sm" variant="outline">
-                                  Select
-                                </Button>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <4>
-} );
-yout>
- DashboardLa>
-    </div </   
-  og> </Dial
-       ogContent>  </Dial
-        v>di     </       )}
-       on>
-             </Butt
-          ab Testd L   Ad               >
-              n-700"
-  bg-gree-600 hover:enbg-greclassName="                       }}
-               }
-            ;
-       test')o add labiled tror || 'Fa?.erse?.dataonespror(error.r toast.er                     );
-', errorest:lab trror adding 'Er(roer console.                     r: any) {
- catch (erro        }              });
-               : ''
-     otes      n             ine',
-     rity: 'Rout  prio                    
-  ratory',abost_type: 'L      te                  '',
- ame:   test_n               ta({
-      stDa  setNewTe           ;
-         s([])SearchResultPatient       set               '');
-Term(atientSearchsetP              
-        s(null);ntForTestatieetSelectedP   s          ;
-         alog(false)earchDiatientSsetShowP             t
-         d reseialog an// Close d                          
-          
-        ta(false);tchDa   await fe                  esh data
-      // Refr               
-                  );
-      _name}`orTests.fulldPatientFor ${selecte f addedme}"ta.test_naTestDanew "${(`Lab test.success       toast                }
-
-                 rn;
-           retu            r);
-     ata.erroe.dresponsrror(  toast.e                      
-error) {data.e.spons    if (re             
-
-        });                   ing()
-SOStr.toIte()d_at: new Da    ordere              ed',
-      : 'Order      status                  tes,
-wTestData.no  notes: ne               ,
-       tyta.prioriy: newTestDaiorit      pr            
-      pe,.test_tytData newTes_type:   test                   _name,
-  stTestData.teme: new   test_na                     s.id,
-rTesttFoectedPatien_id: selatient           p      {
-        ',t('/labsposit api.awaresponse = t  cons                       try {
-           
-
-                }      rn;
-     retu                e');
-      test namelect a Please sror('   toast.er                   _name) {
-.testtData(!newTes if                    nc () => {
-{asyck=nCli      o          <Button
-                  Tests && (
-ordPatientF    {selecte         ton>
-   </But         ncel
-            Ca>
-                    
-          }}        });
-      
-           ''notes:                   ',
-  utine'Rority: rio          p
-          atory','Labortype:        test_            : '',
- namest_   te          
-       wTestData({setNe           );
-       hResults([]atientSearc       setP      
-     chTerm('');tPatientSear    se            );
-  (nulltForTestsienctedPat   setSele          
-     ;og(false)ialtientSearchDShowPa   set          > {
-     ) =  onClick={(        
-      ne"nt="outli      varia         utton
-    <B           4">
-t-nd gap-2 pfy-estime="flex juv classNa        <di
-       </div>
-      }
-    )                    </>
-
-         iv>         </d     iv>
-            </d            
-         />             rows={3}
-                        lue })}
-.target.vata, notes: ewTestDa{ ...neta(TestDa setNewnge={(e) =>ha        onC            es}
-    ta.notnewTestDa     value={              
-     otes..."or ntructions ial ins="Any specder  placehol                     -notes"
- est"new-t   id=                 
-    Textarea <                     bel>
-onal)</Laotes (Optist-notes">N"new-temlFor=el ht        <Lab          
-    e-y-2">spacName="ss cladiv  <            v>
-
-            </di    
-             </Select>               ntent>
-    /SelectCo <                    >
-   emlectItTAT</Se"STAT">Stem value=tIelec    <S                 
-     ctItem>/Selet">Urgent<e="Urgenem valuectItSel  <                     tem>
-   ine</SelectIine">Routlue="RoutectItem va<Sel                          t>
-ectContenel        <S           r>
-     lectTrigge     </Se                 />
-   electValue  <S                     y">
-   ritew-test-prioger id="ntTrig   <Selec                 
-         >        
-          })}lueriority: vaa, pTestDat..newData({ .NewTeste) => setvalulueChange={( onVa                      rity}
- ta.prioestDae={newT  valu                    t
-  elec    <S                l>
-  ty</Labe>Prioriy"itt-prior="new-tesl htmlFor <Labe                 2">
-    ace-y-"spme=v classNa<di                  
-  v>
-        </di        t>
-    /Selec       <               ctContent>
-     </Sele                   }
-      ))                   lectItem>
-     </Se                     N/A'}
-   () || 'LocaleString?.to_pricece.base {servime} - TShe_na.servicrvice    {se                       me}>
-   service_nace.alue={servie.id} v key={serviclectItem        <Se                   
- ce) => (viers.map((servicetSlabTes           {               >
-ctContent    <Sele                  Trigger>
-   </Select                   " />
-    est a lab t"Selectlder= placehoue<SelectVal                    >
-      t-name"="new-testTrigger idelec    <S                   
-       >           }
-     lue })t_name: vaa, tesDat.newTestata({ ..NewTestD> setvalue) =={(nValueChange      o            e}
-      ata.test_nam{newTestDvalue=              
-             <Select              abel>
-     Name *</L">Test -test-name="newtmlForl habe    <L            >
-      y-2"e-="spaciv className         <d             
-                  
-ests</h4> Lab TAddmedium">e="font-sNam clas   <h4         
-        e-y-4">acssName="sp   <div cla              /div>
-
-            <>
-             </div        n>
-      /Butto         <          Change
-                        >
-                         lue-700"
-hover:text-bt-blue-600 texName="      class              ll)}
-    ests(nuentForTectedPatiSel => setck={()  onCli             
-         ="ghost"    variant               
-       e="sm"         siz             ton 
-     <But                  
-    </div>                p>
-   .phone}</ForTestsPatient: {selected">Phone00lue-6m text-btext-same="p classN      <            /p>
-      ll_name}<orTests.fuedPatientFlectue-700">{seblame="text- classN    <p                    d Patient</h">Selecte0ext-blue-90um tfont-medi"me= classNah4
+      </div>
+    </DashboardLayout>
+  );
+}
