@@ -16,7 +16,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 import { DispenseDialog } from '@/components/DispenseDialog';
 import api from '@/lib/api';
-import { Printer } from 'lucide-react';
+
 
 interface Medication {
   id: string;
@@ -510,29 +510,72 @@ export default function PharmacyDashboard() {
       // This allows billing to create ONE invoice with all services (lab tests + medications)
       try {
         console.log('Adding medications to patient services for billing...');
+        console.log('Patient ID:', patientId);
+        console.log('Medication details:', medicationDetails);
+        
+        // Validate patient ID format (should be UUID)
+        if (!patientId || typeof patientId !== 'string') {
+          throw new Error('Invalid patient ID: ' + patientId);
+        }
         
         for (const medDetail of medicationDetails) {
-          await api.post('/patient-services', {
+          // Validate medication data
+          if (!medDetail.name) {
+            console.warn('Skipping medication with no name:', medDetail);
+            continue;
+          }
+          
+          if (!medDetail.prescribed_quantity || isNaN(parseInt(medDetail.prescribed_quantity))) {
+            console.warn('Invalid quantity for medication:', medDetail.name, medDetail.prescribed_quantity);
+            continue;
+          }
+          
+          if (isNaN(parseFloat(medDetail.unit_price))) {
+            console.warn('Invalid unit price for medication:', medDetail.name, medDetail.unit_price);
+            continue;
+          }
+          
+          // Validate data before sending
+          const serviceData = {
             patient_id: patientId,
             service_id: null, // Medications don't have a service_id
-            service_name: `${medDetail.name} - ${medDetail.prescribed_dosage}`,
-            quantity: medDetail.prescribed_quantity,
-            unit_price: medDetail.unit_price || 0,
-            total_price: (medDetail.unit_price || 0) * medDetail.prescribed_quantity,
+            service_name: medDetail.name + ' - ' + medDetail.prescribed_dosage,
+            quantity: parseInt(medDetail.prescribed_quantity) || 1,
+            unit_price: parseFloat(medDetail.unit_price) || 0,
+            total_price: (parseFloat(medDetail.unit_price) || 0) * (parseInt(medDetail.prescribed_quantity) || 1),
             service_date: new Date().toISOString().split('T')[0],
             status: 'Completed',
-            notes: `Medication: ${medDetail.prescribed_frequency}${medDetail.prescribed_instructions ? '. ' + medDetail.prescribed_instructions : ''}`
-          });
+            notes: 'Medication: ' + medDetail.prescribed_frequency + (medDetail.prescribed_instructions ? '. ' + medDetail.prescribed_instructions : '')
+          };
           
-          console.log(`✅ Added ${medDetail.name} (TSh ${medDetail.unit_price * medDetail.prescribed_quantity}) to patient services`);
+          console.log('Sending patient service data:', serviceData);
+          
+          await api.post('/patient-services', serviceData);
+          
+          console.log('✅ Added ' + medDetail.name + ' (TSh ' + (medDetail.unit_price * medDetail.prescribed_quantity) + ') to patient services');
         }
       } catch (error: any) {
         console.error('❌ Error adding medications to patient services:', error);
-        const errorMsg = error.response?.data?.details || error.response?.data?.error || error.message;
-        toast.error(`Failed to add medications to billing: ${errorMsg}`);
+        console.error('Error response:', error.response?.data);
+        
+        let errorMsg = 'Unknown error';
+        if (error.response?.data?.errors) {
+          // Laravel validation errors
+          const validationErrors = Object.values(error.response.data.errors).flat();
+          errorMsg = validationErrors.join(', ');
+        } else if (error.response?.data?.message) {
+          errorMsg = error.response.data.message;
+        } else if (error.response?.data?.error) {
+          errorMsg = error.response.data.error;
+        } else if (error.message) {
+          errorMsg = error.message;
+        }
+        
+        toast.error('Failed to add medications to billing: ' + errorMsg);
         await logActivity('pharmacy.dispense.error', { 
           error: 'Failed to add medications to patient services',
           details: errorMsg,
+          fullError: error.response?.data,
           response: error.response?.data
         });
         return; // STOP HERE if adding to services fails
@@ -1004,122 +1047,7 @@ export default function PharmacyDashboard() {
     }
   };
 
-  const handlePrintLowStock = () => {
-    const lowStockMeds = medications.filter(m => 
-      (m.stock_quantity || m.quantity_in_stock || 0) <= m.reorder_level
-    );
 
-    if (lowStockMeds.length === 0) {
-      toast.info('No low stock items to print');
-      return;
-    }
-
-    // Create print content and inject into page (NO POPUP!)
-    const printContent = `
-      <div id="pharmacy-report-print" style="display: none;">
-        <style>
-          @media print {
-            body * { visibility: hidden; }
-            #pharmacy-report-print, #pharmacy-report-print * { visibility: visible; }
-            #pharmacy-report-print { position: absolute; left: 0; top: 0; width: 100%; }
-          }
-        </style>
-        <div class="print-content">
-          <div class="header">
-            <h1>🚨 Low Stock Inventory Report</h1>
-            <p>Generated: ${format(new Date(), 'PPpp')}</p>
-            <p>Generated by: ${user?.name || 'Pharmacist'}</p>
-          </div>
-          <style>
-          body { font-family: Arial, sans-serif; padding: 20px; }
-          h1 { color: #dc2626; border-bottom: 2px solid #dc2626; padding-bottom: 10px; }
-          .header { margin-bottom: 20px; }
-          .date { color: #666; font-size: 14px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-          th { background-color: #fee2e2; color: #991b1b; font-weight: bold; }
-          tr:nth-child(even) { background-color: #f9f9f9; }
-          .critical { background-color: #fef2f2 !important; }
-          .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
-          @media print {
-            button { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>🚨 Low Stock Inventory Report</h1>
-          <p class="date">Generated: ${format(new Date(), 'PPpp')}</p>
-          <p class="date">Generated by: ${user?.name || 'Pharmacist'}</p>
-        </div>
-        
-        <p><strong>Total Low Stock Items:</strong> ${lowStockMeds.length}</p>
-        
-        <table>
-          <thead>
-            <tr>
-              <th>Medication Name</th>
-              <th>Generic Name</th>
-              <th>Form</th>
-              <th>Strength</th>
-              <th>Current Stock</th>
-              <th>Reorder Level</th>
-              <th>Unit Price (TSh)</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${lowStockMeds.map(med => {
-              const stock = med.stock_quantity || med.quantity_in_stock || 0;
-              const isCritical = stock <= 5;
-              return `
-                <tr class="${isCritical ? 'critical' : ''}">
-                  <td><strong>${med.name}</strong></td>
-                  <td>${med.generic_name || 'Not specified'}</td>
-                  <td>${med.dosage_form || 'Tablet'}</td>
-                  <td>${med.strength || '-'}</td>
-                  <td><strong>${stock}</strong></td>
-                  <td>${med.reorder_level}</td>
-                  <td>${Number(med.unit_price || 0).toFixed(2)}</td>
-                  <td>${isCritical ? '🔴 CRITICAL' : '⚠️ Low'}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-        
-        <div class="footer">
-          <p>This report shows all medications with stock levels at or below their reorder level.</p>
-          <p>Critical items (≤5 units) are highlighted in red.</p>
-        </div>
-        </div>
-      </div>
-    `;
-
-    // Remove any existing print content
-    const existingPrint = document.getElementById('pharmacy-report-print');
-    if (existingPrint) {
-      existingPrint.remove();
-    }
-
-    // Add print content to page
-    document.body.insertAdjacentHTML('beforeend', printContent);
-
-    // Trigger print
-    setTimeout(() => {
-      window.print();
-      
-      // Clean up after printing
-      setTimeout(() => {
-        const printElement = document.getElementById('pharmacy-report-print');
-        if (printElement) {
-          printElement.remove();
-        }
-      }, 1000);
-    }, 100);
-    
-    toast.success('Print dialog opened');
-  };
 
   const createInvoiceFromPrescription = async (prescription: {
     id: string;
@@ -1322,17 +1250,7 @@ export default function PharmacyDashboard() {
               <p className="text-xs text-muted-foreground">
                 {stats.lowStock === 0 ? 'Stock levels good' : 'Below reorder level'}
               </p>
-              {stats.lowStock > 0 && (
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  className="mt-2 w-full text-xs"
-                  onClick={handlePrintLowStock}
-                >
-                  <Printer className="h-3 w-3 mr-1" />
-                  Print Report
-                </Button>
-              )}
+
             </CardContent>
           </Card>
 
