@@ -2861,7 +2861,7 @@ export default function AdminDashboard() {
                       type="email"
                       value={systemSettings.hospital_email}
                       onChange={(e) => setSystemSettings({...systemSettings, hospital_email: e.target.value})}
-                      placeholder="e.g., info@hasetmedical.com"
+                      placeholder="e.g., info@hospital.com"
                     />
                     <p className="text-xs text-muted-foreground">
                       Official email address for correspondence

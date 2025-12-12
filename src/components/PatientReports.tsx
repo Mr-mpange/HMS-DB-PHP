@@ -45,10 +45,10 @@ export default function PatientReports() {
   const [patientHistory, setPatientHistory] = useState<PatientHistory | null>(null);
   const [dateRange, setDateRange] = useState<{ from?: Date; to?: Date }>({});
   const [systemSettings, setSystemSettings] = useState({
-    hospital_name: 'HASET Medical Center',
-    hospital_address: 'Dar es Salaam, Tanzania',
-    hospital_phone: '+255 XXX XXX XXX',
-    hospital_email: 'info@hasetmedical.com'
+    hospital_name: 'Hospital Management System',
+    hospital_address: '[Address to be configured]',
+    hospital_phone: '[Phone to be configured]',
+    hospital_email: '[Email to be configured]'
   });
 
   useEffect(() => {
@@ -80,10 +80,10 @@ export default function PatientReports() {
       });
       
       setSystemSettings({
-        hospital_name: settings.hospital_name || 'HASET Medical Center',
-        hospital_address: settings.hospital_address || 'Dar es Salaam, Tanzania',
-        hospital_phone: settings.hospital_phone || '+255 XXX XXX XXX',
-        hospital_email: settings.hospital_email || 'info@hasetmedical.com'
+        hospital_name: settings.hospital_name || 'Hospital Management System',
+        hospital_address: settings.hospital_address || '[Address to be configured]',
+        hospital_phone: settings.hospital_phone || '[Phone to be configured]',
+        hospital_email: settings.hospital_email || '[Email to be configured]'
       });
     } catch (error) {
       console.error('Error fetching settings:', error);

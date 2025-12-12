@@ -17,6 +17,10 @@ class PaymentController extends Controller
             $query->where('patient_id', $request->patient_id);
         }
 
+        if ($request->has('invoice_id')) {
+            $query->where('invoice_id', $request->invoice_id);
+        }
+
         if ($request->has('date')) {
             $query->whereDate('payment_date', $request->date);
         }

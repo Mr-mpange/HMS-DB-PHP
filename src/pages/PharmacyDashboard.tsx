@@ -103,6 +103,7 @@ export default function PharmacyDashboard() {
   const [removedPrescriptionItems, setRemovedPrescriptionItems] = useState<Set<string>>(new Set()); // Track removed prescription items
   const [medicationSearchTerm, setMedicationSearchTerm] = useState('');
   const [newPrescriptionItems, setNewPrescriptionItems] = useState<any[]>([{
+    medication_id: '',
     medication_name: '',
     dosage: '',
     frequency: '',
@@ -2208,6 +2209,7 @@ export default function PharmacyDashboard() {
                   size="sm"
                   onClick={() => {
                     setNewPrescriptionItems([...newPrescriptionItems, {
+                      medication_id: '',
                       medication_name: '',
                       dosage: '',
                       frequency: '',
@@ -2256,15 +2258,20 @@ export default function PharmacyDashboard() {
                     <div className="space-y-2 col-span-2">
                       <Label>Medication Name *</Label>
                       <Select
-                        value={item.medication_name}
+                        value={item.medication_id || ''}
                         onValueChange={(value) => {
                           const updated = [...newPrescriptionItems];
-                          updated[index].medication_name = value;
                           
-                          // Auto-fill dosage
-                          const med = medications.find(m => m.name === value);
-                          if (med && med.strength) {
-                            updated[index].dosage = `${med.strength} ${med.dosage_form || ''}`.trim();
+                          // Find the selected medication by ID
+                          const med = medications.find(m => m.id === value);
+                          if (med) {
+                            updated[index].medication_id = value;
+                            updated[index].medication_name = med.name;
+                            
+                            // Auto-fill dosage
+                            if (med.strength) {
+                              updated[index].dosage = `${med.strength} ${med.dosage_form || ''}`.trim();
+                            }
                           }
                           
                           setNewPrescriptionItems(updated);
@@ -2294,7 +2301,7 @@ export default function PharmacyDashboard() {
                               );
                             })
                             .map((med) => (
-                              <SelectItem key={med.id} value={med.name}>
+                              <SelectItem key={med.id} value={med.id}>
                                 <div className="flex items-center justify-between w-full">
                                   <span>{med.name} {med.strength ? `(${med.strength})` : ''}</span>
                                   <span className="text-xs text-muted-foreground ml-2">
@@ -2436,6 +2443,7 @@ export default function PharmacyDashboard() {
                     setExistingPrescriptions([]);
                     setRemovedPrescriptionItems(new Set());
                     setNewPrescriptionItems([{
+                      medication_id: '',
                       medication_name: '',
                       dosage: '',
                       frequency: '',
@@ -2453,7 +2461,7 @@ export default function PharmacyDashboard() {
                     try {
                       // Validate
                       const validItems = newPrescriptionItems.filter(item => 
-                        item.medication_name && item.dosage && item.frequency && item.duration && item.quantity
+                        item.medication_id && item.medication_name && item.dosage && item.frequency && item.duration && item.quantity
                       );
 
                       if (validItems.length === 0) {
@@ -2461,41 +2469,49 @@ export default function PharmacyDashboard() {
                         return;
                       }
 
-                      // Create prescription
-                      const prescriptionData = {
-                        patient_id: selectedPatientForPrescription.patient_id,
-                        doctor_id: user?.id,
-                        visit_id: selectedPatientForPrescription.id,
-                        prescription_date: new Date().toISOString().split('T')[0],
-                        diagnosis: 'Direct to pharmacy',
-                        notes: 'Prescription created by pharmacy staff',
-                        items: validItems.map(item => {
-                          const med = medications.find(m => m.name === item.medication_name);
-                          return {
-                            medication_id: med?.id || null,
-                            medication_name: item.medication_name,
-                            dosage: item.dosage,
-                            frequency: item.frequency,
-                            duration: item.duration,
-                            quantity: parseInt(item.quantity) || 1,
-                            instructions: item.instructions || ''
-                          };
-                        })
-                      };
-
-                      await api.post('/prescriptions', prescriptionData);
+                      // Check if this is a direct pharmacy patient
+                      const isDirectPharmacy = directPharmacyQueue.some(v => v.id === selectedPatientForPrescription?.id);
                       
-                      // Decrease stock for each medication
-                      for (const item of validItems) {
-                        const medication = medications.find(m => m.name === item.medication_name);
-                        if (medication) {
-                          const currentStock = medication.stock_quantity || medication.quantity_in_stock || 0;
-                          const quantity = parseInt(item.quantity) || 1;
-                          const newStock = Math.max(0, currentStock - quantity);
-                          
-                          try {
+                      console.log('🏥 Processing patient:', {
+                        patientName: selectedPatientForPrescription?.patient?.full_name,
+                        isDirectPharmacy,
+                        visitId: selectedPatientForPrescription?.id,
+                        medicationCount: validItems.length
+                      });
+                      
+                      if (isDirectPharmacy) {
+                        // For direct pharmacy patients: dispense immediately and create billing
+                        console.log('🟢 Processing direct pharmacy patient - dispensing immediately');
+                        
+                        // Add medications as patient services for billing
+                        for (const item of validItems) {
+                          const medication = medications.find(m => m.id === item.medication_id);
+                          if (medication) {
+                            const quantity = parseInt(item.quantity) || 1;
+                            const unitPrice = parseFloat(medication.unit_price) || 0;
+                            const totalPrice = unitPrice * quantity;
+                            
+                            // Add to patient services
+                            const serviceData = {
+                              patient_id: selectedPatientForPrescription.patient_id,
+                              service_id: null,
+                              service_name: `${medication.name} - ${item.dosage}`,
+                              quantity: quantity,
+                              unit_price: unitPrice,
+                              total_price: totalPrice,
+                              service_date: new Date().toISOString().split('T')[0],
+                              status: 'Completed',
+                              notes: `Direct pharmacy: ${item.frequency}${item.instructions ? '. ' + item.instructions : ''}`
+                            };
+                            
+                            await api.post('/patient-services', serviceData);
+                            console.log(`✅ Added ${medication.name} to patient services for billing`);
+                            
+                            // Update stock
+                            const currentStock = medication.stock_quantity || medication.quantity_in_stock || 0;
+                            const newStock = Math.max(0, currentStock - quantity);
+                            
                             await api.put(`/pharmacy/medications/${medication.id}`, {
-                              ...medication,
                               stock_quantity: newStock,
                               quantity_in_stock: newStock
                             });
@@ -2507,48 +2523,78 @@ export default function PharmacyDashboard() {
                                 : med
                             ));
                             
-                            console.log(`📦 Stock decreased: ${item.medication_name} -${quantity} (New stock: ${newStock})`);
-                            
-                            await logActivity('pharmacy.stock.decreased', {
-                              medication_id: medication.id,
-                              medication_name: item.medication_name,
-                              quantity_dispensed: quantity,
-                              new_stock: newStock,
-                              reason: 'Medication dispensed via prescription'
-                            });
-                            
-                          } catch (stockError: any) {
-                            console.error(`Error updating stock for ${item.medication_name}:`, stockError);
-                            toast.error(`Warning: Failed to update stock for ${item.medication_name}`);
+                            console.log(`📦 Stock updated: ${medication.name} -${quantity} (New stock: ${newStock})`);
                           }
                         }
-                      }
-                      
-                      // Update visit status to remove from queue
-                      // The prescription is now created, so pharmacy status should be "In Progress" or "Completed"
-                      // We'll set it to "In Progress" so it appears in the prescriptions tab for dispensing
-                      try {
+                        
+                        // Update visit to billing stage
                         await api.put(`/visits/${selectedPatientForPrescription.id}`, {
-                          pharmacy_status: 'In Progress',
-                          notes: `${selectedPatientForPrescription.notes || ''} - Prescription created by pharmacy staff`.trim()
+                          pharmacy_status: 'Completed',
+                          pharmacy_completed_at: new Date().toISOString(),
+                          current_stage: 'billing',
+                          billing_status: 'Pending',
+                          notes: `${selectedPatientForPrescription.notes || ''} - Direct pharmacy medications dispensed`.trim()
                         });
-                        console.log('Visit updated - patient removed from queue');
-                      } catch (visitError) {
-                        console.warn('Failed to update visit status:', visitError);
-                        // Don't fail the whole operation if visit update fails
+                        
+                        console.log('✅ Visit moved to billing stage');
+                        
+                        toast.success(`${validItems.length} medication(s) dispensed! Patient moved to billing.`);
+                        
+                      } else {
+                        // For prescription queue patients: create prescription as before
+                        console.log('Processing prescription queue patient - creating prescription');
+                        
+                        // Create prescription
+                        const prescriptionData = {
+                          patient_id: selectedPatientForPrescription.patient_id,
+                          doctor_id: user?.id,
+                          visit_id: selectedPatientForPrescription.id,
+                          prescription_date: new Date().toISOString().split('T')[0],
+                          diagnosis: 'Prescription queue',
+                          notes: 'Prescription created by pharmacy staff',
+                          items: validItems.map(item => {
+                            const med = medications.find(m => m.id === item.medication_id);
+                            return {
+                              medication_id: med?.id || null,
+                              medication_name: item.medication_name,
+                              dosage: item.dosage,
+                              frequency: item.frequency,
+                              duration: item.duration,
+                              quantity: parseInt(item.quantity) || 1,
+                              instructions: item.instructions || ''
+                            };
+                          })
+                        };
+
+                        await api.post('/prescriptions', prescriptionData);
+                        
+                        // For prescription queue: just create prescription, don't decrease stock yet
+                        // Stock will be decreased when prescription is actually dispensed
+                        
+                        // Update visit status to remove from queue
+                        try {
+                          await api.put(`/visits/${selectedPatientForPrescription.id}`, {
+                            pharmacy_status: 'In Progress',
+                            notes: `${selectedPatientForPrescription.notes || ''} - Prescription created by pharmacy staff`.trim()
+                          });
+                          console.log('Visit updated - patient removed from queue');
+                        } catch (visitError) {
+                          console.warn('Failed to update visit status:', visitError);
+                        }
+                        
+                        toast.success(`Prescription created with ${validItems.length} medication(s)! Patient removed from queue.`);
                       }
                       
                       // Remove from all queues immediately
                       setPatientQueue(prev => prev.filter(v => v.id !== selectedPatientForPrescription.id));
                       setDirectPharmacyQueue(prev => prev.filter(v => v.id !== selectedPatientForPrescription.id));
                       setPrescriptionQueue(prev => prev.filter(v => v.id !== selectedPatientForPrescription.id));
-                      
-                      toast.success(`Prescription created with ${validItems.length} medication(s)! Patient removed from queue.`);
                       setCreatePrescriptionDialogOpen(false);
                       setSelectedPatientForPrescription(null);
                       setExistingPrescriptions([]);
                       setRemovedPrescriptionItems(new Set());
                       setNewPrescriptionItems([{
+                        medication_id: '',
                         medication_name: '',
                         dosage: '',
                         frequency: '',
@@ -2567,7 +2613,12 @@ export default function PharmacyDashboard() {
                   }}
                 >
                   <CheckCircle className="h-4 w-4 mr-2" />
-                  Create Prescription
+                  {directPharmacyQueue.some(v => v.id === selectedPatientForPrescription?.id) 
+                    ? 'Add Medications' 
+                    : prescriptionQueue.some(v => v.id === selectedPatientForPrescription?.id)
+                    ? 'Dispense Prescription'
+                    : 'Create Prescription'
+                  }
                 </Button>
               </div>
             </div>

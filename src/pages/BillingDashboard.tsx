@@ -26,7 +26,9 @@ import {
   CreditCard,
   Shield,
   DollarSign,
-  File
+  File,
+  Printer,
+  Download
 } from 'lucide-react';
 
 export default function BillingDashboard() {
@@ -40,7 +42,22 @@ export default function BillingDashboard() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
+  const [invoiceDetailsDialogOpen, setInvoiceDetailsDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [selectedInvoiceDetails, setSelectedInvoiceDetails] = useState<any>(null);
+  const [invoicePayments, setInvoicePayments] = useState<any[]>([]);
+  const [patientReportDialogOpen, setPatientReportDialogOpen] = useState(false);
+  const [selectedPatientForReport, setSelectedPatientForReport] = useState<any>(null);
+  const [hospitalSettings, setHospitalSettings] = useState({
+    hospital_name: 'Hospital Management System',
+    hospital_address: '[Address to be configured]',
+    hospital_phone: '[Phone to be configured]',
+    hospital_email: '[Email to be configured]',
+    hospital_website: '[Website to be configured]',
+    hospital_license: '[License to be configured]'
+  });
+  const [logoUrl, setLogoUrl] = useState('/placeholder.svg');
+  const [patientSearchTerm, setPatientSearchTerm] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [claimInvoiceId, setClaimInvoiceId] = useState<string>('');
   const [claimInsuranceId, setClaimInsuranceId] = useState<string>('');
@@ -214,6 +231,7 @@ export default function BillingDashboard() {
       
       const [
         billingVisitsRes,
+        pharmacyVisitsRes,
         invoicesRes,
         patientsRes,
         insuranceRes,
@@ -222,6 +240,7 @@ export default function BillingDashboard() {
         servicesRes
       ] = await Promise.all([
         api.get('/visits?current_stage=billing&overall_status=Active').catch(() => ({ data: { visits: [] } })),
+        api.get('/visits?pharmacy_status=Completed&overall_status=Active').catch(() => ({ data: { visits: [] } })), // Also get pharmacy completed visits
         api.get('/billing/invoices').catch(() => ({ data: { invoices: [] } })),
         api.get('/patients?status=Active').catch(() => ({ data: { patients: [] } })),
         api.get('/insurance/companies').catch(() => ({ data: { companies: [] } })),
@@ -231,6 +250,15 @@ export default function BillingDashboard() {
       ]);
 
       const billingVisitsData = billingVisitsRes.data.visits || [];
+      const pharmacyVisitsData = pharmacyVisitsRes.data.visits || [];
+      
+      // Combine billing visits and pharmacy visits, removing duplicates
+      const allVisitsMap = new Map();
+      [...billingVisitsData, ...pharmacyVisitsData].forEach(visit => {
+        allVisitsMap.set(visit.id, visit);
+      });
+      const combinedVisitsData = Array.from(allVisitsMap.values());
+      
       const invoicesData = invoicesRes.data.invoices || [];
       const patientsData = patientsRes.data.patients || [];
       const insuranceData = insuranceRes.data.companies || [];
@@ -245,8 +273,21 @@ export default function BillingDashboard() {
         patients: patientsData.length
       });
 
+      // Filter visits to only include those with patient services (medications, lab tests, etc.)
+      const visitsWithServices = combinedVisitsData.filter(visit => {
+        const hasServices = servicesData.some((service: any) => service.patient_id === visit.patient_id);
+        return hasServices;
+      });
+      
+      console.log('🏥 Billing Dashboard Debug:');
+      console.log('- Billing visits:', billingVisitsData.length);
+      console.log('- Pharmacy visits:', pharmacyVisitsData.length);
+      console.log('- Combined visits:', combinedVisitsData.length);
+      console.log('- Patient services:', servicesData.length);
+      console.log('- Visits with services:', visitsWithServices.length);
+      
       // Update raw data state to trigger memoized computations
-      setBillingVisits(billingVisitsData);
+      setBillingVisits(visitsWithServices);
       setRawInvoicesData(invoicesData);
       setRawPatientsData(patientsData);
       setRawInsuranceData(insuranceData);
@@ -297,6 +338,34 @@ export default function BillingDashboard() {
         claims: claimsData.length
       });
 
+      // Fetch hospital settings
+      try {
+        const settingsRes = await api.get('/settings');
+        const settings = settingsRes.data.settings || [];
+        
+        const settingsObj: any = {};
+        settings.forEach((setting: any) => {
+          settingsObj[setting.key] = setting.value;
+        });
+
+        setHospitalSettings({
+          hospital_name: settingsObj.hospital_name || 'Hospital Management System',
+          hospital_address: settingsObj.hospital_address || '[Address to be configured]',
+          hospital_phone: settingsObj.hospital_phone || '[Phone to be configured]',
+          hospital_email: settingsObj.hospital_email || '[Email to be configured]',
+          hospital_website: settingsObj.hospital_website || '[Website to be configured]',
+          hospital_license: settingsObj.hospital_license || '[License to be configured]'
+        });
+
+        // Fetch logo
+        const logoRes = await api.get('/settings/logo');
+        if (logoRes.data.logo_url) {
+          setLogoUrl(logoRes.data.logo_url);
+        }
+      } catch (error) {
+        console.log('Hospital settings not configured yet');
+      }
+
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load billing data');
@@ -304,6 +373,1963 @@ export default function BillingDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  const fetchInvoicePayments = async (invoiceId: string) => {
+    try {
+      const response = await api.get(`/payments?invoice_id=${invoiceId}`);
+      const payments = response.data.payments || [];
+      setInvoicePayments(payments);
+    } catch (error) {
+      console.error('Error fetching invoice payments:', error);
+      setInvoicePayments([]);
+    }
+  };
+
+  // Helper function for better printing with hospital branding
+  const handlePrint = (content: string, title: string) => {
+    // Create a blob with the HTML content
+    const blob = new Blob([content], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    
+    // Open in new tab with proper URL (not about:blank)
+    const printWindow = window.open(url, '_blank');
+    
+    if (printWindow) {
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.print();
+        }, 500);
+      };
+    } else {
+      toast.error('Please allow popups to print reports');
+    }
+  };
+
+  // Hospital information template
+  const getHospitalHeader = () => `
+    <div class="hospital-header">
+      <div class="hospital-logo">
+        <img src="${logoUrl}" alt="Hospital Logo" style="width: 80px; height: 80px; object-fit: contain;" onerror="this.src='/placeholder.svg'" />
+      </div>
+      <div class="hospital-info">
+        <h1>${hospitalSettings.hospital_name}</h1>
+        <h2>Medical Center & Healthcare Services</h2>
+        <div class="contact-info">
+          <p>📍 ${hospitalSettings.hospital_address}</p>
+          <p>📞 ${hospitalSettings.hospital_phone} | 📧 ${hospitalSettings.hospital_email}</p>
+          <p>🌐 ${hospitalSettings.hospital_website} | License: ${hospitalSettings.hospital_license}</p>
+        </div>
+      </div>
+      <div class="report-info">
+        <div class="report-id">Report ID: RPT-${Date.now()}</div>
+        <div class="generated-date">Generated: ${new Date().toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric', 
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        })}</div>
+      </div>
+    </div>
+  `;
+
+  // Common styles for all reports
+  const getReportStyles = () => `
+    <style>
+      @media print {
+        body { margin: 0; }
+        .no-print { display: none; }
+      }
+      
+      body { 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        margin: 0; 
+        padding: 20px; 
+        line-height: 1.6; 
+        color: #333;
+        background: white;
+      }
+      
+      .hospital-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 20px 0;
+        border-bottom: 3px solid #2563eb;
+        margin-bottom: 30px;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        padding: 20px;
+        border-radius: 8px;
+      }
+      
+      .hospital-logo {
+        flex-shrink: 0;
+      }
+      
+      .logo-placeholder {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        border-radius: 50%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        border: 3px solid white;
+        position: relative;
+      }
+      
+      .logo-text {
+        color: white;
+        font-weight: bold;
+        font-size: 14px;
+        letter-spacing: 1px;
+      }
+      
+      .logo-cross {
+        color: white;
+        font-size: 24px;
+        font-weight: bold;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        opacity: 0.3;
+      }
+      
+      .hospital-info {
+        flex-grow: 1;
+        text-align: center;
+        margin: 0 20px;
+      }
+      
+      .hospital-info h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: bold;
+        color: #1e40af;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      
+      .hospital-info h2 {
+        margin: 5px 0 15px 0;
+        font-size: 16px;
+        color: #64748b;
+        font-weight: normal;
+      }
+      
+      .contact-info {
+        font-size: 12px;
+        color: #475569;
+        line-height: 1.4;
+      }
+      
+      .contact-info p {
+        margin: 2px 0;
+      }
+      
+      .report-info {
+        flex-shrink: 0;
+        text-align: right;
+        font-size: 12px;
+        color: #64748b;
+      }
+      
+      .report-id {
+        font-weight: bold;
+        color: #1e40af;
+        margin-bottom: 5px;
+      }
+      
+      .page-title {
+        text-align: center;
+        margin: 30px 0;
+        padding: 20px;
+        background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+        border-radius: 8px;
+        border-left: 5px solid #2563eb;
+      }
+      
+      .page-title h1 {
+        margin: 0;
+        font-size: 28px;
+        color: #1e40af;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      
+      .page-title h2 {
+        margin: 10px 0 0 0;
+        font-size: 20px;
+        color: #3730a3;
+        font-weight: normal;
+      }
+      
+      .page-title p {
+        margin: 10px 0 0 0;
+        color: #64748b;
+        font-style: italic;
+      }
+      
+      .patient-info {
+        background: #f8fafc;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 25px 0;
+        border-left: 4px solid #2563eb;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      .patient-info h3 {
+        margin: 0 0 15px 0;
+        color: #1e40af;
+        font-size: 18px;
+        border-bottom: 1px solid #e2e8f0;
+        padding-bottom: 8px;
+      }
+      
+      .patient-details {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+      }
+      
+      .patient-details p {
+        margin: 0;
+        padding: 8px 0;
+        border-bottom: 1px dotted #cbd5e1;
+      }
+      
+      .section {
+        margin: 30px 0;
+        page-break-inside: avoid;
+      }
+      
+      .section-title {
+        font-size: 20px;
+        font-weight: bold;
+        color: #1e40af;
+        margin: 30px 0 15px 0;
+        padding: 10px 0;
+        border-bottom: 2px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin: 25px 0;
+      }
+      
+      .summary-card {
+        background: white;
+        border: 1px solid #e2e8f0;
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      }
+      
+      .summary-number {
+        font-size: 24px;
+        font-weight: bold;
+        color: #1e40af;
+        margin-bottom: 5px;
+      }
+      
+      .summary-label {
+        font-size: 14px;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      
+      th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      
+      th {
+        background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+        font-weight: bold;
+        color: #374151;
+        text-transform: uppercase;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+      }
+      
+      tr:hover {
+        background-color: #f8fafc;
+      }
+      
+      .status-active { color: #059669; font-weight: bold; }
+      .status-completed { color: #0891b2; font-weight: bold; }
+      .status-pending { color: #d97706; font-weight: bold; }
+      .amount { font-weight: bold; color: #1e40af; }
+      
+      .footer {
+        margin-top: 50px;
+        padding: 20px 0;
+        border-top: 2px solid #e2e8f0;
+        text-align: center;
+        font-size: 12px;
+        color: #64748b;
+        background: #f8fafc;
+        border-radius: 8px;
+        page-break-inside: avoid;
+      }
+      
+      .footer-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      
+      .confidential {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 20px 0;
+        text-align: center;
+        color: #991b1b;
+        font-weight: bold;
+      }
+      
+      @page {
+        margin: 1in;
+        size: A4;
+      }
+    </style>
+  `;
+
+  // Print Functions
+  const printPendingInvoicesReport = () => {
+    const printContent = `
+      <html>
+        <head>
+          <title>Pending Invoices Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .total { font-weight: bold; background-color: #f9f9f9; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Pending Invoices Report</h1>
+            <h3>Patients Awaiting Billing</h3>
+          </div>
+          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Patient Name</th>
+                <th>Phone</th>
+                <th>Visit Date</th>
+                <th>Services</th>
+                <th>Amount (TSh)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${billingVisits.map(visit => {
+                const patient = patients.find(p => p.id === visit.patient_id) || visit.patient;
+                const patientServicesList = patientServices.filter(s => s.patient_id === visit.patient_id);
+                const totalCost = patientCosts[visit.patient_id] || 0;
+                return `
+                  <tr>
+                    <td>${patient?.full_name || 'Unknown'}</td>
+                    <td>${patient?.phone || 'N/A'}</td>
+                    <td>${visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                    <td>${patientServicesList.length} service(s)</td>
+                    <td>${totalCost.toFixed(2)}</td>
+                  </tr>
+                `;
+              }).join('')}
+              <tr class="total">
+                <td colspan="4"><strong>Total Pending Amount</strong></td>
+                <td><strong>TSh ${billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0).toFixed(2)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="footer">
+            <p>Hospital Management System - Billing Report</p>
+            <p>Total Patients: ${billingVisits.length} | Total Amount: TSh ${billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0).toFixed(2)}</p>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    handlePrint(printContent, 'Pending Invoices Report');
+  };
+
+  const printPaidInvoicesReport = () => {
+    const paidInvoices = invoices.filter(patientData => patientData.status === 'Paid');
+    
+    const printContent = `
+      <html>
+        <head>
+          <title>Paid Invoices Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .total { font-weight: bold; background-color: #f9f9f9; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Paid Invoices Report</h1>
+            <h3>All Fully Paid Invoices</h3>
+          </div>
+          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Patient Name</th>
+                <th>Phone</th>
+                <th>Total Amount</th>
+                <th>Paid Amount</th>
+                <th>Invoice Count</th>
+                <th>Latest Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${paidInvoices.map(patientData => `
+                <tr>
+                  <td>${patientData.patient?.full_name || 'Unknown'}</td>
+                  <td>${patientData.patient?.phone || 'N/A'}</td>
+                  <td>TSh ${Number(patientData.totalAmount || 0).toFixed(2)}</td>
+                  <td>TSh ${Number(patientData.paidAmount || 0).toFixed(2)}</td>
+                  <td>${patientData.invoiceCount}</td>
+                  <td>${format(new Date(patientData.latestInvoiceDate), 'MMM dd, yyyy')}</td>
+                </tr>
+              `).join('')}
+              <tr class="total">
+                <td colspan="2"><strong>Total Revenue</strong></td>
+                <td><strong>TSh ${paidInvoices.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0).toFixed(2)}</strong></td>
+                <td><strong>TSh ${paidInvoices.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0).toFixed(2)}</strong></td>
+                <td><strong>${paidInvoices.reduce((sum, p) => sum + p.invoiceCount, 0)}</strong></td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="footer">
+            <p>Hospital Management System - Paid Invoices Report</p>
+            <p>Total Patients: ${paidInvoices.length} | Total Revenue: TSh ${paidInvoices.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0).toFixed(2)}</p>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    handlePrint(printContent, 'Paid Invoices Report');
+  };
+
+  const printTodaysPaymentsReport = () => {
+    const printContent = `
+      <html>
+        <head>
+          <title>Today's Payments Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .total { font-weight: bold; background-color: #f9f9f9; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Today's Payments Report</h1>
+            <h3>${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</h3>
+          </div>
+          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Patient Name</th>
+                <th>Amount</th>
+                <th>Payment Method</th>
+                <th>Reference</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rawPaymentsData.map(payment => `
+                <tr>
+                  <td>${payment.payment_date ? format(new Date(payment.payment_date), 'HH:mm') : 'N/A'}</td>
+                  <td>${payment.patient?.full_name || 'Unknown'}</td>
+                  <td>TSh ${Number(payment.amount || 0).toFixed(2)}</td>
+                  <td>${payment.payment_method || 'N/A'}</td>
+                  <td>${payment.reference_number || 'N/A'}</td>
+                  <td>${payment.status || 'N/A'}</td>
+                </tr>
+              `).join('')}
+              <tr class="total">
+                <td colspan="2"><strong>Total Today's Revenue</strong></td>
+                <td><strong>TSh ${rawPaymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0).toFixed(2)}</strong></td>
+                <td colspan="3"></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="footer">
+            <p>Hospital Management System - Daily Payments Report</p>
+            <p>Total Payments: ${rawPaymentsData.length} | Total Amount: TSh ${rawPaymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0).toFixed(2)}</p>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    handlePrint(printContent, "Today's Payments Report");
+  };
+
+  const printComprehensiveBillingReport = () => {
+    const totalPendingAmount = billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0);
+    const totalPaidAmount = invoices.filter(p => p.status === 'Paid').reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
+    const todaysRevenue = rawPaymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    const totalClaimsAmount = insuranceClaims.reduce((sum, c) => sum + Number(c.claim_amount || 0), 0);
+    
+    const printContent = `
+      <html>
+        <head>
+          <title>Comprehensive Billing Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+            .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }
+            .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+            .summary-title { font-weight: bold; color: #333; margin-bottom: 5px; }
+            .summary-amount { font-size: 18px; font-weight: bold; color: #2563eb; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .section-title { font-size: 16px; font-weight: bold; margin: 20px 0 10px 0; color: #333; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Comprehensive Billing Report</h1>
+            <h3>Complete Financial Overview</h3>
+          </div>
+          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</div>
+          
+          <div class="summary">
+            <div class="summary-card">
+              <div class="summary-title">Pending Invoices</div>
+              <div class="summary-amount">TSh ${totalPendingAmount.toFixed(2)}</div>
+              <div>${billingVisits.length} patients awaiting billing</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-title">Total Revenue (Paid)</div>
+              <div class="summary-amount">TSh ${totalPaidAmount.toFixed(2)}</div>
+              <div>${invoices.filter(p => p.status === 'Paid').length} paid invoices</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-title">Today's Revenue</div>
+              <div class="summary-amount">TSh ${todaysRevenue.toFixed(2)}</div>
+              <div>${rawPaymentsData.length} payments today</div>
+            </div>
+            <div class="summary-card">
+              <div class="summary-title">Insurance Claims</div>
+              <div class="summary-amount">TSh ${totalClaimsAmount.toFixed(2)}</div>
+              <div>${insuranceClaims.length} claims submitted</div>
+            </div>
+          </div>
+
+          <div class="section-title">Financial Summary</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Count</th>
+                <th>Amount (TSh)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Pending Invoices</td>
+                <td>${billingVisits.length}</td>
+                <td>${totalPendingAmount.toFixed(2)}</td>
+                <td>Awaiting Billing</td>
+              </tr>
+              <tr>
+                <td>Paid Invoices</td>
+                <td>${invoices.filter(p => p.status === 'Paid').length}</td>
+                <td>${totalPaidAmount.toFixed(2)}</td>
+                <td>Completed</td>
+              </tr>
+              <tr>
+                <td>Today's Payments</td>
+                <td>${rawPaymentsData.length}</td>
+                <td>${todaysRevenue.toFixed(2)}</td>
+                <td>Received Today</td>
+              </tr>
+              <tr>
+                <td>Insurance Claims</td>
+                <td>${insuranceClaims.length}</td>
+                <td>${totalClaimsAmount.toFixed(2)}</td>
+                <td>Submitted</td>
+              </tr>
+              <tr style="background-color: #f9f9f9; font-weight: bold;">
+                <td>Total Revenue</td>
+                <td>${invoices.filter(p => p.status === 'Paid').length + rawPaymentsData.length}</td>
+                <td>${(totalPaidAmount + todaysRevenue).toFixed(2)}</td>
+                <td>All Time</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <p>Hospital Management System - Comprehensive Billing Report</p>
+            <p>Report includes all billing activities, payments, and insurance claims</p>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    handlePrint(printContent, 'Comprehensive Billing Report');
+  };
+
+  const printPatientListReport = async () => {
+    try {
+      const response = await api.get('/patients');
+      const allPatients = response.data.patients || [];
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Patient List Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              .patient-id { font-family: monospace; font-size: 11px; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Patient List Report</h1>
+              <h3>Complete Patient Registry</h3>
+            </div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient ID</th>
+                  <th>Full Name</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Date of Birth</th>
+                  <th>Gender</th>
+                  <th>Registration Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${allPatients.map(patient => `
+                  <tr>
+                    <td class="patient-id">${patient.id}</td>
+                    <td>${patient.full_name || 'N/A'}</td>
+                    <td>${patient.phone || 'N/A'}</td>
+                    <td>${patient.email || 'N/A'}</td>
+                    <td>${patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM dd, yyyy') : 'N/A'}</td>
+                    <td>${patient.gender || 'N/A'}</td>
+                    <td>${patient.created_at ? format(new Date(patient.created_at), 'MMM dd, yyyy') : 'N/A'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div class="footer">
+              <p>Hospital Management System - Patient Registry Report</p>
+              <p>Total Patients: ${allPatients.length}</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Patient List Report');
+    } catch (error) {
+      console.error('Error fetching patients for report:', error);
+      toast.error('Failed to generate patient list report');
+    }
+  };
+
+  const printMedicalHistoryReport = async () => {
+    try {
+      const [visitsResponse, prescriptionsResponse, labTestsResponse] = await Promise.all([
+        api.get('/visits'),
+        api.get('/prescriptions'),
+        api.get('/lab-tests')
+      ]);
+      
+      const allVisits = visitsResponse.data.visits || [];
+      const allPrescriptions = prescriptionsResponse.data.prescriptions || [];
+      const allLabTests = labTestsResponse.data.lab_tests || [];
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Medical History Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              .section { margin-bottom: 30px; }
+              .section-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; }
+              .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; text-align: center; }
+              .summary-number { font-size: 24px; font-weight: bold; color: #2563eb; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Medical History Report</h1>
+              <h3>Complete Medical Activities Overview</h3>
+            </div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            
+            <div class="summary-grid">
+              <div class="summary-card">
+                <div class="summary-number">${allVisits.length}</div>
+                <div>Total Visits</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number">${allPrescriptions.length}</div>
+                <div>Total Prescriptions</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number">${allLabTests.length}</div>
+                <div>Total Lab Tests</div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Recent Patient Visits</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Patient Name</th>
+                    <th>Visit Type</th>
+                    <th>Chief Complaint</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${allVisits.slice(0, 20).map(visit => `
+                    <tr>
+                      <td>${visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${visit.patient?.full_name || 'Unknown'}</td>
+                      <td>${visit.visit_type || 'N/A'}</td>
+                      <td>${visit.chief_complaint || 'N/A'}</td>
+                      <td>${visit.overall_status || visit.status || 'N/A'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Recent Prescriptions</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Patient Name</th>
+                    <th>Doctor</th>
+                    <th>Diagnosis</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${allPrescriptions.slice(0, 15).map(prescription => `
+                    <tr>
+                      <td>${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${prescription.patient?.full_name || 'Unknown'}</td>
+                      <td>${prescription.doctor_profile?.name || prescription.doctor_profile?.full_name || 'Unknown'}</td>
+                      <td>${prescription.diagnosis || 'N/A'}</td>
+                      <td>${prescription.status || 'N/A'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">Recent Lab Tests</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Patient Name</th>
+                    <th>Test Name</th>
+                    <th>Status</th>
+                    <th>Results</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${allLabTests.slice(0, 15).map(test => `
+                    <tr>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${test.patient?.full_name || 'Unknown'}</td>
+                      <td>${test.test_name || 'N/A'}</td>
+                      <td>${test.status || 'N/A'}</td>
+                      <td>${test.results ? 'Available' : 'Pending'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="footer">
+              <p>Hospital Management System - Medical History Report</p>
+              <p>Visits: ${allVisits.length} | Prescriptions: ${allPrescriptions.length} | Lab Tests: ${allLabTests.length}</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Medical History Report');
+    } catch (error) {
+      console.error('Error fetching medical history for report:', error);
+      toast.error('Failed to generate medical history report');
+    }
+  };
+
+  const printPharmacyInventoryReport = async () => {
+    try {
+      const response = await api.get('/pharmacy/medications');
+      const allMedications = response.data.medications || [];
+      
+      const lowStockMeds = allMedications.filter(med => (med.stock_quantity || 0) <= (med.reorder_level || 0));
+      const outOfStockMeds = allMedications.filter(med => (med.stock_quantity || 0) === 0);
+      const totalValue = allMedications.reduce((sum, med) => sum + ((med.stock_quantity || 0) * (med.unit_price || 0)), 0);
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Pharmacy Inventory Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+              .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; text-align: center; }
+              .summary-number { font-size: 20px; font-weight: bold; color: #2563eb; }
+              .low-stock { color: #f59e0b; }
+              .out-of-stock { color: #ef4444; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              .section-title { font-size: 16px; font-weight: bold; margin: 20px 0 10px 0; color: #333; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Pharmacy Inventory Report</h1>
+              <h3>Complete Medication Stock Overview</h3>
+            </div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            
+            <div class="summary-grid">
+              <div class="summary-card">
+                <div class="summary-number">${allMedications.length}</div>
+                <div>Total Medications</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number low-stock">${lowStockMeds.length}</div>
+                <div>Low Stock Items</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number out-of-stock">${outOfStockMeds.length}</div>
+                <div>Out of Stock</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number">TSh ${totalValue.toFixed(2)}</div>
+                <div>Total Inventory Value</div>
+              </div>
+            </div>
+
+            <div class="section-title">Complete Medication Inventory</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Medication Name</th>
+                  <th>Strength</th>
+                  <th>Dosage Form</th>
+                  <th>Stock Quantity</th>
+                  <th>Unit Price</th>
+                  <th>Total Value</th>
+                  <th>Reorder Level</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${allMedications.map(med => {
+                  const stock = med.stock_quantity || 0;
+                  const reorderLevel = med.reorder_level || 0;
+                  const unitPrice = med.unit_price || 0;
+                  const totalValue = stock * unitPrice;
+                  let status = 'Normal';
+                  let statusClass = '';
+                  
+                  if (stock === 0) {
+                    status = 'Out of Stock';
+                    statusClass = 'out-of-stock';
+                  } else if (stock <= reorderLevel) {
+                    status = 'Low Stock';
+                    statusClass = 'low-stock';
+                  }
+                  
+                  return `
+                    <tr>
+                      <td>${med.name || 'N/A'}</td>
+                      <td>${med.strength || 'N/A'}</td>
+                      <td>${med.dosage_form || 'N/A'}</td>
+                      <td class="${statusClass}">${stock}</td>
+                      <td>TSh ${unitPrice.toFixed(2)}</td>
+                      <td>TSh ${totalValue.toFixed(2)}</td>
+                      <td>${reorderLevel}</td>
+                      <td class="${statusClass}">${status}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+
+            <div class="footer">
+              <p>Hospital Management System - Pharmacy Inventory Report</p>
+              <p>Total Items: ${allMedications.length} | Low Stock: ${lowStockMeds.length} | Out of Stock: ${outOfStockMeds.length} | Total Value: TSh ${totalValue.toFixed(2)}</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Pharmacy Inventory Report');
+    } catch (error) {
+      console.error('Error fetching pharmacy inventory for report:', error);
+      toast.error('Failed to generate pharmacy inventory report');
+    }
+  };
+
+  const printIndividualPatientReport = async (patient: any) => {
+    try {
+      // Fetch all data for this specific patient
+      const [visitsResponse, prescriptionsResponse, labTestsResponse, paymentsResponse, invoicesResponse] = await Promise.all([
+        api.get(`/visits?patient_id=${patient.id}`),
+        api.get(`/prescriptions?patient_id=${patient.id}`),
+        api.get(`/lab-tests?patient_id=${patient.id}`),
+        api.get(`/payments?patient_id=${patient.id}`),
+        api.get(`/billing/invoices?patient_id=${patient.id}`)
+      ]);
+      
+      const patientVisits = visitsResponse.data.visits || [];
+      const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
+      const patientLabTests = labTestsResponse.data.lab_tests || [];
+      const patientPayments = paymentsResponse.data.payments || [];
+      const patientInvoices = invoicesResponse.data.invoices || [];
+      
+      // Calculate totals
+      const totalPaid = patientPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const totalInvoiced = patientInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
+      const totalBalance = patientInvoices.reduce((sum, invoice) => sum + Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0);
+      
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Patient Report - ${patient.full_name}</title>
+            ${getReportStyles()}
+          </head>
+          <body>
+            ${getHospitalHeader()}
+            
+            <div class="page-title">
+              <h1>PATIENT MEDICAL REPORT</h1>
+              <h2>${patient.full_name}</h2>
+              <p>Complete Medical and Financial History</p>
+            </div>
+            
+            <div class="patient-info">
+              <h3>👤 Patient Information</h3>
+              <div class="patient-details">
+                <p><strong>Full Name:</strong> ${patient.full_name || 'N/A'}</p>
+                <p><strong>Patient ID:</strong> ${patient.id.substring(0, 8)}...</p>
+                <p><strong>Phone:</strong> ${patient.phone || 'N/A'}</p>
+                <p><strong>Email:</strong> ${patient.email || 'N/A'}</p>
+                <p><strong>Date of Birth:</strong> ${patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMMM dd, yyyy') : 'N/A'}</p>
+                <p><strong>Gender:</strong> ${patient.gender || 'N/A'}</p>
+                <p><strong>Address:</strong> ${patient.address || 'N/A'}</p>
+                <p><strong>Registration Date:</strong> ${patient.created_at ? format(new Date(patient.created_at), 'MMMM dd, yyyy') : 'N/A'}</p>
+              </div>
+            </div>
+
+            <div class="summary-grid">
+              <div class="summary-card">
+                <div class="summary-number">${patientVisits.length}</div>
+                <div class="summary-label">Total Visits</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number">${patientPrescriptions.length}</div>
+                <div class="summary-label">Prescriptions</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number">${patientLabTests.length}</div>
+                <div class="summary-label">Lab Tests</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number amount">TSh ${totalPaid.toFixed(2)}</div>
+                <div class="summary-label">Total Paid</div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">📋 Visit History</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Visit Type</th>
+                    <th>Chief Complaint</th>
+                    <th>Diagnosis</th>
+                    <th>Status</th>
+                    <th>Doctor Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientVisits.length > 0 ? patientVisits.map(visit => `
+                    <tr>
+                      <td>${visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${visit.visit_type || 'N/A'}</td>
+                      <td>${visit.chief_complaint || 'N/A'}</td>
+                      <td>${visit.diagnosis || visit.doctor_diagnosis || 'N/A'}</td>
+                      <td class="status-${(visit.overall_status || visit.status || 'pending').toLowerCase()}">${visit.overall_status || visit.status || 'N/A'}</td>
+                      <td>${visit.doctor_notes || visit.notes || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No visits recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">💊 Prescription History</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Doctor</th>
+                    <th>Diagnosis</th>
+                    <th>Medications</th>
+                    <th>Status</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientPrescriptions.length > 0 ? patientPrescriptions.map(prescription => `
+                    <tr>
+                      <td>${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${prescription.doctor_profile?.name || prescription.doctor_profile?.full_name || 'Unknown'}</td>
+                      <td>${prescription.diagnosis || 'N/A'}</td>
+                      <td>${prescription.items ? prescription.items.map(item => `${item.medication_name} (${item.quantity})`).join(', ') : 'N/A'}</td>
+                      <td class="status-${(prescription.status || 'pending').toLowerCase()}">${prescription.status || 'N/A'}</td>
+                      <td>${prescription.notes || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No prescriptions recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">🧪 Laboratory Test Results</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Test Name</th>
+                    <th>Doctor</th>
+                    <th>Status</th>
+                    <th>Results</th>
+                    <th>Normal Range</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientLabTests.length > 0 ? patientLabTests.map(test => `
+                    <tr>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${test.test_name || 'N/A'}</td>
+                      <td>${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
+                      <td class="status-${(test.status || 'pending').toLowerCase()}">${test.status || 'N/A'}</td>
+                      <td>${test.results || 'Pending'}</td>
+                      <td>${test.normal_range || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No lab tests recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">💰 Financial Summary</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invoice Date</th>
+                    <th>Invoice Number</th>
+                    <th>Total Amount</th>
+                    <th>Paid Amount</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientInvoices.length > 0 ? patientInvoices.map(invoice => `
+                    <tr>
+                      <td>${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td class="amount">TSh ${Number(invoice.total_amount || 0).toFixed(2)}</td>
+                      <td class="amount">TSh ${Number(invoice.paid_amount || 0).toFixed(2)}</td>
+                      <td class="amount">TSh ${Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)).toFixed(2)}</td>
+                      <td class="status-${(invoice.status || 'pending').toLowerCase()}">${invoice.status || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No invoices recorded</td></tr>'}
+                  <tr style="background-color: #f3f4f6; font-weight: bold;">
+                    <td colspan="2"><strong>TOTALS</strong></td>
+                    <td class="amount">TSh ${totalInvoiced.toFixed(2)}</td>
+                    <td class="amount">TSh ${totalPaid.toFixed(2)}</td>
+                    <td class="amount">TSh ${totalBalance.toFixed(2)}</td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">💳 Payment History</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Payment Method</th>
+                    <th>Reference Number</th>
+                    <th>Status</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientPayments.length > 0 ? patientPayments.map(payment => `
+                    <tr>
+                      <td>${payment.payment_date ? format(new Date(payment.payment_date), 'MMM dd, yyyy HH:mm') : 'N/A'}</td>
+                      <td class="amount">TSh ${Number(payment.amount || 0).toFixed(2)}</td>
+                      <td>${payment.payment_method || 'N/A'}</td>
+                      <td>${payment.reference_number || 'N/A'}</td>
+                      <td class="status-${(payment.status || 'pending').toLowerCase()}">${payment.status || 'N/A'}</td>
+                      <td>${payment.notes || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No payments recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="confidential">
+              ⚠️ CONFIDENTIAL MEDICAL INFORMATION ⚠️<br>
+              This report contains confidential medical information protected by privacy laws.<br>
+              Unauthorized disclosure is prohibited and may result in legal action.
+            </div>
+
+            <div class="footer">
+              <div class="footer-content">
+                <div>
+                  <strong>Hospital Management System</strong><br>
+                  Individual Patient Report
+                </div>
+                <div>
+                  Patient: ${patient.full_name}<br>
+                  ID: ${patient.id.substring(0, 8)}...
+                </div>
+                <div>
+                  Generated: ${new Date().toLocaleDateString()}<br>
+                  Time: ${new Date().toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, `Patient Report - ${patient.full_name}`);
+    } catch (error) {
+      console.error('Error generating patient report:', error);
+      toast.error('Failed to generate patient report');
+    }
+  };
+
+  const printMedicalOnlyReport = async (patient: any) => {
+    try {
+      const [visitsResponse, prescriptionsResponse, labTestsResponse] = await Promise.all([
+        api.get(`/visits?patient_id=${patient.id}`),
+        api.get(`/prescriptions?patient_id=${patient.id}`),
+        api.get(`/lab-tests?patient_id=${patient.id}`)
+      ]);
+      
+      const patientVisits = visitsResponse.data.visits || [];
+      const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
+      const patientLabTests = labTestsResponse.data.lab_tests || [];
+      
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Medical History Report - ${patient.full_name}</title>
+            ${getReportStyles()}
+          </head>
+          <body>
+            ${getHospitalHeader()}
+            
+            <div class="page-title">
+              <h1>MEDICAL HISTORY REPORT</h1>
+              <h2>${patient.full_name}</h2>
+              <p>Complete Medical History (No Financial Information)</p>
+            </div>
+            
+            <div class="patient-info">
+              <h3>👤 Patient Information</h3>
+              <div class="patient-details">
+                <p><strong>Full Name:</strong> ${patient.full_name}</p>
+                <p><strong>Patient ID:</strong> ${patient.id.substring(0, 8)}...</p>
+                <p><strong>Date of Birth:</strong> ${patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMMM dd, yyyy') : 'N/A'}</p>
+                <p><strong>Gender:</strong> ${patient.gender || 'N/A'}</p>
+                <p><strong>Phone:</strong> ${patient.phone || 'N/A'}</p>
+                <p><strong>Email:</strong> ${patient.email || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">📋 Visit History</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Visit Type</th>
+                    <th>Chief Complaint</th>
+                    <th>Diagnosis</th>
+                    <th>Status</th>
+                    <th>Doctor Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientVisits.length > 0 ? patientVisits.map(visit => `
+                    <tr>
+                      <td>${visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${visit.visit_type || 'N/A'}</td>
+                      <td>${visit.chief_complaint || 'N/A'}</td>
+                      <td>${visit.diagnosis || visit.doctor_diagnosis || 'N/A'}</td>
+                      <td>${visit.overall_status || visit.status || 'N/A'}</td>
+                      <td>${visit.doctor_notes || visit.notes || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="6" style="text-align: center;">No visits recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">💊 Prescription History</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Doctor</th>
+                    <th>Diagnosis</th>
+                    <th>Medications</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientPrescriptions.length > 0 ? patientPrescriptions.map(prescription => `
+                    <tr>
+                      <td>${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${prescription.doctor_profile?.name || 'Unknown'}</td>
+                      <td>${prescription.diagnosis || 'N/A'}</td>
+                      <td>${prescription.items ? prescription.items.map(item => `${item.medication_name} (${item.quantity})`).join(', ') : 'N/A'}</td>
+                      <td>${prescription.status || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="5" style="text-align: center;">No prescriptions recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">🧪 Laboratory Test Results</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Test Name</th>
+                    <th>Doctor</th>
+                    <th>Status</th>
+                    <th>Results</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientLabTests.length > 0 ? patientLabTests.map(test => `
+                    <tr>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${test.test_name || 'N/A'}</td>
+                      <td>${test.doctor?.name || 'Unknown'}</td>
+                      <td>${test.status || 'N/A'}</td>
+                      <td>${test.results || 'Pending'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="5" style="text-align: center;">No lab tests recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="confidential">
+              ⚠️ CONFIDENTIAL MEDICAL INFORMATION ⚠️<br>
+              This report contains confidential medical information protected by privacy laws.<br>
+              Unauthorized disclosure is prohibited and may result in legal action.
+            </div>
+
+            <div class="footer">
+              <div class="footer-content">
+                <div>
+                  <strong>Hospital Management System</strong><br>
+                  Medical History Report
+                </div>
+                <div>
+                  Patient: ${patient.full_name}<br>
+                  ID: ${patient.id.substring(0, 8)}...
+                </div>
+                <div>
+                  Generated: ${new Date().toLocaleDateString()}<br>
+                  Time: ${new Date().toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, `Medical History - ${patient.full_name}`);
+    } catch (error) {
+      console.error('Error generating medical report:', error);
+      toast.error('Failed to generate medical report');
+    }
+  };
+
+  const printFinancialOnlyReport = async (patient: any) => {
+    try {
+      const [paymentsResponse, invoicesResponse] = await Promise.all([
+        api.get(`/payments?patient_id=${patient.id}`),
+        api.get(`/billing/invoices?patient_id=${patient.id}`)
+      ]);
+      
+      const patientPayments = paymentsResponse.data.payments || [];
+      const patientInvoices = invoicesResponse.data.invoices || [];
+      
+      const totalPaid = patientPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      const totalInvoiced = patientInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
+      const totalBalance = patientInvoices.reduce((sum, invoice) => sum + Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)), 0);
+      
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Financial Summary - ${patient.full_name}</title>
+            ${getReportStyles()}
+          </head>
+          <body>
+            ${getHospitalHeader()}
+            
+            <div class="page-title">
+              <h1>FINANCIAL SUMMARY REPORT</h1>
+              <h2>${patient.full_name}</h2>
+              <p>Complete Financial History</p>
+            </div>
+            
+            <div class="patient-info">
+              <h3>👤 Patient Information</h3>
+              <div class="patient-details">
+                <p><strong>Full Name:</strong> ${patient.full_name}</p>
+                <p><strong>Patient ID:</strong> ${patient.id.substring(0, 8)}...</p>
+                <p><strong>Phone:</strong> ${patient.phone || 'N/A'}</p>
+                <p><strong>Email:</strong> ${patient.email || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div class="summary-grid">
+              <div class="summary-card">
+                <div class="summary-number">TSh ${totalInvoiced.toFixed(2)}</div>
+                <div>Total Invoiced</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number">TSh ${totalPaid.toFixed(2)}</div>
+                <div>Total Paid</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number">TSh ${totalBalance.toFixed(2)}</div>
+                <div>Outstanding Balance</div>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">💰 Invoice Summary</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Invoice Date</th>
+                    <th>Invoice Number</th>
+                    <th>Total Amount</th>
+                    <th>Paid Amount</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientInvoices.length > 0 ? patientInvoices.map(invoice => `
+                    <tr>
+                      <td>${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td class="amount">TSh ${Number(invoice.total_amount || 0).toFixed(2)}</td>
+                      <td class="amount">TSh ${Number(invoice.paid_amount || 0).toFixed(2)}</td>
+                      <td class="amount">TSh ${Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)).toFixed(2)}</td>
+                      <td>${invoice.status || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="6" style="text-align: center;">No invoices recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">💳 Payment History</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Amount</th>
+                    <th>Payment Method</th>
+                    <th>Reference Number</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientPayments.length > 0 ? patientPayments.map(payment => `
+                    <tr>
+                      <td>${payment.payment_date ? format(new Date(payment.payment_date), 'MMM dd, yyyy HH:mm') : 'N/A'}</td>
+                      <td class="amount">TSh ${Number(payment.amount || 0).toFixed(2)}</td>
+                      <td>${payment.payment_method || 'N/A'}</td>
+                      <td>${payment.reference_number || 'N/A'}</td>
+                      <td>${payment.status || 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="5" style="text-align: center;">No payments recorded</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="confidential">
+              ⚠️ CONFIDENTIAL FINANCIAL INFORMATION ⚠️<br>
+              This report contains confidential financial information protected by privacy laws.<br>
+              Unauthorized disclosure is prohibited and may result in legal action.
+            </div>
+
+            <div class="footer">
+              <div class="footer-content">
+                <div>
+                  <strong>Hospital Management System</strong><br>
+                  Financial Summary Report
+                </div>
+                <div>
+                  Patient: ${patient.full_name}<br>
+                  ID: ${patient.id.substring(0, 8)}...
+                </div>
+                <div>
+                  Generated: ${new Date().toLocaleDateString()}<br>
+                  Time: ${new Date().toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, `Financial Summary - ${patient.full_name}`);
+    } catch (error) {
+      console.error('Error generating financial report:', error);
+      toast.error('Failed to generate financial report');
+    }
+  };
+
+  const printPrescriptionsOnlyReport = async (patient: any) => {
+    try {
+      const prescriptionsResponse = await api.get(`/prescriptions?patient_id=${patient.id}`);
+      const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
+      
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Prescription History - ${patient.full_name}</title>
+            ${getReportStyles()}
+          </head>
+          <body>
+            ${getHospitalHeader()}
+            
+            <div class="page-title">
+              <h1>PRESCRIPTION HISTORY REPORT</h1>
+              <h2>${patient.full_name}</h2>
+              <p>Complete Prescription and Medication History</p>
+            </div>
+            
+            <div class="patient-info">
+              <h3>👤 Patient Information</h3>
+              <div class="patient-details">
+                <p><strong>Full Name:</strong> ${patient.full_name}</p>
+                <p><strong>Patient ID:</strong> ${patient.id.substring(0, 8)}...</p>
+                <p><strong>Date of Birth:</strong> ${patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMMM dd, yyyy') : 'N/A'}</p>
+                <p><strong>Phone:</strong> ${patient.phone || 'N/A'}</p>
+                <p><strong>Total Prescriptions:</strong> ${patientPrescriptions.length}</p>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">💊 Detailed Prescription History</div>
+              ${patientPrescriptions.length > 0 ? patientPrescriptions.map((prescription, index) => `
+                <div style="margin-bottom: 25px; border: 1px solid #d1d5db; border-radius: 6px; padding: 15px;">
+                  <h4 style="margin: 0 0 10px 0; color: #5b21b6;">Prescription #${index + 1}</h4>
+                  <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px;">
+                    <p><strong>Date:</strong> ${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</p>
+                    <p><strong>Doctor:</strong> ${prescription.doctor_profile?.name || 'Unknown'}</p>
+                    <p><strong>Diagnosis:</strong> ${prescription.diagnosis || 'N/A'}</p>
+                    <p><strong>Status:</strong> ${prescription.status || 'N/A'}</p>
+                  </div>
+                  ${prescription.items && prescription.items.length > 0 ? `
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                      <thead>
+                        <tr style="background-color: #f8fafc;">
+                          <th style="border: 1px solid #d1d5db; padding: 8px;">Medication</th>
+                          <th style="border: 1px solid #d1d5db; padding: 8px;">Dosage</th>
+                          <th style="border: 1px solid #d1d5db; padding: 8px;">Frequency</th>
+                          <th style="border: 1px solid #d1d5db; padding: 8px;">Duration</th>
+                          <th style="border: 1px solid #d1d5db; padding: 8px;">Quantity</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${prescription.items.map(item => `
+                          <tr>
+                            <td style="border: 1px solid #d1d5db; padding: 8px;">${item.medication_name || 'N/A'}</td>
+                            <td style="border: 1px solid #d1d5db; padding: 8px;">${item.dosage || 'N/A'}</td>
+                            <td style="border: 1px solid #d1d5db; padding: 8px;">${item.frequency || 'N/A'}</td>
+                            <td style="border: 1px solid #d1d5db; padding: 8px;">${item.duration || 'N/A'}</td>
+                            <td style="border: 1px solid #d1d5db; padding: 8px;">${item.quantity || 'N/A'}</td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  ` : '<p style="color: #6b7280; font-style: italic;">No medications listed</p>'}
+                  ${prescription.notes ? `<p style="margin-top: 10px;"><strong>Notes:</strong> ${prescription.notes}</p>` : ''}
+                </div>
+              `).join('') : '<p style="text-align: center; color: #6b7280;">No prescriptions recorded for this patient</p>'}
+            </div>
+
+            <div class="confidential">
+              ⚠️ CONFIDENTIAL MEDICAL INFORMATION ⚠️<br>
+              This report contains confidential prescription information protected by privacy laws.<br>
+              Unauthorized disclosure is prohibited and may result in legal action.
+            </div>
+
+            <div class="footer">
+              <div class="footer-content">
+                <div>
+                  <strong>Hospital Management System</strong><br>
+                  Prescription History Report
+                </div>
+                <div>
+                  Patient: ${patient.full_name}<br>
+                  Total Prescriptions: ${patientPrescriptions.length}
+                </div>
+                <div>
+                  Generated: ${new Date().toLocaleDateString()}<br>
+                  Time: ${new Date().toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, `Prescription History - ${patient.full_name}`);
+    } catch (error) {
+      console.error('Error generating prescription report:', error);
+      toast.error('Failed to generate prescription report');
+    }
+  };
+
+  const printLabResultsOnlyReport = async (patient: any) => {
+    try {
+      const labTestsResponse = await api.get(`/lab-tests?patient_id=${patient.id}`);
+      const patientLabTests = labTestsResponse.data.lab_tests || [];
+      
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Laboratory Results - ${patient.full_name}</title>
+            ${getReportStyles()}
+          </head>
+          <body>
+            ${getHospitalHeader()}
+            
+            <div class="page-title">
+              <h1>LABORATORY RESULTS REPORT</h1>
+              <h2>${patient.full_name}</h2>
+              <p>Complete Laboratory Test History and Results</p>
+            </div>
+            
+            <div class="patient-info">
+              <h3>👤 Patient Information</h3>
+              <div class="patient-details">
+                <p><strong>Full Name:</strong> ${patient.full_name}</p>
+                <p><strong>Patient ID:</strong> ${patient.id.substring(0, 8)}...</p>
+                <p><strong>Date of Birth:</strong> ${patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMMM dd, yyyy') : 'N/A'}</p>
+                <p><strong>Phone:</strong> ${patient.phone || 'N/A'}</p>
+                <p><strong>Total Lab Tests:</strong> ${patientLabTests.length}</p>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-title">🧪 Laboratory Test Results</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Test Date</th>
+                    <th>Test Name</th>
+                    <th>Ordering Doctor</th>
+                    <th>Status</th>
+                    <th>Results</th>
+                    <th>Normal Range</th>
+                    <th>Completed Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${patientLabTests.length > 0 ? patientLabTests.map(test => `
+                    <tr>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td><strong>${test.test_name || 'N/A'}</strong></td>
+                      <td>${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
+                      <td class="status-${(test.status || 'pending').toLowerCase()}">${test.status || 'Pending'}</td>
+                      <td>${test.results || 'Pending'}</td>
+                      <td>${test.normal_range || 'N/A'}</td>
+                      <td>${test.completed_at ? format(new Date(test.completed_at), 'MMM dd, yyyy') : 'N/A'}</td>
+                    </tr>
+                  `).join('') : '<tr><td colspan="7" style="text-align: center; color: #6b7280;">No lab tests recorded for this patient</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="confidential">
+              ⚠️ CONFIDENTIAL MEDICAL INFORMATION ⚠️<br>
+              This report contains confidential laboratory results protected by privacy laws.<br>
+              Unauthorized disclosure is prohibited and may result in legal action.
+            </div>
+
+            <div class="footer">
+              <div class="footer-content">
+                <div>
+                  <strong>Hospital Management System</strong><br>
+                  Laboratory Results Report
+                </div>
+                <div>
+                  Patient: ${patient.full_name}<br>
+                  Total Tests: ${patientLabTests.length}
+                </div>
+                <div>
+                  Generated: ${new Date().toLocaleDateString()}<br>
+                  Time: ${new Date().toLocaleTimeString()}
+                </div>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, `Laboratory Results - ${patient.full_name}`);
+    } catch (error) {
+      console.error('Error generating lab results report:', error);
+      toast.error('Failed to generate lab results report');
+    }
+  };
+
+  const printLabTestsReport = async () => {
+    try {
+      const response = await api.get('/lab-tests');
+      const allLabTests = response.data.lab_tests || [];
+      
+      const pendingTests = allLabTests.filter(test => test.status === 'Pending');
+      const completedTests = allLabTests.filter(test => test.status === 'Completed');
+      const inProgressTests = allLabTests.filter(test => test.status === 'In Progress');
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Laboratory Tests Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+              .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; text-align: center; }
+              .summary-number { font-size: 20px; font-weight: bold; color: #2563eb; }
+              .pending { color: #f59e0b; }
+              .completed { color: #10b981; }
+              .in-progress { color: #3b82f6; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Laboratory Tests Report</h1>
+              <h3>Complete Lab Activities Overview</h3>
+            </div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            
+            <div class="summary-grid">
+              <div class="summary-card">
+                <div class="summary-number">${allLabTests.length}</div>
+                <div>Total Tests</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number pending">${pendingTests.length}</div>
+                <div>Pending Tests</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number in-progress">${inProgressTests.length}</div>
+                <div>In Progress</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-number completed">${completedTests.length}</div>
+                <div>Completed Tests</div>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Test Date</th>
+                  <th>Patient Name</th>
+                  <th>Test Name</th>
+                  <th>Doctor</th>
+                  <th>Status</th>
+                  <th>Results</th>
+                  <th>Completed Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${allLabTests.map(test => `
+                  <tr>
+                    <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                    <td>${test.patient?.full_name || 'Unknown'}</td>
+                    <td>${test.test_name || 'N/A'}</td>
+                    <td>${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
+                    <td class="${test.status?.toLowerCase() || 'pending'}">${test.status || 'Pending'}</td>
+                    <td>${test.results ? 'Available' : 'Pending'}</td>
+                    <td>${test.completed_at ? format(new Date(test.completed_at), 'MMM dd, yyyy') : 'N/A'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+
+            <div class="footer">
+              <p>Hospital Management System - Laboratory Tests Report</p>
+              <p>Total: ${allLabTests.length} | Pending: ${pendingTests.length} | In Progress: ${inProgressTests.length} | Completed: ${completedTests.length}</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Laboratory Tests Report');
+    } catch (error) {
+      console.error('Error fetching lab tests for report:', error);
+      toast.error('Failed to generate lab tests report');
+    }
+  };
+
+  const printInsuranceClaimsReport = () => {
+    const printContent = `
+      <html>
+        <head>
+          <title>Insurance Claims Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f5f5f5; font-weight: bold; }
+            .total { font-weight: bold; background-color: #f9f9f9; }
+            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+            .status-pending { color: #f59e0b; }
+            .status-approved { color: #10b981; }
+            .status-rejected { color: #ef4444; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Insurance Claims Report</h1>
+            <h3>NHIF and Insurance Claims Status</h3>
+          </div>
+          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}</div>
+          <table>
+            <thead>
+              <tr>
+                <th>Claim Number</th>
+                <th>Patient Name</th>
+                <th>Insurance Company</th>
+                <th>Claim Amount</th>
+                <th>Submission Date</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${insuranceClaims.map(claim => `
+                <tr>
+                  <td>${claim.claim_number || 'N/A'}</td>
+                  <td>${claim.patient?.full_name || 'Unknown'}</td>
+                  <td>${claim.insurance_company?.name || 'N/A'}</td>
+                  <td>TSh ${Number(claim.claim_amount || 0).toFixed(2)}</td>
+                  <td>${claim.submission_date ? format(new Date(claim.submission_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                  <td class="status-${claim.status?.toLowerCase() || 'pending'}">${claim.status || 'Pending'}</td>
+                </tr>
+              `).join('')}
+              <tr class="total">
+                <td colspan="3"><strong>Total Claims Amount</strong></td>
+                <td><strong>TSh ${insuranceClaims.reduce((sum, c) => sum + Number(c.claim_amount || 0), 0).toFixed(2)}</strong></td>
+                <td colspan="2"></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="footer">
+            <p>Hospital Management System - Insurance Claims Report</p>
+            <p>Total Claims: ${insuranceClaims.length} | Total Amount: TSh ${insuranceClaims.reduce((sum, c) => sum + Number(c.claim_amount || 0), 0).toFixed(2)}</p>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    handlePrint(printContent, 'Insurance Claims Report');
   };
 
   const handleOpenPaymentDialog = (invoice: any) => {
@@ -866,6 +2892,17 @@ export default function BillingDashboard() {
           </Card>
         </div>
 
+        {/* Print Patient Report Button */}
+        <div className="flex justify-end mb-4">
+          <Button
+            onClick={() => setPatientReportDialogOpen(true)}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <Printer className="h-4 w-4 mr-2" />
+            Print Patient Report
+          </Button>
+        </div>
+
         {/* Main Content with Tabs */}
         <Tabs defaultValue="pending" className="space-y-4">
           <TabsList className="grid w-full grid-cols-5">
@@ -889,6 +2926,15 @@ export default function BillingDashboard() {
                         : 'No patients waiting for billing'}
                     </CardDescription>
                   </div>
+                  <Button
+                    onClick={printPendingInvoicesReport}
+                    variant="outline"
+                    size="sm"
+                    disabled={billingVisits.length === 0}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Report
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1068,6 +3114,15 @@ export default function BillingDashboard() {
                     <CardTitle>Paid Invoices</CardTitle>
                     <CardDescription>All fully paid invoices including Quick Service payments</CardDescription>
                   </div>
+                  <Button
+                    onClick={printPaidInvoicesReport}
+                    variant="outline"
+                    size="sm"
+                    disabled={invoices.filter(p => p.status === 'Paid').length === 0}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Report
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1116,7 +3171,14 @@ export default function BillingDashboard() {
                                 // Show invoice details
                                 const firstInvoice = patientData.invoices[0];
                                 if (firstInvoice) {
-                                  toast.info('Invoice details for ' + (patientData.patient?.full_name || 'Unknown Patient'));
+                                  setSelectedInvoiceDetails({
+                                    ...firstInvoice,
+                                    patient: patientData.patient,
+                                    allInvoices: patientData.invoices
+                                  });
+                                  // Fetch payment details for this invoice
+                                  fetchInvoicePayments(firstInvoice.id);
+                                  setInvoiceDetailsDialogOpen(true);
                                 }
                               }}
                             >
@@ -1145,10 +3207,23 @@ export default function BillingDashboard() {
           <TabsContent value="payments" className="space-y-4">
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Today's Payments</CardTitle>
-                <CardDescription>
-                  All payments received today - {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Today's Payments</CardTitle>
+                    <CardDescription>
+                      All payments received today - {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    onClick={printTodaysPaymentsReport}
+                    variant="outline"
+                    size="sm"
+                    disabled={rawPaymentsData.length === 0}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Report
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {rawPaymentsData.length === 0 ? (
@@ -1286,10 +3361,21 @@ export default function BillingDashboard() {
                     <CardTitle>Insurance Claims</CardTitle>
                     <CardDescription>Submit and track NHIF claims</CardDescription>
                   </div>
-                  <Button onClick={() => setClaimDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Submit New Claim
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={printInsuranceClaimsReport}
+                      variant="outline"
+                      size="sm"
+                      disabled={insuranceClaims.length === 0}
+                    >
+                      <Printer className="h-4 w-4 mr-2" />
+                      Print Report
+                    </Button>
+                    <Button onClick={() => setClaimDialogOpen(true)} className="bg-blue-600 hover:bg-blue-700">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Submit New Claim
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -1932,6 +4018,425 @@ export default function BillingDashboard() {
               </div>
               <Button type="submit" className="w-full">Submit Claim</Button>
             </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Invoice Details Dialog */}
+        <Dialog open={invoiceDetailsDialogOpen} onOpenChange={(open) => {
+          setInvoiceDetailsDialogOpen(open);
+          if (!open) {
+            setInvoicePayments([]);
+            setSelectedInvoiceDetails(null);
+          }
+        }}>
+          <DialogContent className="max-w-3xl w-[95vw] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Invoice Details</DialogTitle>
+              <DialogDescription>
+                Complete invoice information and payment history
+              </DialogDescription>
+            </DialogHeader>
+            
+            {selectedInvoiceDetails && (
+              <div className="space-y-6">
+                {/* Patient Information */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <h4 className="font-medium text-blue-900 mb-3">Patient Information</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium">Name:</span> {selectedInvoiceDetails.patient?.full_name || 'N/A'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Phone:</span> {selectedInvoiceDetails.patient?.phone || 'N/A'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Email:</span> {selectedInvoiceDetails.patient?.email || 'N/A'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Date of Birth:</span> {
+                        selectedInvoiceDetails.patient?.date_of_birth 
+                          ? format(new Date(selectedInvoiceDetails.patient.date_of_birth), 'MMM dd, yyyy')
+                          : 'N/A'
+                      }
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoice Information */}
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <h4 className="font-medium text-green-900 mb-3">Invoice Information</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium">Invoice Number:</span> {selectedInvoiceDetails.invoice_number || 'N/A'}
+                    </div>
+                    <div>
+                      <span className="font-medium">Invoice Date:</span> {
+                        selectedInvoiceDetails.invoice_date 
+                          ? format(new Date(selectedInvoiceDetails.invoice_date), 'MMM dd, yyyy')
+                          : 'N/A'
+                      }
+                    </div>
+                    <div>
+                      <span className="font-medium">Due Date:</span> {
+                        selectedInvoiceDetails.due_date 
+                          ? format(new Date(selectedInvoiceDetails.due_date), 'MMM dd, yyyy')
+                          : 'N/A'
+                      }
+                    </div>
+                    <div>
+                      <span className="font-medium">Status:</span> 
+                      <Badge 
+                        variant={selectedInvoiceDetails.status === 'Paid' ? 'default' : 'secondary'}
+                        className={selectedInvoiceDetails.status === 'Paid' ? 'bg-green-600 ml-2' : 'ml-2'}
+                      >
+                        {selectedInvoiceDetails.status}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoice Items */}
+                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <h4 className="font-medium text-gray-900 mb-3">Services & Items</h4>
+                  <div className="space-y-2">
+                    {(selectedInvoiceDetails.invoice_items || selectedInvoiceDetails.items) && (selectedInvoiceDetails.invoice_items || selectedInvoiceDetails.items).length > 0 ? (
+                      (selectedInvoiceDetails.invoice_items || selectedInvoiceDetails.items).map((item: any, index: number) => (
+                        <div key={index} className="flex justify-between items-center py-2 border-b border-gray-200 last:border-b-0">
+                          <div className="flex-1">
+                            <div className="font-medium">{item.description || item.service_name || 'Service'}</div>
+                            <div className="text-sm text-gray-600">
+                              Quantity: {item.quantity || 1} × TSh{Number(item.unit_price || 0).toFixed(2)}
+                            </div>
+                          </div>
+                          <div className="font-medium">
+                            TSh{Number(item.total_price || item.unit_price || 0).toFixed(2)}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-gray-600 text-sm">No items found for this invoice</p>
+                    )}
+                    
+                    <div className="border-t border-gray-300 pt-3 mt-3 flex justify-between font-bold text-lg">
+                      <span>Total Amount:</span>
+                      <span className="text-green-600">TSh{Number(selectedInvoiceDetails.total_amount || 0).toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Information */}
+                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                  <h4 className="font-medium text-yellow-900 mb-3">Payment Information</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                    <div>
+                      <span className="font-medium">Total Amount:</span> TSh{Number(selectedInvoiceDetails.total_amount || 0).toFixed(2)}
+                    </div>
+                    <div>
+                      <span className="font-medium">Amount Paid:</span> TSh{Number(selectedInvoiceDetails.paid_amount || 0).toFixed(2)}
+                    </div>
+                    <div>
+                      <span className="font-medium">Balance Due:</span> TSh{Number((selectedInvoiceDetails.total_amount || 0) - (selectedInvoiceDetails.paid_amount || 0)).toFixed(2)}
+                    </div>
+                    <div>
+                      <span className="font-medium">Payment Status:</span> 
+                      <Badge 
+                        variant={selectedInvoiceDetails.status === 'Paid' ? 'default' : 'secondary'}
+                        className={selectedInvoiceDetails.status === 'Paid' ? 'bg-green-600 ml-2' : 'ml-2'}
+                      >
+                        {selectedInvoiceDetails.status}
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  {/* Payment History */}
+                  {invoicePayments.length > 0 && (
+                    <div className="border-t border-yellow-300 pt-3">
+                      <h5 className="font-medium text-yellow-900 mb-2">Payment History</h5>
+                      <div className="space-y-2">
+                        {invoicePayments.map((payment: any, index: number) => (
+                          <div key={index} className="bg-white p-3 rounded border border-yellow-200">
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <span className="font-medium">Amount:</span> TSh{Number(payment.amount || 0).toFixed(2)}
+                              </div>
+                              <div>
+                                <span className="font-medium">Method:</span> {payment.payment_method || 'N/A'}
+                              </div>
+                              <div>
+                                <span className="font-medium">Date:</span> {
+                                  payment.payment_date 
+                                    ? format(new Date(payment.payment_date), 'MMM dd, yyyy HH:mm')
+                                    : 'N/A'
+                                }
+                              </div>
+                              <div>
+                                <span className="font-medium">Reference:</span> {payment.reference_number || 'N/A'}
+                              </div>
+                              {payment.notes && (
+                                <div className="col-span-2">
+                                  <span className="font-medium">Notes:</span> {payment.notes}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {invoicePayments.length === 0 && selectedInvoiceDetails.status === 'Paid' && (
+                    <div className="border-t border-yellow-300 pt-3">
+                      <p className="text-sm text-yellow-700">
+                        This invoice is marked as paid, but no detailed payment records were found. 
+                        This may be a legacy payment or quick service payment.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Notes */}
+                {selectedInvoiceDetails.notes && (
+                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                    <h4 className="font-medium text-purple-900 mb-2">Notes</h4>
+                    <p className="text-sm text-purple-800">{selectedInvoiceDetails.notes}</p>
+                  </div>
+                )}
+
+                {/* Multiple Invoices Info */}
+                {selectedInvoiceDetails.allInvoices && selectedInvoiceDetails.allInvoices.length > 1 && (
+                  <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-200">
+                    <h4 className="font-medium text-indigo-900 mb-2">Additional Invoices</h4>
+                    <p className="text-sm text-indigo-800">
+                      This patient has {selectedInvoiceDetails.allInvoices.length} total invoices. 
+                      Showing details for the most recent invoice.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Patient Report Selection Dialog */}
+        <Dialog open={patientReportDialogOpen} onOpenChange={setPatientReportDialogOpen}>
+          <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Print Patient Report</DialogTitle>
+              <DialogDescription>
+                Search and select a patient to print their complete medical and financial report
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              {/* Patient Search */}
+              <div className="space-y-2">
+                <Label htmlFor="patientSearch">Search Patient</Label>
+                <Input
+                  id="patientSearch"
+                  placeholder="Search by name, phone, or email..."
+                  value={patientSearchTerm}
+                  onChange={(e) => setPatientSearchTerm(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+
+              {/* Patient List */}
+              <div className="max-h-96 overflow-y-auto border rounded-lg">
+                {patients
+                  .filter(patient => {
+                    if (!patientSearchTerm) return true;
+                    const searchLower = patientSearchTerm.toLowerCase();
+                    return (
+                      patient.full_name?.toLowerCase().includes(searchLower) ||
+                      patient.phone?.toLowerCase().includes(searchLower) ||
+                      patient.email?.toLowerCase().includes(searchLower)
+                    );
+                  })
+                  .map((patient) => (
+                    <div
+                      key={patient.id}
+                      className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${
+                        selectedPatientForReport?.id === patient.id ? 'bg-blue-50 border-blue-200' : ''
+                      }`}
+                      onClick={() => setSelectedPatientForReport(patient)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium text-gray-900">{patient.full_name}</h4>
+                          <p className="text-sm text-gray-600">
+                            {patient.phone} • {patient.email || 'No email'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            DOB: {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM dd, yyyy') : 'N/A'} • 
+                            ID: {patient.id.substring(0, 8)}...
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium text-gray-900">
+                            {patient.gender || 'N/A'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Registered: {patient.created_at ? format(new Date(patient.created_at), 'MMM yyyy') : 'N/A'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                
+                {patients.filter(patient => {
+                  if (!patientSearchTerm) return true;
+                  const searchLower = patientSearchTerm.toLowerCase();
+                  return (
+                    patient.full_name?.toLowerCase().includes(searchLower) ||
+                    patient.phone?.toLowerCase().includes(searchLower) ||
+                    patient.email?.toLowerCase().includes(searchLower)
+                  );
+                }).length === 0 && (
+                  <div className="p-8 text-center text-gray-500">
+                    <File className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No patients found matching your search</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Selected Patient Preview & Report Type Selection */}
+              {selectedPatientForReport && (
+                <div className="space-y-4">
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h4 className="font-medium text-blue-900 mb-2">Selected Patient</h4>
+                    <div className="text-sm text-blue-800">
+                      <p><strong>Name:</strong> {selectedPatientForReport.full_name}</p>
+                      <p><strong>Phone:</strong> {selectedPatientForReport.phone}</p>
+                      <p><strong>Email:</strong> {selectedPatientForReport.email || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  {/* Report Type Selection */}
+                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h4 className="font-medium text-gray-900 mb-3">Select Report Type</h4>
+                    <div className="grid grid-cols-1 gap-3">
+                      <label className="flex items-center space-x-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="reportType"
+                          value="complete"
+                          defaultChecked
+                          className="text-blue-600"
+                        />
+                        <div>
+                          <div className="font-medium">Complete Medical Report</div>
+                          <div className="text-sm text-gray-600">Full medical history, visits, prescriptions, lab tests, and financial summary</div>
+                        </div>
+                      </label>
+                      
+                      <label className="flex items-center space-x-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="reportType"
+                          value="medical-only"
+                          className="text-blue-600"
+                        />
+                        <div>
+                          <div className="font-medium">Medical History Only</div>
+                          <div className="text-sm text-gray-600">Visits, diagnoses, prescriptions, and lab results (no financial data)</div>
+                        </div>
+                      </label>
+                      
+                      <label className="flex items-center space-x-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="reportType"
+                          value="financial-only"
+                          className="text-blue-600"
+                        />
+                        <div>
+                          <div className="font-medium">Financial Summary Only</div>
+                          <div className="text-sm text-gray-600">Invoices, payments, and billing history (no medical data)</div>
+                        </div>
+                      </label>
+                      
+                      <label className="flex items-center space-x-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="reportType"
+                          value="prescriptions-only"
+                          className="text-blue-600"
+                        />
+                        <div>
+                          <div className="font-medium">Prescription History</div>
+                          <div className="text-sm text-gray-600">All prescriptions and medications prescribed to this patient</div>
+                        </div>
+                      </label>
+                      
+                      <label className="flex items-center space-x-3 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="reportType"
+                          value="lab-results-only"
+                          className="text-blue-600"
+                        />
+                        <div>
+                          <div className="font-medium">Laboratory Results</div>
+                          <div className="text-sm text-gray-600">All lab tests and results for this patient</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPatientReportDialogOpen(false);
+                  setSelectedPatientForReport(null);
+                  setPatientSearchTerm('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (selectedPatientForReport) {
+                    // Get selected report type
+                    const reportTypeRadio = document.querySelector('input[name="reportType"]:checked') as HTMLInputElement;
+                    const reportType = reportTypeRadio?.value || 'complete';
+                    
+                    // Generate the appropriate report
+                    switch(reportType) {
+                      case 'complete':
+                        printIndividualPatientReport(selectedPatientForReport);
+                        break;
+                      case 'medical-only':
+                        printMedicalOnlyReport(selectedPatientForReport);
+                        break;
+                      case 'financial-only':
+                        printFinancialOnlyReport(selectedPatientForReport);
+                        break;
+                      case 'prescriptions-only':
+                        printPrescriptionsOnlyReport(selectedPatientForReport);
+                        break;
+                      case 'lab-results-only':
+                        printLabResultsOnlyReport(selectedPatientForReport);
+                        break;
+                      default:
+                        printIndividualPatientReport(selectedPatientForReport);
+                    }
+                    
+                    setPatientReportDialogOpen(false);
+                    setSelectedPatientForReport(null);
+                    setPatientSearchTerm('');
+                  }
+                }}
+                disabled={!selectedPatientForReport}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Printer className="h-4 w-4 mr-2" />
+                Generate Report
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
