@@ -1422,20 +1422,35 @@ export default function DoctorDashboard() {
         console.log('DEBUG: Initial visit ID:', visitId);
         console.log('DEBUG: Associated appointment ID:', appointmentId);
         
-        // Check if selectedVisit.id is actually an appointment ID (data structure issue)
-        // If appointment_id is undefined, it means selectedVisit is an appointment object
-        if (!appointmentId && selectedVisit.patient_id) {
-          console.log('DEBUG: selectedVisit appears to be an appointment object, finding correct visit...');
+        // FIXED: Better detection of visit vs appointment object
+        // Check if selectedVisit is actually a visit object or appointment object
+        const isVisitObject = selectedVisit.current_stage || selectedVisit.overall_status || selectedVisit.reception_status;
+        const isAppointmentObject = selectedVisit.appointment_date || selectedVisit.appointment_time || (!isVisitObject && selectedVisit.patient_id);
+        
+        if (isAppointmentObject) {
+          console.log('DEBUG: selectedVisit is an appointment object, finding corresponding visit...');
           try {
-            // Find the correct visit using the appointment ID
-            const visitsResponse = await api.get(`/visits?appointment_id=${selectedVisit.id}&limit=1`);
-            const visits = visitsResponse.data.visits || [];
+            // Try multiple approaches to find the visit
+            let visits = [];
+            
+            // Approach 1: Find by appointment_id
+            if (selectedVisit.id) {
+              const visitsResponse1 = await api.get(`/visits?appointment_id=${selectedVisit.id}&limit=1`);
+              visits = visitsResponse1.data.visits || [];
+            }
+            
+            // Approach 2: If no visit found, find by patient_id and today's date
+            if (visits.length === 0 && selectedVisit.patient_id) {
+              const today = new Date().toISOString().split('T')[0];
+              const visitsResponse2 = await api.get(`/visits?patient_id=${selectedVisit.patient_id}&overall_status=Active&from=${today}&to=${today}&limit=1`);
+              visits = visitsResponse2.data.visits || [];
+            }
             
             if (visits.length > 0) {
               visitId = visits[0].id;
               console.log('DEBUG: Found correct visit ID:', visitId);
             } else {
-              throw new Error('No visit found for this appointment');
+              throw new Error('No active visit found for this appointment/patient');
             }
           } catch (findError) {
             console.error('Error finding visit:', findError);
