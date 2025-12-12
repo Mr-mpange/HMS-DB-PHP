@@ -1,2 +1,0 @@
-
-lets create the seeder for to test it 

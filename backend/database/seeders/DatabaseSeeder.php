@@ -18,6 +18,8 @@ class DatabaseSeeder extends Seeder
         // Seed insurance companies
         $this->call([
             InsuranceCompaniesSeeder::class,
+            ServicesSeeder::class, // Add services seeder to get all service types
+            ServiceFormsSeeder::class, // Add service forms for proper documentation
             LocalUsersSeeder::class,
             AppointmentTestSeeder::class,
         ]);

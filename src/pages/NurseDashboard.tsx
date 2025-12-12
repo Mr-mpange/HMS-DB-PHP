@@ -44,6 +44,12 @@ export default function NurseDashboard() {
     date_of_birth: '',
     address: ''
   });
+  
+  // Patient selection mode for lab registration
+  const [isNewPatientMode, setIsNewPatientMode] = useState(true);
+  const [labPatientSearchTerm, setLabPatientSearchTerm] = useState('');
+  const [labPatientSearchResults, setLabPatientSearchResults] = useState<any[]>([]);
+  const [selectedLabPatient, setSelectedLabPatient] = useState<any>(null);
   const [showNotesDialog, setShowNotesDialog] = useState(false);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [showPatientSearch, setShowPatientSearch] = useState(false);
@@ -90,11 +96,6 @@ export default function NurseDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [pendingVisits, setPendingVisits] = useState<any[]>([]);
-  const [showReprintDialog, setShowReprintDialog] = useState(false);
-  const [reprintPatient, setReprintPatient] = useState<any>(null);
-  const [labReportSearchQuery, setLabReportSearchQuery] = useState('');
-  const [labReportSearchResults, setLabReportSearchResults] = useState<any[]>([]);
-  const [searchingLabReports, setSearchingLabReports] = useState(false);
 
   // FIXED: Professional lab report print function that actually works
   const printLabReport = (patient: any, labTests: any[]) => {
@@ -134,7 +135,7 @@ export default function NurseDashboard() {
     const reportId = `HMC-LAB-${dateStr}-${String(patient?.id || '000').slice(-8)}`;
 
     console.log('📋 Generated report ID:', reportId);
-    console.log('🏥 Using hospital settings:', systemSettings);
+    console.log('🏥 Using hospital settings:', hospitalSettings);
     console.log('💳 Using billing info:', billingInfo);
     console.log('🧪 Lab tests to print:', labTests.map(t => ({ name: t.test_name, status: t.status, results: !!t.results })));
 
@@ -1412,26 +1413,40 @@ export default function NurseDashboard() {
 
   const handleCompleteQuickService = async (visit: any) => {
     try {
-      // Check if service requires a form
-      if (!services.length) {
-        // Fetch services if not loaded
-        const servicesRes = await api.get('/services');
-        setServices(servicesRes.data.services || []);
-      }
+      console.log('🔄 Completing Quick Service for visit:', visit);
+      
+      // Always fetch fresh services data to ensure we have the latest forms
+      const servicesRes = await api.get('/services');
+      const allServices = servicesRes.data.services || [];
+      
+      console.log('📋 Available services:', allServices.length);
       
       // Find the service from visit notes (extract service name)
       const serviceMatch = visit.notes?.match(/Quick Service: ([^-]+)/);
       const serviceName = serviceMatch ? serviceMatch[1].trim() : null;
       
+      console.log('🔍 Extracted service name:', serviceName);
+      
       let service = null;
       if (serviceName) {
-        service = services.find((s: any) => 
-          serviceName.includes(s.service_name) || s.service_name.includes(serviceName)
-        );
+        // Try exact match first
+        service = allServices.find((s: any) => s.service_name === serviceName);
+        
+        // If no exact match, try partial match
+        if (!service) {
+          service = allServices.find((s: any) => 
+            serviceName.includes(s.service_name) || s.service_name.includes(serviceName)
+          );
+        }
       }
+      
+      console.log('🎯 Found service:', service);
+      console.log('📝 Service requires form:', service?.requires_form);
+      console.log('📄 Service has template:', !!service?.form_template);
       
       // Check if service requires form
       if (service && service.requires_form && service.form_template) {
+        console.log('✅ Showing service form dialog');
         // Show form dialog
         setSelectedVisitForForm(visit);
         setServiceFormTemplate(service.form_template);
@@ -1439,6 +1454,7 @@ export default function NurseDashboard() {
         return;
       }
       
+      console.log('⚠️ No form required - direct discharge');
       // No form required - direct discharge
       await dischargeQuickServicePatient(visit);
     } catch (error: any) {
@@ -1529,64 +1545,7 @@ export default function NurseDashboard() {
     }
   };
 
-  // Search lab reports for patients
-  const searchLabReports = async (query: string) => {
-    if (!query.trim()) {
-      setLabReportSearchResults([]);
-      return;
-    }
 
-    setSearchingLabReports(true);
-    try {
-      // First search for patients
-      const patientsResponse = await api.get(`/patients?search=${encodeURIComponent(query)}&limit=10`);
-      const patients = patientsResponse.data.patients || [];
-      
-      // For each patient, get their completed lab tests
-      const patientsWithLabReports = [];
-      
-      for (const patient of patients) {
-        try {
-          const labsResponse = await api.get(`/labs?patient_id=${patient.id}&status=Completed`);
-          const completedTests = labsResponse.data.labTests || labsResponse.data.tests || [];
-          
-          if (completedTests.length > 0) {
-            // Group tests by visit/date for better organization
-            const testsByDate = completedTests.reduce((acc: any, test: any) => {
-              let testDate = 'Unknown';
-              if (test.completed_at) {
-                try {
-                  testDate = format(new Date(test.completed_at), 'yyyy-MM-dd');
-                } catch (e) {
-                  testDate = 'Invalid date';
-                }
-              }
-              if (!acc[testDate]) {
-                acc[testDate] = [];
-              }
-              acc[testDate].push(test);
-              return acc;
-            }, {});
-            
-            patientsWithLabReports.push({
-              ...patient,
-              labReportDates: Object.keys(testsByDate).sort().reverse(), // Most recent first
-              labTestsByDate: testsByDate
-            });
-          }
-        } catch (error) {
-          console.error(`Error fetching labs for patient ${patient.id}:`, error);
-        }
-      }
-      
-      setLabReportSearchResults(patientsWithLabReports);
-    } catch (error: any) {
-      console.error('Lab report search error:', error);
-      toast.error(error.response?.data?.error || 'Failed to search lab reports');
-    } finally {
-      setSearchingLabReports(false);
-    }
-  };
 
   // Real-time search effect
   useEffect(() => {
@@ -1599,16 +1558,28 @@ export default function NurseDashboard() {
     return () => clearTimeout(timeoutId);
   }, [searchQuery, showPatientSearch]);
 
-  // Real-time lab report search effect
+  // Lab patient search effect
   useEffect(() => {
-    if (!showReprintDialog) return;
-    
-    const timeoutId = setTimeout(() => {
-      searchLabReports(labReportSearchQuery);
-    }, 500); // Debounce for 500ms
+    const searchLabPatients = async () => {
+      if (labPatientSearchTerm.length < 2) {
+        setLabPatientSearchResults([]);
+        return;
+      }
 
-    return () => clearTimeout(timeoutId);
-  }, [labReportSearchQuery, showReprintDialog]);
+      try {
+        const response = await api.get(`/patients?search=${encodeURIComponent(labPatientSearchTerm)}&limit=10`);
+        setLabPatientSearchResults(response.data.patients || []);
+      } catch (error) {
+        console.error('Error searching lab patients:', error);
+        setLabPatientSearchResults([]);
+      }
+    };
+
+    const debounceTimer = setTimeout(searchLabPatients, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [labPatientSearchTerm]);
+
+
 
   const submitVitals = async () => {
     if (!selectedPatient) return;
@@ -2110,13 +2081,42 @@ export default function NurseDashboard() {
                         Order Lab Tests
                       </Button>
                     ) : visit.visit_type === 'Quick Service' ? (
-                      <Button 
-                        onClick={() => handleCompleteQuickService(visit)}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <Stethoscope className="h-4 w-4 mr-2" />
-                        Complete Service
-                      </Button>
+                      (() => {
+                        // Determine service type from visit notes
+                        const serviceType = visit.notes?.toLowerCase() || '';
+                        let buttonText = 'Complete Service';
+                        let icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        
+                        if (serviceType.includes('vaccination')) {
+                          buttonText = 'Administer Vaccination';
+                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        } else if (serviceType.includes('injection')) {
+                          buttonText = 'Give Injection';
+                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        } else if (serviceType.includes('wound dressing')) {
+                          buttonText = 'Dress Wound';
+                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        } else if (serviceType.includes('blood pressure')) {
+                          buttonText = 'Check Blood Pressure';
+                          icon = <Thermometer className="h-4 w-4 mr-2" />;
+                        } else if (serviceType.includes('suturing')) {
+                          buttonText = 'Perform Suturing';
+                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        } else if (serviceType.includes('iv drip')) {
+                          buttonText = 'Set Up IV Drip';
+                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        }
+                        
+                        return (
+                          <Button 
+                            onClick={() => handleCompleteQuickService(visit)}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            {icon}
+                            {buttonText}
+                          </Button>
+                        );
+                      })()
                     ) : (
                       <Button onClick={() => handleRecordVitals(visit.patient)}>
                         <Thermometer className="h-4 w-4 mr-2" />
@@ -2165,30 +2165,7 @@ export default function NurseDashboard() {
           </CardContent>
         </Card>
 
-        {/* Lab Report Search & Reprint */}
-        <Card className="shadow-lg border-purple-200">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-purple-700">
-              <Search className="h-5 w-5" />
-              Lab Report Search & Reprint
-            </CardTitle>
-            <CardDescription>Search and reprint previous lab reports for patients</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              variant="outline"
-              className="w-full text-purple-700 border-purple-300 hover:bg-purple-100"
-              onClick={() => {
-                setShowReprintDialog(true);
-                setSearchQuery('');
-                setSearchResults([]);
-              }}
-            >
-              <Printer className="h-5 w-5 mr-2" />
-              Search & Reprint Lab Reports
-            </Button>
-          </CardContent>
-        </Card>
+
       </div>
 
       {/* Vitals Dialog */}
@@ -2900,14 +2877,53 @@ export default function NurseDashboard() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5" />
-              Register New Patient for Lab Tests
+              Add Patient for Lab Tests
             </DialogTitle>
             <DialogDescription>
-              Register a walk-in patient who needs lab tests only
+              {isNewPatientMode ? 'Register a new walk-in patient who needs lab tests only' : 'Select an existing patient for lab tests'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
+            {/* Patient Type Toggle */}
+            <div className="flex gap-2 p-2 bg-gray-50 rounded-md">
+              <Button
+                type="button"
+                variant={isNewPatientMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setIsNewPatientMode(true);
+                  setSelectedLabPatient(null);
+                  setLabPatientSearchTerm('');
+                  setLabPatientSearchResults([]);
+                }}
+                className="flex-1"
+              >
+                New Patient
+              </Button>
+              <Button
+                type="button"
+                variant={!isNewPatientMode ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setIsNewPatientMode(false);
+                  setNewPatientForm({
+                    full_name: '',
+                    phone: '',
+                    gender: '',
+                    date_of_birth: '',
+                    address: ''
+                  });
+                }}
+                className="flex-1"
+              >
+                Existing Patient
+              </Button>
+            </div>
+
+            {isNewPatientMode ? (
+              // New Patient Form
+              <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="full_name">Full Name *</Label>
@@ -2970,6 +2986,81 @@ export default function NurseDashboard() {
                 />
               </div>
             </div>
+              </div>
+            ) : (
+              // Existing Patient Selection
+              <div className="space-y-4">
+                {!selectedLabPatient ? (
+                  <>
+                    <div>
+                      <Label htmlFor="lab-patient-search">Search Patient</Label>
+                      <Input
+                        id="lab-patient-search"
+                        placeholder="Enter patient name or phone number..."
+                        value={labPatientSearchTerm}
+                        onChange={(e) => setLabPatientSearchTerm(e.target.value)}
+                        autoFocus
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Start typing to search for existing patients
+                      </p>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto">
+                      {labPatientSearchResults.length === 0 ? (
+                        <p className="text-center text-muted-foreground py-8">
+                          {labPatientSearchTerm ? 'No patients found' : 'Enter search term to find patients'}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {labPatientSearchResults.map((patient) => (
+                            <div
+                              key={patient.id}
+                              className="p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                              onClick={() => setSelectedLabPatient(patient)}
+                            >
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h4 className="font-medium">{patient.full_name}</h4>
+                                  <p className="text-sm text-muted-foreground">Phone: {patient.phone}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    DOB: {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM dd, yyyy') : 'N/A'}
+                                  </p>
+                                </div>
+                                <Button size="sm" variant="outline">
+                                  Select
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-medium text-blue-900">Selected Patient</h4>
+                        <p className="text-blue-700">{selectedLabPatient.full_name}</p>
+                        <p className="text-sm text-blue-600">Phone: {selectedLabPatient.phone}</p>
+                        <p className="text-sm text-blue-600">
+                          DOB: {selectedLabPatient.date_of_birth ? format(new Date(selectedLabPatient.date_of_birth), 'MMM dd, yyyy') : 'N/A'}
+                        </p>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => setSelectedLabPatient(null)}
+                        className="text-blue-600 hover:text-blue-700"
+                      >
+                        Change
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-2 pt-4">
               <Button
@@ -2990,43 +3081,52 @@ export default function NurseDashboard() {
               </Button>
               <Button
                 className="flex-1 bg-green-600 hover:bg-green-700"
+                disabled={isNewPatientMode ? false : !selectedLabPatient}
                 onClick={async () => {
                   try {
-                    // Validate required fields
-                    if (!newPatientForm.full_name || !newPatientForm.phone || !newPatientForm.gender || !newPatientForm.date_of_birth) {
-                      toast.error('Please fill in all required fields');
-                      return;
+                    let patientToUse = null;
+
+                    if (isNewPatientMode) {
+                      // Validate required fields for new patient
+                      if (!newPatientForm.full_name || !newPatientForm.phone || !newPatientForm.gender || !newPatientForm.date_of_birth) {
+                        toast.error('Please fill in all required fields');
+                        return;
+                      }
+
+                      // Register new patient
+                      const patientRes = await api.post('/patients', {
+                        full_name: newPatientForm.full_name,
+                        phone: newPatientForm.phone,
+                        gender: newPatientForm.gender,
+                        date_of_birth: newPatientForm.date_of_birth,
+                        address: newPatientForm.address || 'Walk-in',
+                        status: 'Active'
+                      });
+
+                      patientToUse = patientRes.data.patient || patientRes.data;
+                      toast.success(`${newPatientForm.full_name} registered successfully!`);
+                    } else {
+                      // Use existing patient
+                      if (!selectedLabPatient) {
+                        toast.error('Please select a patient');
+                        return;
+                      }
+                      patientToUse = selectedLabPatient;
                     }
 
-                    // Register patient
-                    const patientRes = await api.post('/patients', {
-                      full_name: newPatientForm.full_name,
-                      phone: newPatientForm.phone,
-                      gender: newPatientForm.gender,
-                      date_of_birth: newPatientForm.date_of_birth,
-                      address: newPatientForm.address || 'Walk-in',
-                      status: 'Active'
-                    });
-
-                    const newPatient = patientRes.data.patient || patientRes.data;
-
-                    // Create Lab Only visit
+                    // Create Lab Only visit for the patient
                     const visitRes = await api.post('/visits', {
-                      patient_id: newPatient.id,
+                      patient_id: patientToUse.id,
                       visit_date: new Date().toISOString().split('T')[0],
                       visit_type: 'Lab Only',
                       status: 'Active',
                       current_stage: 'nurse',
                       nurse_status: 'Pending',
-                      reception_status: 'Checked In',
-                      reception_completed_at: new Date().toISOString(),
                       overall_status: 'Active',
-                      notes: 'Walk-in patient registered by nurse for lab tests'
+                      notes: `Direct lab registration by Nurse ${user?.full_name || 'Staff'} - Patient: ${patientToUse.full_name}`
                     });
 
                     const newVisit = visitRes.data.visit || visitRes.data;
-
-                    toast.success(`${newPatientForm.full_name} registered successfully! Now order lab tests.`);
                     
                     // Close registration dialog
                     setShowRegisterPatientDialog(false);
@@ -3037,12 +3137,15 @@ export default function NurseDashboard() {
                       date_of_birth: '',
                       address: ''
                     });
+                    setSelectedLabPatient(null);
+                    setLabPatientSearchTerm('');
+                    setLabPatientSearchResults([]);
 
                     // Immediately open lab test ordering dialog for this patient
                     setSelectedPatientForLabTests({
                       ...newVisit,
-                      patient: newPatient,
-                      patient_id: newPatient.id
+                      patient: patientToUse,
+                      patient_id: patientToUse.id
                     });
                     setSelectedLabTests([]);
                     setShowOrderLabTestsDialog(true);
@@ -3073,142 +3176,7 @@ export default function NurseDashboard() {
         submitting={formSubmitting}
       />
 
-      {/* Lab Report Search & Reprint Dialog */}
-      <Dialog open={showReprintDialog} onOpenChange={setShowReprintDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" />
-              Search & Reprint Lab Reports
-            </DialogTitle>
-            <DialogDescription>
-              Search for patients and reprint their previous lab reports
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="lab-report-search">Search by patient name or phone</Label>
-              <Input
-                id="lab-report-search"
-                placeholder="Enter patient name or phone number..."
-                value={labReportSearchQuery}
-                onChange={(e) => setLabReportSearchQuery(e.target.value)}
-                autoFocus
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Start typing to search for patients with lab reports
-              </p>
-            </div>
-
-            <div className="max-h-96 overflow-y-auto">
-              {searchingLabReports ? (
-                <div className="text-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                  <p className="text-muted-foreground">Searching lab reports...</p>
-                </div>
-              ) : labReportSearchResults.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  {labReportSearchQuery ? 'No patients with lab reports found' : 'Enter search term to find patients with lab reports'}
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {labReportSearchResults.map((patient) => (
-                    <Card key={patient.id} className="border-purple-200">
-                      <CardHeader className="pb-3">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <CardTitle className="text-lg">{patient.full_name}</CardTitle>
-                            <CardDescription>
-                              Phone: {patient.phone} • DOB: {patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMM dd, yyyy') : 'N/A'}
-                            </CardDescription>
-                          </div>
-                          <Badge variant="secondary">
-                            {patient.labReportDates?.length || 0} Report{patient.labReportDates?.length !== 1 ? 's' : ''}
-                          </Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium text-muted-foreground">Available Lab Reports:</p>
-                          <div className="grid gap-2">
-                            {patient.labReportDates?.map((date: string) => {
-                              const testsForDate = patient.labTestsByDate[date] || [];
-                              return (
-                                <div key={date} className="flex items-center justify-between p-3 border rounded-lg bg-purple-50">
-                                  <div>
-                                    <p className="font-medium">{(() => {
-                                      if (!date || date === 'Unknown' || date === 'Invalid date') return date;
-                                      try {
-                                        return format(new Date(date), 'MMM dd, yyyy');
-                                      } catch (e) {
-                                        return 'Invalid date';
-                                      }
-                                    })()}</p>
-                                    <p className="text-sm text-muted-foreground">
-                                      {testsForDate.length} test{testsForDate.length !== 1 ? 's' : ''}: {testsForDate.map((t: any) => t.test_name).join(', ')}
-                                    </p>
-                                  </div>
-                                  <Button
-                                    size="sm"
-                                    className="bg-purple-600 hover:bg-purple-700"
-                                    onClick={async () => {
-                                      try {
-                                        // Check billing status before reprinting
-                                        const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
-                                        const canPrint = await checkBillingBeforePrint(patient.id);
-                                        
-                                        if (!canPrint) {
-                                          return; // Billing check failed, don't print
-                                        }
-                                        
-                                        // Print the lab report for this date
-                                        await printLabReport(patient, testsForDate);
-                                        const dateStr = (() => {
-                                          if (!date || date === 'Unknown' || date === 'Invalid date') return date;
-                                          try {
-                                            return format(new Date(date), 'MMM dd, yyyy');
-                                          } catch (e) {
-                                            return 'Invalid date';
-                                          }
-                                        })();
-                                        toast.success(`Lab report for ${dateStr} opened for printing`);
-                                      } catch (error) {
-                                        console.error('Error reprinting lab report:', error);
-                                        toast.error('Failed to reprint lab report');
-                                      }
-                                    }}
-                                  >
-                                    <Printer className="h-4 w-4 mr-2" />
-                                    Reprint
-                                  </Button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="flex justify-end pt-4">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowReprintDialog(false);
-                setLabReportSearchQuery('');
-                setLabReportSearchResults([]);
-              }}
-            >
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </DashboardLayout>
   );
 }
