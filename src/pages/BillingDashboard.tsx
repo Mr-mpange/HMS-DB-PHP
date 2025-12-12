@@ -1006,11 +1006,11 @@ export default function BillingDashboard() {
                     </TableHeader>
                     <TableBody>
                       {invoices
-                        .filter((patientData) => patientData.status !== 'Paid') // Hide fully paid patients
+                        .filter((patientData) => patientData.status !== 'Paid' && patientData.patient) // Hide fully paid patients and null patients
                         .map((patientData) => (
                         <TableRow key={patientData.patient.id}>
-                          <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
-                          <TableCell className="text-sm">{patientData.patient.phone}</TableCell>
+                          <TableCell className="font-medium">{patientData.patient?.full_name || 'Unknown Patient'}</TableCell>
+                          <TableCell className="text-sm">{patientData.patient?.phone || 'N/A'}</TableCell>
                           <TableCell className="font-semibold text-blue-600">
                             TSh{(patientCosts[patientData.patient.id] || 0).toFixed(2)}
                           </TableCell>
@@ -1087,11 +1087,11 @@ export default function BillingDashboard() {
                     </TableHeader>
                     <TableBody>
                       {invoices
-                        .filter((patientData) => patientData.status === 'Paid') // Show only fully paid patients
+                        .filter((patientData) => patientData.status === 'Paid' && patientData.patient) // Show only fully paid patients with valid patient data
                         .map((patientData) => (
                         <TableRow key={patientData.patient.id}>
-                          <TableCell className="font-medium">{patientData.patient.full_name}</TableCell>
-                          <TableCell className="text-sm">{patientData.patient.phone}</TableCell>
+                          <TableCell className="font-medium">{patientData.patient?.full_name || 'Unknown Patient'}</TableCell>
+                          <TableCell className="text-sm">{patientData.patient?.phone || 'N/A'}</TableCell>
                           <TableCell className="font-semibold text-green-600">
                             TSh{Number(patientData.totalAmount as number).toFixed(2)}
                           </TableCell>
@@ -1116,7 +1116,7 @@ export default function BillingDashboard() {
                                 // Show invoice details
                                 const firstInvoice = patientData.invoices[0];
                                 if (firstInvoice) {
-                                  toast.info(`Invoice details for ${patientData.patient.full_name}`);
+                                  toast.info('Invoice details for ' + (patientData.patient?.full_name || 'Unknown Patient'));
                                 }
                               }}
                             >
