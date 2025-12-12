@@ -441,9 +441,24 @@ export default function LabDashboard() {
         // 2. Nurse ordered tests → Send back to nurse for next steps
         // 3. Direct lab orders → Send to billing
         
-        const orderedByDoctor = visit.doctor_status !== 'Not Required' && visit.doctor_id;
-        const orderedByNurse = (visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required') || 
-                              (visit.notes && visit.notes.includes('nurse'));
+        // IMPROVED: Better detection logic for who ordered the tests
+        const orderedByDoctor = (
+          // Has doctor involvement
+          (visit.doctor_status !== 'Not Required' && visit.doctor_id) ||
+          // Visit type is consultation (not Lab Only)
+          (visit.visit_type === 'Consultation' && visit.doctor_id) ||
+          // Doctor status indicates involvement
+          (visit.doctor_status === 'Pending Review' || visit.doctor_status === 'In Progress' || visit.doctor_status === 'In Consultation')
+        );
+        
+        const orderedByNurse = (
+          // Lab Only visit type (nurse workflow)
+          visit.visit_type === 'Lab Only' ||
+          // Nurse completed and doctor not required
+          (visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required') || 
+          // Notes indicate nurse ordering
+          (visit.notes && visit.notes.includes('nurse'))
+        );
         
         console.log('🔍 Workflow Decision:', {
           visitId: visit.id,
@@ -451,8 +466,11 @@ export default function LabDashboard() {
           nurse_status: visit.nurse_status,
           doctor_id: visit.doctor_id,
           notes: visit.notes,
+          visit_type: visit.visit_type,
           orderedByDoctor,
-          orderedByNurse
+          orderedByNurse,
+          'doctor_status !== Not Required': visit.doctor_status !== 'Not Required',
+          'has doctor_id': !!visit.doctor_id
         });
         
         let updateData;

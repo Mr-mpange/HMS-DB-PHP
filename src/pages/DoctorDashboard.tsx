@@ -2937,7 +2937,32 @@ export default function DoctorDashboard() {
                             <CheckCircle className="h-3 w-3" />
                             Complete Service
                           </Button>
-                        ) : (!visit.doctor_diagnosis && visit.doctor_status !== 'In Progress' && visit.doctor_status !== 'In Consultation') ? (
+                        ) : hasLabResults && !visit.doctor_diagnosis && (visit.doctor_status === 'Pending Review' || visit.lab_completed_at) ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOrderLabTests(visit)}
+                              className="flex items-center gap-1 border-orange-300 text-orange-700 hover:bg-orange-50"
+                            >
+                              <TestTube className="h-3 w-3" />
+                              Return to Lab
+                            </Button>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                setAppointmentToComplete(visit);
+                                setCompletionNotes('');
+                                setShowCompleteDialog(true);
+                              }}
+                              className="flex items-center gap-1 bg-green-600 hover:bg-green-700"
+                            >
+                              <FileText className="h-3 w-3" />
+                              Write Prescription
+                            </Button>
+                          </>
+                        ) : (!visit.doctor_diagnosis && visit.doctor_status !== 'In Progress' && visit.doctor_status !== 'In Consultation' && visit.doctor_status !== 'Pending Review') ? (
                           <Button
                             variant="default"
                             size="sm"
@@ -2958,6 +2983,7 @@ export default function DoctorDashboard() {
                             Consultation In Progress
                           </Button>
                         )}
+                        {/* Actions for ongoing consultations */}
                         {(visit.doctor_status === 'In Progress' || visit.doctor_status === 'In Consultation') && (
                           <>
                             <Button
