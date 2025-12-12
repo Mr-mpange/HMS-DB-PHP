@@ -1986,6 +1986,12 @@ export default function NurseDashboard() {
                             const isCompleted = t.status === 'Completed';
                             const isFromThisVisit = t.visit_id === visit.id || t.visit?.id === visit.id;
                             const isLabOnlyVisit = visit.visit_type === 'Lab Only';
+                            const isNurseSentToLab = visit.notes && visit.notes.includes('nurse');
+                            
+                            // For nurse-sent patients, check if test was created after the visit
+                            const visitDate = new Date(visit.created_at);
+                            const testDate = new Date(t.created_at);
+                            const isRecentTest = testDate >= visitDate;
                             
                             console.log('🔬 Test filter check:', {
                               test_id: t.id,
@@ -1995,11 +2001,17 @@ export default function NurseDashboard() {
                               visit_id: t.visit_id,
                               isFromThisVisit,
                               isLabOnlyVisit,
-                              shouldInclude: isCompleted && (isFromThisVisit || isLabOnlyVisit)
+                              isNurseSentToLab,
+                              isRecentTest,
+                              visitDate: visit.created_at,
+                              testDate: t.created_at
                             });
                             
-                            // Only show if completed AND (from this visit OR this is a Lab Only visit)
-                            return isCompleted && (isFromThisVisit || isLabOnlyVisit);
+                            // Show completed tests if:
+                            // 1. From this specific visit, OR
+                            // 2. Lab Only visit type, OR  
+                            // 3. Nurse sent to lab and test was created after visit
+                            return isCompleted && (isFromThisVisit || isLabOnlyVisit || (isNurseSentToLab && isRecentTest));
                           });
                           
                           console.log('🔬 Filtered completed tests:', completedTests);
@@ -2671,11 +2683,7 @@ export default function NurseDashboard() {
               </div>
             )}
 
-            {/* Footer for Print */}
-            <div className="text-center text-sm text-muted-foreground border-t pt-4 print:block">
-              <p>This is an official laboratory report</p>
-              <p className="mt-1">Printed on: {format(new Date(), 'MMM dd, yyyy HH:mm')}</p>
-            </div>
+
           </div>
 
           <div className="flex gap-2 pt-4 print:hidden">
@@ -2694,39 +2702,7 @@ export default function NurseDashboard() {
             {/* Only show print and billing options for non-nurse workflows */}
             {selectedVisitForResults?.visit_type !== 'Lab Only' && (
               <>
-                <Button
-                  className="flex-1 bg-green-600 hover:bg-green-700"
-                  onClick={async () => {
-                    console.log('🖨️ Print button clicked');
-                    console.log('🖨️ Selected visit:', selectedVisitForResults);
-                    console.log('🖨️ Patient data:', selectedVisitForResults?.patient);
-                    console.log('🖨️ Lab test results:', labTestResults);
-                    
-                    if (!selectedVisitForResults?.patient) {
-                      toast.error('Patient information is missing');
-                      return;
-                    }
-                    
-                    if (!labTestResults || labTestResults.length === 0) {
-                      toast.error('No lab test results to print');
-                      return;
-                    }
-                    
-                    // Check billing status before printing
-                    const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
-                    const canPrint = await checkBillingBeforePrint(selectedVisitForResults.patient.id);
-                    
-                    if (!canPrint) {
-                      return; // Billing check failed, don't print
-                    }
-                    
-                    // Use professional print function
-                    await printLabReport(selectedVisitForResults?.patient, labTestResults);
-                  }}
-                >
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print Lab Report
-                </Button>
+
                 <Button
                   className="flex-1"
                   onClick={async () => {

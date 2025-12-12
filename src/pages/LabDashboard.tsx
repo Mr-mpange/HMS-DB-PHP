@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
 import { toast } from 'sonner';
-import { FlaskConical, AlertCircle, CheckCircle, Clock, Loader2, Printer } from 'lucide-react';
+import { FlaskConical, AlertCircle, CheckCircle, Clock, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function LabDashboard() {
@@ -27,7 +27,7 @@ export default function LabDashboard() {
   const [addTestDialogOpen, setAddTestDialogOpen] = useState(false);
   const [labTestServices, setLabTestServices] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState(''); // Search functionality
-  const [showPrintOption, setShowPrintOption] = useState(false); // Show print before submit
+
   const [newTestData, setNewTestData] = useState({
     test_name: '',
     test_type: 'Laboratory',
@@ -206,24 +206,7 @@ export default function LabDashboard() {
       toast.info(`Started ${pendingTests.length} test(s)`);
     }
 
-    // Check if this patient needs print (only cases going to billing need print)
-    try {
-      const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
-      const visits = data.visits || [];
-      
-      if (visits.length > 0) {
-        const visit = visits[0];
-        const orderedByDoctor = visit.doctor_status !== 'Not Required' && visit.doctor_id;
-        const orderedByNurse = visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required';
-        
-        // Show print option ONLY for cases going to billing (not doctor review or nurse review)
-        // Hide print for: doctor-ordered tests (go to doctor) and nurse-ordered tests (go back to nurse)
-        setShowPrintOption(!orderedByDoctor && !orderedByNurse);
-      }
-    } catch (error) {
-      console.error('Error checking visit info:', error);
-      setShowPrintOption(false);
-    }
+
 
     setSelectedPatientTests(patientTests);
     setIsViewMode(false); // Set to edit mode
@@ -256,6 +239,7 @@ export default function LabDashboard() {
     try {
       const response = await api.post('/labs', {
         patient_id: selectedPatientTests[0].patient_id,
+        visit_id: selectedPatientTests[0].visit_id || selectedPatientTests[0].id,
         test_name: newTestData.test_name,
         test_type: newTestData.test_type,
         priority: newTestData.priority,
@@ -308,137 +292,7 @@ export default function LabDashboard() {
     }));
   };
 
-  // Print lab results function
-  const printLabResults = (patientTests: any[], patientInfo: any, visitInfo: any) => {
-    const orderedByDoctor = visitInfo?.doctor_status !== 'Not Required' && visitInfo?.doctor_id;
-    const orderedByNurse = visitInfo?.nurse_status === 'Completed' && visitInfo?.doctor_status === 'Not Required';
-    const goingToBilling = !orderedByDoctor && !orderedByNurse;
 
-    // Create print content and inject into page (NO POPUP!)
-    const printContent = `
-      <div id="lab-results-print" style="display: none;">
-        <style>
-          @media print {
-            body * { visibility: hidden; }
-            #lab-results-print, #lab-results-print * { visibility: visible; }
-            #lab-results-print { position: absolute; left: 0; top: 0; width: 100%; }
-          }
-        </style>
-        <div class="print-content">
-          <div class="header">
-            <h1>Lab Test Results - ${patientInfo?.full_name}</h1>
-          </div>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-            .patient-info { margin-bottom: 20px; }
-            .results-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            .results-table th, .results-table td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            .results-table th { background-color: #f2f2f2; }
-            .abnormal { color: #dc2626; font-weight: bold; }
-            .normal { color: #16a34a; }
-            .footer { margin-top: 30px; border-top: 1px solid #ddd; padding-top: 10px; }
-            .discharge-notice { background-color: #fef3c7; border: 1px solid #f59e0b; padding: 10px; margin: 20px 0; border-radius: 4px; }
-            @media print {
-              body { margin: 0; }
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>LABORATORY TEST RESULTS</h1>
-            <p>Hospital Management System</p>
-          </div>
-          
-          <div class="patient-info">
-            <h3>Patient Information</h3>
-            <p><strong>Name:</strong> ${patientInfo?.full_name || 'N/A'}</p>
-            <p><strong>Phone:</strong> ${patientInfo?.phone || 'N/A'}</p>
-            <p><strong>Date of Birth:</strong> ${patientInfo?.date_of_birth ? format(new Date(patientInfo.date_of_birth), 'MMM dd, yyyy') : 'N/A'}</p>
-            <p><strong>Test Date:</strong> ${format(new Date(), 'MMM dd, yyyy HH:mm')}</p>
-            <p><strong>Visit Type:</strong> ${visitInfo?.visit_type || 'Standard'}</p>
-          </div>
-
-          ${goingToBilling ? `
-            <div class="discharge-notice">
-              <strong>💳 BILLING REQUIRED:</strong> Patient must go to billing for payment after printing this report. No discharge without payment.
-            </div>
-          ` : orderedByNurse ? `
-            <div class="discharge-notice">
-              <strong>👩‍⚕️ NURSE REVIEW:</strong> Patient will be sent back to nurse for review of lab results and next steps.
-            </div>
-          ` : `
-            <div class="discharge-notice">
-              <strong>👨‍⚕️ DOCTOR REVIEW:</strong> Patient will be sent back to doctor for review of lab results.
-            </div>
-          `}
-
-          <h3>Test Results</h3>
-          <table class="results-table">
-            <thead>
-              <tr>
-                <th>Test Name</th>
-                <th>Result</th>
-                <th>Unit</th>
-                <th>Reference Range</th>
-                <th>Status</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${patientTests.map(test => {
-                const result = batchResults[test.id];
-                if (!result || !result.result_value) return '';
-                
-                return `
-                  <tr>
-                    <td>${test.test_name}</td>
-                    <td><strong>${result.result_value}</strong></td>
-                    <td>${result.unit || '-'}</td>
-                    <td>${result.reference_range || '-'}</td>
-                    <td class="${result.abnormal_flag ? 'abnormal' : 'normal'}">
-                      ${result.abnormal_flag ? 'ABNORMAL' : 'NORMAL'}
-                    </td>
-                    <td>${result.notes || '-'}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-
-          <div class="footer">
-            <p><strong>Performed by:</strong> Lab Technician</p>
-            <p><strong>Report generated:</strong> ${format(new Date(), 'MMM dd, yyyy HH:mm')}</p>
-            <p><strong>Status:</strong> ${goingToBilling ? 'PENDING BILLING (MANDATORY)' : orderedByNurse ? 'SENT TO NURSE FOR REVIEW' : 'SENT TO DOCTOR FOR REVIEW'}</p>
-          </div>
-
-        </div>
-      </div>
-    `;
-
-    // Remove any existing print content
-    const existingPrint = document.getElementById('lab-results-print');
-    if (existingPrint) {
-      existingPrint.remove();
-    }
-
-    // Add print content to page
-    document.body.insertAdjacentHTML('beforeend', printContent);
-
-    // Trigger print
-    setTimeout(() => {
-      window.print();
-      
-      // Clean up after printing
-      setTimeout(() => {
-        const printElement = document.getElementById('lab-results-print');
-        if (printElement) {
-          printElement.remove();
-        }
-      }, 1000);
-    }, 100);
-  };
 
   const handleSubmitBatchResults = async () => {
     try {
@@ -508,7 +362,6 @@ export default function LabDashboard() {
       setSelectedPatientTests([]);
       setBatchResults({});
       setIsViewMode(false);
-      setShowPrintOption(false);
       
       // Refresh data after a delay to ensure backend has processed
       setTimeout(() => {
@@ -1380,43 +1233,10 @@ export default function LabDashboard() {
                   setSelectedPatientTests([]);
                   setBatchResults({});
                   setIsViewMode(false);
-                  setShowPrintOption(false);
                 }}>
                   Cancel
                 </Button>
                 
-                {showPrintOption && (
-                  <Button 
-                    variant="outline" 
-                    onClick={async () => {
-                      // Get visit info for print
-                      try {
-                        const patientId = selectedPatientTests[0]?.patient_id;
-                        if (patientId) {
-                          // Check billing status before printing
-                          const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
-                          const canPrint = await checkBillingBeforePrint(patientId);
-                          
-                          if (!canPrint) {
-                            return; // Billing check failed, don't print
-                          }
-                          
-                          const { data } = await api.get(`/visits?patient_id=${patientId}&current_stage=lab&limit=1`);
-                          const visit = data.visits?.[0];
-                          const patient = selectedPatientTests[0]?.patient;
-                          
-                          printLabResults(selectedPatientTests, patient, visit);
-                        }
-                      } catch (error) {
-                        console.error('Error getting visit info for print:', error);
-                        toast.error('Failed to print results');
-                      }
-                    }}
-                  >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print Results
-                  </Button>
-                )}
                 
                 <Button onClick={handleSubmitBatchResults}>
                   <CheckCircle className="h-4 w-4 mr-2" />
