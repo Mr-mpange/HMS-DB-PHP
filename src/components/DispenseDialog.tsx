@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, CheckCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Plus, Trash2 } from 'lucide-react';
 
 interface DispenseDialogProps {
   open: boolean;
@@ -26,29 +26,28 @@ export function DispenseDialog({
   loading = false
 }: DispenseDialogProps) {
   
-  // Initialize editable medications with prescribed values
   const [editableMedications, setEditableMedications] = useState<any[]>([]);
   const [notes, setNotes] = useState('');
 
-  // Update when prescription changes
   useEffect(() => {
     const prescriptionItems = prescription?.items || prescription?.medications || [];
-    console.log('DispenseDialog - prescription:', prescription);
-    console.log('DispenseDialog - items:', prescriptionItems);
     
     if (prescriptionItems.length > 0) {
       setEditableMedications(
         prescriptionItems.map((med: any) => ({
           ...med,
           dispensed_quantity: med.quantity,
-          dispensed_dosage: med.dosage
+          dispensed_dosage: med.dosage,
+          original_medication_name: med.medication_name,
+          original_dosage: med.dosage,
+          original_quantity: med.quantity,
+          is_new: false
         }))
       );
       setNotes('');
     }
   }, [prescription]);
 
-  // Calculate total cost based on edited quantities
   const totalCost = editableMedications.reduce((sum: number, med: any) => {
     const medicationData = medications.find(m => m.id === med.medication_id);
     const unitPrice = medicationData?.unit_price || 0;
@@ -59,6 +58,57 @@ export function DispenseDialog({
   const updateMedication = (index: number, field: string, value: any) => {
     const updated = [...editableMedications];
     updated[index] = { ...updated[index], [field]: value };
+    
+    if (field === 'medication_id') {
+      const selectedMed = medications.find(m => m.id === value);
+      if (selectedMed) {
+        const autoFilledDosage = selectedMed.strength ? 
+          (selectedMed.strength + ' ' + (selectedMed.dosage_form || '')).trim() : 
+          updated[index].dosage;
+
+        updated[index] = {
+          ...updated[index],
+          medication_id: value,
+          medication_name: selectedMed.name,
+          dispensed_dosage: autoFilledDosage,
+          prescribed_medication_name: selectedMed.name,
+          prescribed_dosage: autoFilledDosage,
+          original_medication_name: updated[index].original_medication_name || updated[index].medication_name,
+          original_dosage: updated[index].original_dosage || updated[index].dosage,
+          original_quantity: updated[index].original_quantity || updated[index].quantity
+        };
+        
+        console.log('Auto-filled dosage for ' + selectedMed.name + ': ' + autoFilledDosage);
+      }
+    }
+    
+    setEditableMedications(updated);
+  };
+
+  const addNewMedication = () => {
+    const newMedication = {
+      id: 'new_' + Date.now(),
+      medication_id: '',
+      medication_name: '',
+      dosage: '',
+      frequency: 'As needed',
+      duration: '',
+      quantity: 1,
+      dispensed_quantity: 1,
+      dispensed_dosage: '',
+      instructions: '',
+      prescribed_medication_name: '',
+      prescribed_dosage: '',
+      original_medication_name: '',
+      original_dosage: '',
+      original_quantity: 1,
+      is_new: true
+    };
+    setEditableMedications([...editableMedications, newMedication]);
+  };
+
+  const removeMedication = (index: number) => {
+    const updated = editableMedications.filter((_, i) => i !== index);
     setEditableMedications(updated);
   };
 
@@ -80,7 +130,6 @@ export function DispenseDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Patient Info */}
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
             <h4 className="font-semibold mb-2">Patient Information</h4>
             <div className="text-sm">
@@ -89,9 +138,21 @@ export function DispenseDialog({
             </div>
           </div>
 
-          {/* Medications List - Editable */}
           <div className="space-y-3">
-            <h4 className="font-semibold">Medications to Dispense (Editable)</h4>
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold">Medications to Dispense (Editable)</h4>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addNewMedication}
+                className="flex items-center gap-1"
+              >
+                <Plus className="h-4 w-4" />
+                Add Medication
+              </Button>
+            </div>
+            
             {editableMedications.map((med: any, index: number) => {
               const medicationData = medications.find(m => m.id === med.medication_id);
               const unitPrice = medicationData?.unit_price || 0;
@@ -99,9 +160,23 @@ export function DispenseDialog({
               const stockAvailable = medicationData?.stock_quantity || 0;
               
               return (
-                <div key={`${index}-${med.medication_id}`} className="p-4 border rounded-lg bg-white">
+                <div key={index + '-' + med.medication_id} className="p-4 border rounded-lg bg-white">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-sm font-medium">Medication {index + 1}</span>
+                    {(editableMedications.length > 1 || med.is_new) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeMedication(index)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  
                   <div className="space-y-3">
-                    {/* Medication Selector */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <Label className="text-xs">Medication</Label>
@@ -111,46 +186,38 @@ export function DispenseDialog({
                       </div>
                       <Select
                         value={med.medication_id}
-                        onValueChange={(value) => {
-                          console.log('Medication selected:', value);
-                          const selectedMed = medications.find(m => m.id === value);
-                          console.log('Found medication:', selectedMed);
-                          if (selectedMed) {
-                            updateMedication(index, 'medication_id', value);
-                            updateMedication(index, 'medication_name', selectedMed.name);
-                            console.log('Updated medication at index', index, 'to', selectedMed.name);
-                          }
-                        }}
+                        onValueChange={(value) => updateMedication(index, 'medication_id', value)}
                       >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Select medication">
-                            {medications.find(m => m.id === med.medication_id)?.name || med.medication_name || 'Select medication'}
-                          </SelectValue>
+                          <SelectValue placeholder="Select medication" />
                         </SelectTrigger>
                         <SelectContent>
-                          {medications
-                            .filter(m => m.stock_quantity > 0) // Only show medications with stock
-                            .sort((a, b) => a.name.localeCompare(b.name)) // Sort alphabetically
-                            .map((medication) => (
-                              <SelectItem 
-                                key={medication.id} 
-                                value={medication.id}
-                              >
-                                {medication.name} (Stock: {medication.stock_quantity})
-                              </SelectItem>
-                            ))}
+                          {medications.map((medication) => (
+                            <SelectItem 
+                              key={medication.id} 
+                              value={medication.id}
+                              disabled={medication.stock_quantity === 0}
+                            >
+                              <div className="flex items-center justify-between w-full">
+                                <div className={medication.stock_quantity === 0 ? 'text-gray-400' : ''}>
+                                  <div className="font-medium">{medication.name}</div>
+                                  {medication.strength && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {medication.strength} {medication.dosage_form || ''}
+                                    </div>
+                                  )}
+                                </div>
+                                <span className={'text-xs ml-2 ' + (
+                                  medication.stock_quantity === 0 ? 'text-red-500' : 
+                                  medication.stock_quantity <= 5 ? 'text-orange-500' : 'text-green-600'
+                                )}>
+                                  Stock: {medication.stock_quantity}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs text-muted-foreground">
-                          Prescribed: {med.medication_name}
-                        </p>
-                        {med.medication_id !== medications.find(m => m.name === med.medication_name)?.id && (
-                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">
-                            Substituted
-                          </Badge>
-                        )}
-                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -162,9 +229,6 @@ export function DispenseDialog({
                           placeholder="e.g., 500mg"
                           className="h-9"
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Prescribed: {med.dosage}
-                        </p>
                       </div>
                       
                       <div className="space-y-1">
@@ -177,9 +241,6 @@ export function DispenseDialog({
                           onChange={(e) => updateMedication(index, 'dispensed_quantity', parseInt(e.target.value) || 0)}
                           className="h-9"
                         />
-                        <p className="text-xs text-muted-foreground">
-                          Prescribed: {med.quantity} | Stock: {stockAvailable}
-                        </p>
                       </div>
                     </div>
 
@@ -194,26 +255,12 @@ export function DispenseDialog({
                         </div>
                       </div>
                     </div>
-
-                    {med.instructions && (
-                      <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
-                        <span className="font-medium">Instructions:</span> {med.instructions}
-                      </div>
-                    )}
-
-                    {stockAvailable < med.quantity && (
-                      <div className="flex items-center gap-1 text-xs text-orange-600 mt-2 p-2 bg-orange-50 rounded">
-                        <AlertTriangle className="h-3 w-3" />
-                        <span>Low stock: Only {stockAvailable} available (prescribed {med.quantity})</span>
-                      </div>
-                    )}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Total Cost */}
           <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
             <div className="flex justify-between items-center">
               <span className="text-sm font-medium">Total Cost:</span>
@@ -232,7 +279,7 @@ export function DispenseDialog({
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Any additional notes or warnings for the patient (e.g., 'Reduced quantity due to affordability')"
+              placeholder="Any additional notes or warnings for the patient"
               rows={3}
             />
           </div>
@@ -245,7 +292,7 @@ export function DispenseDialog({
               onClick={handleSubmit} 
               disabled={loading}
             >
-              {loading ? 'Processing...' : `Dispense All (TSh ${totalCost.toLocaleString()})`}
+              {loading ? 'Processing...' : 'Dispense All (TSh ' + totalCost.toLocaleString() + ')'}
             </Button>
           </div>
         </div>

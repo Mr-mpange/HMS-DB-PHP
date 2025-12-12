@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2 } from 'lucide-react';
+import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2, Users, FileText, Trash2 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 import { DispenseDialog } from '@/components/DispenseDialog';
@@ -92,9 +92,15 @@ export default function PharmacyDashboard() {
   const [dispenseDialogOpen, setDispenseDialogOpen] = useState(false);
   const [selectedPrescriptionForDispense, setSelectedPrescriptionForDispense] = useState<any>(null);
   const [expandedPatients, setExpandedPatients] = useState<Set<string>>(new Set());
-  const [patientQueue, setPatientQueue] = useState<any[]>([]);
+  const [patientQueue, setPatientQueue] = useState<any[]>([]); // Legacy - will be replaced
+  
+  // Separate queues for different pharmacy workflows
+  const [directPharmacyQueue, setDirectPharmacyQueue] = useState<any[]>([]); // Direct-to-pharmacy patients
+  const [prescriptionQueue, setPrescriptionQueue] = useState<any[]>([]); // Doctor prescription patients
   const [createPrescriptionDialogOpen, setCreatePrescriptionDialogOpen] = useState(false);
   const [selectedPatientForPrescription, setSelectedPatientForPrescription] = useState<any>(null);
+  const [existingPrescriptions, setExistingPrescriptions] = useState<any[]>([]); // Doctor prescriptions for current patient
+  const [removedPrescriptionItems, setRemovedPrescriptionItems] = useState<Set<string>>(new Set()); // Track removed prescription items
   const [medicationSearchTerm, setMedicationSearchTerm] = useState('');
   const [newPrescriptionItems, setNewPrescriptionItems] = useState<any[]>([{
     medication_name: '',
@@ -177,10 +183,10 @@ export default function PharmacyDashboard() {
           // If patient not found in initial load, fetch individually
           if (!patient && prescription.patient_id) {
             try {
-              const patientRes = await api.get(`/patients/${prescription.patient_id}`);
+              const patientRes = await api.get('/patients/' + prescription.patient_id);
               patient = patientRes.data.patient || patientRes.data;
             } catch (error) {
-              console.warn(`Failed to fetch patient ${prescription.patient_id}:`, error);
+              console.warn('Failed to fetch patient ' + prescription.patient_id + ':', error);
               patient = null;
             }
           }
@@ -188,11 +194,11 @@ export default function PharmacyDashboard() {
           // If doctor not found in initial load, fetch individually
           if (!doctor && prescription.doctor_id) {
             try {
-              const doctorRes = await api.get(`/users/profiles?ids=${prescription.doctor_id}`);
+              const doctorRes = await api.get('/users/profiles?ids=' + prescription.doctor_id);
               const profiles = doctorRes.data.profiles || [];
               doctor = profiles.find((d: any) => d.id === prescription.doctor_id);
             } catch (error) {
-              console.warn(`Failed to fetch doctor ${prescription.doctor_id}:`, error);
+              console.warn('Failed to fetch doctor ' + prescription.doctor_id + ':', error);
               doctor = null;
             }
           }
@@ -210,7 +216,7 @@ export default function PharmacyDashboard() {
       setMedications(medicationsData || []);
       
       // Map patient data to visits (visits already filtered by API)
-      const pharmacyQueue = (patientQueueData || []).map((visit: any) => {
+      const allPharmacyVisits = (patientQueueData || []).map((visit: any) => {
         // If visit already has patient data, use it; otherwise find from patientsData
         const patient = visit.patient || (patientsData || []).find((p: any) => p.id === visit.patient_id);
         
@@ -220,22 +226,40 @@ export default function PharmacyDashboard() {
         };
       });
       
-      console.log('🏥 Pharmacy Queue Debug:', {
-        total: pharmacyQueue.length,
-        rawVisits: patientQueueData?.slice(0, 2),
-        patientsCount: patientsData?.length,
-        samplePatients: patientsData?.slice(0, 3),
-        mappedVisits: pharmacyQueue.slice(0, 2).map(v => ({
+      // Separate queues based on visit type and source
+      const directPharmacy = allPharmacyVisits.filter(visit => 
+        visit.visit_type === 'Pharmacy Only' || 
+        (visit.doctor_status === 'Not Required' && visit.nurse_status === 'Not Required') ||
+        visit.visit_type === 'Direct Pharmacy'
+      );
+      
+      const doctorPrescriptions = allPharmacyVisits.filter(visit => 
+        visit.visit_type !== 'Pharmacy Only' && 
+        visit.visit_type !== 'Direct Pharmacy' &&
+        (visit.doctor_status === 'Completed' || visit.doctor_status === 'In Progress')
+      );
+      
+      console.log('🏥 Pharmacy Queues Debug:', {
+        totalVisits: allPharmacyVisits.length,
+        directPharmacy: directPharmacy.length,
+        doctorPrescriptions: doctorPrescriptions.length,
+        directSample: directPharmacy.slice(0, 2).map(v => ({
           id: v.id,
-          patient_id: v.patient_id,
-          patient_name: v.patient?.full_name || 'Unknown',
-          patient_phone: v.patient?.phone || 'N/A',
-          notes: v.notes,
-          raw_patient: v.patient
+          patient_name: v.patient?.full_name,
+          visit_type: v.visit_type,
+          doctor_status: v.doctor_status
+        })),
+        prescriptionSample: doctorPrescriptions.slice(0, 2).map(v => ({
+          id: v.id,
+          patient_name: v.patient?.full_name,
+          visit_type: v.visit_type,
+          doctor_status: v.doctor_status
         }))
       });
       
-      setPatientQueue(pharmacyQueue);
+      setDirectPharmacyQueue(directPharmacy);
+      setPrescriptionQueue(doctorPrescriptions);
+      setPatientQueue(allPharmacyVisits); // Keep for backward compatibility
 
       const pending = (prescriptionsData || []).filter(p => p.status === 'Active' || p.status === 'Pending').length;
       const lowStock = (medicationsData || []).filter(m => (m.stock_quantity || m.quantity_in_stock || 0) <= m.reorder_level).length;
@@ -286,7 +310,7 @@ export default function PharmacyDashboard() {
   const handleOpenDispenseDialog = async (prescription: any) => {
     try {
       // Fetch full prescription details with items
-      const response = await api.get(`/prescriptions/${prescription.id}`);
+      const response = await api.get('/prescriptions/' + prescription.id);
       const fullPrescription = response.data.prescription;
       
       // Merge with existing prescription data (patient, doctor info)
@@ -299,6 +323,88 @@ export default function PharmacyDashboard() {
     } catch (error) {
       console.error('Error fetching prescription details:', error);
       toast.error('Failed to load prescription details');
+    }
+  };
+
+  const handleOpenPrescriptionDialog = async (visit: any) => {
+    setSelectedPatientForPrescription(visit);
+    
+    // If this is a prescription queue patient, fetch existing prescriptions
+    if (prescriptionQueue.some(v => v.id === visit.id)) {
+      try {
+        const prescriptionsRes = await api.get('/prescriptions?patient_id=' + visit.patient_id);
+        const patientPrescriptions = prescriptionsRes.data.prescriptions || [];
+        
+        // Filter for active/pending prescriptions from doctor
+        const activePrescriptions = patientPrescriptions.filter((p: any) => 
+          p.status === 'Active' || p.status === 'Pending'
+        );
+        
+        setExistingPrescriptions(activePrescriptions);
+        console.log('📋 Existing prescriptions for patient:', {
+          patientId: visit.patient_id,
+          patientName: visit.patient?.full_name,
+          totalPrescriptions: patientPrescriptions.length,
+          activePrescriptions: activePrescriptions.length,
+          prescriptions: activePrescriptions.map(p => ({
+            id: p.id,
+            status: p.status,
+            itemsCount: p.prescription_items?.length || 0
+          }))
+        });
+      } catch (error: any) {
+        console.error('Error fetching existing prescriptions:', error);
+        setExistingPrescriptions([]);
+        toast.error('Failed to load existing prescriptions');
+      }
+    } else {
+      // Direct pharmacy patient - no existing prescriptions
+      setExistingPrescriptions([]);
+    }
+    
+    setCreatePrescriptionDialogOpen(true);
+  };
+
+  const handleRestoreStock = async (medicationName: string, quantity: number) => {
+    try {
+      // Find the medication by name
+      const medication = medications.find(med => med.name === medicationName);
+      if (!medication) {
+        console.warn(`Medication not found: ${medicationName}`);
+        return;
+      }
+
+      // Calculate new stock quantity
+      const currentStock = medication.stock_quantity || medication.quantity_in_stock || 0;
+      const newStock = currentStock + quantity;
+
+      // Update stock in database
+      await api.put(`/pharmacy/medications/${medication.id}`, {
+        ...medication,
+        stock_quantity: newStock,
+        quantity_in_stock: newStock
+      });
+
+      // Update local state
+      setMedications(prev => prev.map(med => 
+        med.id === medication.id 
+          ? { ...med, stock_quantity: newStock, quantity_in_stock: newStock }
+          : med
+      ));
+
+      console.log(`✅ Stock restored: ${medicationName} +${quantity} (New stock: ${newStock})`);
+      
+      await logActivity('pharmacy.stock.restored', {
+        medication_id: medication.id,
+        medication_name: medicationName,
+        quantity_restored: quantity,
+        new_stock: newStock,
+        reason: 'Medication removed from prescription'
+      });
+
+    } catch (error: any) {
+      console.error('Error restoring stock:', error);
+      toast.error(`Failed to restore stock for ${medicationName}`);
     }
   };
 
@@ -1513,22 +1619,21 @@ export default function PharmacyDashboard() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="queue">
-            <Card>
-              <CardHeader>
-                <CardTitle>Patient Queue</CardTitle>
-                <CardDescription>
-                  Patients waiting for pharmacy service - create prescriptions here
-                </CardDescription>
+          <TabsContent value="queue" className="space-y-6">
+            {/* Direct Pharmacy Queue */}
+            <Card className="shadow-lg border-green-200 bg-green-50/30">
+              <CardHeader className="bg-green-100/50">
+                <CardTitle className="flex items-center gap-2 text-green-800">
+                  <Users className="h-5 w-5" />
+                  Direct Pharmacy Queue ({directPharmacyQueue.length})
+                </CardTitle>
+                <CardDescription>Patients who came directly to pharmacy (no prescription needed)</CardDescription>
               </CardHeader>
               <CardContent>
-                {patientQueue.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium">No patients in queue</h3>
-                    <p className="text-muted-foreground text-sm mt-1">
-                      Patients sent directly to pharmacy will appear here
-                    </p>
+                {directPharmacyQueue.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No direct pharmacy patients</p>
                   </div>
                 ) : (
                   <Table>
@@ -1536,31 +1641,87 @@ export default function PharmacyDashboard() {
                       <TableRow>
                         <TableHead>Patient</TableHead>
                         <TableHead>Visit Date</TableHead>
-                        <TableHead>Notes</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Action</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {patientQueue.map((visit) => (
-                        <TableRow key={visit.id}>
+                      {directPharmacyQueue.map((visit) => (
+                        <TableRow key={visit.id} className="bg-green-50/50">
                           <TableCell>
                             <div className="font-medium">{visit.patient?.full_name || 'Unknown'}</div>
                             <div className="text-sm text-muted-foreground">{visit.patient?.phone}</div>
                           </TableCell>
                           <TableCell>{format(new Date(visit.visit_date), 'MMM dd, yyyy')}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground max-w-xs truncate">
-                            {visit.notes || '-'}
+                          <TableCell>
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
+                              Direct Pharmacy
+                            </span>
                           </TableCell>
                           <TableCell>
                             <Button
                               size="sm"
-                              onClick={() => {
-                                setSelectedPatientForPrescription(visit);
-                                setCreatePrescriptionDialogOpen(true);
-                              }}
+                              onClick={() => handleOpenPrescriptionDialog(visit)}
+                              className="bg-green-600 hover:bg-green-700 text-white"
                             >
-                              <Plus className="h-4 w-4 mr-1" />
-                              Create Prescription
+                              <Pill className="h-4 w-4 mr-1" />
+                              Add Medications
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Doctor Prescription Queue */}
+            <Card className="shadow-lg border-blue-200 bg-blue-50/30">
+              <CardHeader className="bg-blue-100/50">
+                <CardTitle className="flex items-center gap-2 text-blue-800">
+                  <FileText className="h-5 w-5" />
+                  Doctor Prescription Queue ({prescriptionQueue.length})
+                </CardTitle>
+                <CardDescription>Patients with doctor prescriptions to dispense</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {prescriptionQueue.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No prescription patients</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Patient</TableHead>
+                        <TableHead>Visit Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {prescriptionQueue.map((visit) => (
+                        <TableRow key={visit.id} className="bg-blue-50/50">
+                          <TableCell>
+                            <div className="font-medium">{visit.patient?.full_name || 'Unknown'}</div>
+                            <div className="text-sm text-muted-foreground">{visit.patient?.phone}</div>
+                          </TableCell>
+                          <TableCell>{format(new Date(visit.visit_date), 'MMM dd, yyyy')}</TableCell>
+                          <TableCell>
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
+                              Doctor Prescription
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              onClick={() => handleOpenPrescriptionDialog(visit)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              <Pill className="h-4 w-4 mr-1" />
+                              Dispense Prescription
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -1960,16 +2121,169 @@ export default function PharmacyDashboard() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Pill className="h-5 w-5" />
-                Create Prescription
+                {/* Show different title based on queue type */}
+                {directPharmacyQueue.some(v => v.id === selectedPatientForPrescription?.id) 
+                  ? 'Add Medications' 
+                  : prescriptionQueue.some(v => v.id === selectedPatientForPrescription?.id)
+                  ? 'Dispense Prescription'
+                  : 'Create Prescription'
+                }
               </DialogTitle>
               <DialogDescription>
-                Create prescription for {selectedPatientForPrescription?.patient?.full_name}
+                {directPharmacyQueue.some(v => v.id === selectedPatientForPrescription?.id) 
+                  ? `Add medications for direct pharmacy patient: ${selectedPatientForPrescription?.patient?.full_name}`
+                  : prescriptionQueue.some(v => v.id === selectedPatientForPrescription?.id)
+                  ? `Dispense doctor's prescription for: ${selectedPatientForPrescription?.patient?.full_name}`
+                  : `Create prescription for ${selectedPatientForPrescription?.patient?.full_name}`
+                }
               </DialogDescription>
             </DialogHeader>
 
+            {/* Queue Type Indicator */}
+            {selectedPatientForPrescription && (
+              <div className="flex items-center gap-2 p-3 rounded-lg border">
+                {directPharmacyQueue.some(v => v.id === selectedPatientForPrescription?.id) ? (
+                  <div className="flex items-center gap-2 text-green-700">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm font-medium">Direct Pharmacy Patient</span>
+                    <span className="text-xs bg-green-100 px-2 py-1 rounded">Add any medications needed</span>
+                  </div>
+                ) : prescriptionQueue.some(v => v.id === selectedPatientForPrescription?.id) ? (
+                  <div className="flex items-center gap-2 text-blue-700">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                    <span className="text-sm font-medium">Doctor Prescription Patient</span>
+                    <span className="text-xs bg-blue-100 px-2 py-1 rounded">
+                      {existingPrescriptions.length > 0 
+                        ? `${existingPrescriptions.length} prescription(s) to dispense + add more if needed`
+                        : 'Dispense prescribed medications + add more if needed'
+                      }
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
+                    <span className="text-sm font-medium">General Patient</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="space-y-4">
+              {/* Show existing prescriptions for prescription queue patients */}
+              {prescriptionQueue.some(v => v.id === selectedPatientForPrescription?.id) && existingPrescriptions.length > 0 && (
+                <div className="space-y-3">
+                  <Label className="text-base font-semibold text-blue-800">Doctor's Prescriptions to Dispense</Label>
+                  <div className="space-y-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    {existingPrescriptions.map((prescription: any) => (
+                      <div key={prescription.id} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-blue-900">
+                            Prescription #{prescription.id} - {prescription.status}
+                          </span>
+                          <span className="text-xs text-blue-600">
+                            {prescription.prescription_items?.length || 0} medication(s)
+                          </span>
+                        </div>
+                        {prescription.prescription_items?.map((item: any, index: number) => (
+                          <div key={index} className="ml-4 p-2 bg-white rounded border border-blue-100 flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">{item.medication_name}</div>
+                              <div className="text-xs text-gray-600">
+                                {item.dosage} • {item.frequency} • {item.duration} • Qty: {item.quantity}
+                              </div>
+                              {item.instructions && (
+                                <div className="text-xs text-gray-500 italic">{item.instructions}</div>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50 ml-2"
+                              onClick={async () => {
+                                try {
+                                  // Restore stock for this medication
+                                  const quantity = parseInt(item.quantity);
+                                  if (!isNaN(quantity) && quantity > 0) {
+                                    await handleRestoreStock(item.medication_name, quantity);
+                                  }
+
+                                  // Remove the item from the prescription in database
+                                  await api.delete(`/prescriptions/${prescription.id}/items/${item.id}`);
+
+                                  // Update local state - remove the item from existing prescriptions
+                                  setExistingPrescriptions(prev => 
+                                    prev.map(p => 
+                                      p.id === prescription.id 
+                                        ? {
+                                            ...p,
+                                            prescription_items: p.prescription_items?.filter((pItem: any) => pItem.id !== item.id) || []
+                                          }
+                                        : p
+                                    ).filter(p => p.prescription_items && p.prescription_items.length > 0) // Remove prescriptions with no items
+                                  );
+
+                                  toast.success(`Removed ${item.medication_name} and restored stock (+${quantity})`);
+                                  
+                                  await logActivity('pharmacy.prescription.item.removed', {
+                                    prescription_id: prescription.id,
+                                    medication_name: item.medication_name,
+                                    quantity_restored: quantity,
+                                    reason: 'Medication removed from doctor prescription'
+                                  });
+
+                                } catch (error: any) {
+                                  console.error('Error removing prescription item:', error);
+                                  toast.error(`Failed to remove ${item.medication_name}`);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    {existingPrescriptions.some(p => p.prescription_items && p.prescription_items.length > 0) ? (
+                      <div className="mt-3 p-2 bg-blue-100 rounded text-xs text-blue-800 flex items-center justify-between">
+                        <span>💡 These are the medications prescribed by the doctor. You can dispense these and/or add additional medications below.</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="ml-2 text-xs h-6 px-2 border-blue-300 text-blue-700 hover:bg-blue-200"
+                          onClick={async () => {
+                            try {
+                              // Dispense all existing prescriptions
+                              for (const prescription of existingPrescriptions) {
+                                if (prescription.status === 'Active' || prescription.status === 'Pending') {
+                                  await handleDispensePrescription(prescription.id, prescription.patient_id);
+                                }
+                              }
+                              toast.success('All doctor prescriptions dispensed successfully!');
+                            } catch (error: any) {
+                              console.error('Error dispensing prescriptions:', error);
+                              toast.error('Failed to dispense some prescriptions');
+                            }
+                          }}
+                        >
+                          Quick Dispense All
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-3 p-2 bg-yellow-100 rounded text-xs text-yellow-800">
+                        ⚠️ All prescribed medications have been removed. You can add new medications below if needed.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
-                <Label className="text-base font-semibold">Medications</Label>
+                <Label className="text-base font-semibold">
+                  {prescriptionQueue.some(v => v.id === selectedPatientForPrescription?.id) 
+                    ? 'Additional Medications (Optional)' 
+                    : 'Medications'
+                  }
+                </Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -1998,10 +2312,23 @@ export default function PharmacyDashboard() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
+                        onClick={async () => {
+                          const itemToRemove = newPrescriptionItems[index];
+                          
+                          // If medication has been selected and quantity specified, restore stock
+                          if (itemToRemove.medication_name && itemToRemove.quantity) {
+                            const quantity = parseInt(itemToRemove.quantity);
+                            if (!isNaN(quantity) && quantity > 0) {
+                              await handleRestoreStock(itemToRemove.medication_name, quantity);
+                              toast.success(`Stock restored: +${quantity} ${itemToRemove.medication_name}`);
+                            }
+                          }
+                          
                           setNewPrescriptionItems(newPrescriptionItems.filter((_, i) => i !== index));
                         }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
                       >
+                        <Trash2 className="h-4 w-4 mr-1" />
                         Remove
                       </Button>
                     )}
@@ -2124,7 +2451,45 @@ export default function PharmacyDashboard() {
                           updated[index].quantity = e.target.value;
                           setNewPrescriptionItems(updated);
                         }}
+                        className={(() => {
+                          const medication = medications.find(m => m.name === item.medication_name);
+                          const requestedQty = parseInt(item.quantity) || 0;
+                          const availableStock = medication?.stock_quantity || medication?.quantity_in_stock || 0;
+                          
+                          if (requestedQty > availableStock) {
+                            return "border-red-500 focus:border-red-500";
+                          }
+                          return "";
+                        })()}
                       />
+                      {(() => {
+                        const medication = medications.find(m => m.name === item.medication_name);
+                        const requestedQty = parseInt(item.quantity) || 0;
+                        const availableStock = medication?.stock_quantity || medication?.quantity_in_stock || 0;
+                        
+                        if (item.medication_name && requestedQty > 0) {
+                          if (requestedQty > availableStock) {
+                            return (
+                              <p className="text-xs text-red-600">
+                                ⚠️ Insufficient stock! Available: {availableStock}, Requested: {requestedQty}
+                              </p>
+                            );
+                          } else if (availableStock <= 5) {
+                            return (
+                              <p className="text-xs text-yellow-600">
+                                ⚠️ Low stock warning! Available: {availableStock}
+                              </p>
+                            );
+                          } else {
+                            return (
+                              <p className="text-xs text-green-600">
+                                ✅ Available: {availableStock}
+                              </p>
+                            );
+                          }
+                        }
+                        return null;
+                      })()}
                     </div>
 
                     <div className="space-y-2">
@@ -2150,6 +2515,8 @@ export default function PharmacyDashboard() {
                   onClick={() => {
                     setCreatePrescriptionDialogOpen(false);
                     setSelectedPatientForPrescription(null);
+                    setExistingPrescriptions([]);
+                    setRemovedPrescriptionItems(new Set());
                     setNewPrescriptionItems([{
                       medication_name: '',
                       dosage: '',
@@ -2200,6 +2567,45 @@ export default function PharmacyDashboard() {
 
                       await api.post('/prescriptions', prescriptionData);
                       
+                      // Decrease stock for each medication
+                      for (const item of validItems) {
+                        const medication = medications.find(m => m.name === item.medication_name);
+                        if (medication) {
+                          const currentStock = medication.stock_quantity || medication.quantity_in_stock || 0;
+                          const quantity = parseInt(item.quantity) || 1;
+                          const newStock = Math.max(0, currentStock - quantity);
+                          
+                          try {
+                            await api.put(`/pharmacy/medications/${medication.id}`, {
+                              ...medication,
+                              stock_quantity: newStock,
+                              quantity_in_stock: newStock
+                            });
+                            
+                            // Update local state
+                            setMedications(prev => prev.map(med => 
+                              med.id === medication.id 
+                                ? { ...med, stock_quantity: newStock, quantity_in_stock: newStock }
+                                : med
+                            ));
+                            
+                            console.log(`📦 Stock decreased: ${item.medication_name} -${quantity} (New stock: ${newStock})`);
+                            
+                            await logActivity('pharmacy.stock.decreased', {
+                              medication_id: medication.id,
+                              medication_name: item.medication_name,
+                              quantity_dispensed: quantity,
+                              new_stock: newStock,
+                              reason: 'Medication dispensed via prescription'
+                            });
+                            
+                          } catch (stockError: any) {
+                            console.error(`Error updating stock for ${item.medication_name}:`, stockError);
+                            toast.error(`Warning: Failed to update stock for ${item.medication_name}`);
+                          }
+                        }
+                      }
+                      
                       // Update visit status to remove from queue
                       // The prescription is now created, so pharmacy status should be "In Progress" or "Completed"
                       // We'll set it to "In Progress" so it appears in the prescriptions tab for dispensing
@@ -2214,12 +2620,16 @@ export default function PharmacyDashboard() {
                         // Don't fail the whole operation if visit update fails
                       }
                       
-                      // Remove from local queue immediately
+                      // Remove from all queues immediately
                       setPatientQueue(prev => prev.filter(v => v.id !== selectedPatientForPrescription.id));
+                      setDirectPharmacyQueue(prev => prev.filter(v => v.id !== selectedPatientForPrescription.id));
+                      setPrescriptionQueue(prev => prev.filter(v => v.id !== selectedPatientForPrescription.id));
                       
                       toast.success(`Prescription created with ${validItems.length} medication(s)! Patient removed from queue.`);
                       setCreatePrescriptionDialogOpen(false);
                       setSelectedPatientForPrescription(null);
+                      setExistingPrescriptions([]);
+                      setRemovedPrescriptionItems(new Set());
                       setNewPrescriptionItems([{
                         medication_name: '',
                         dosage: '',
