@@ -589,7 +589,18 @@ export default function LabDashboard() {
         // 3. Direct lab orders → Send to billing
         
         const orderedByDoctor = visit.doctor_status !== 'Not Required' && visit.doctor_id;
-        const orderedByNurse = visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required';
+        const orderedByNurse = (visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required') || 
+                              (visit.notes && visit.notes.includes('nurse'));
+        
+        console.log('🔍 Workflow Decision:', {
+          visitId: visit.id,
+          doctor_status: visit.doctor_status,
+          nurse_status: visit.nurse_status,
+          doctor_id: visit.doctor_id,
+          notes: visit.notes,
+          orderedByDoctor,
+          orderedByNurse
+        });
         
         let updateData;
         if (orderedByDoctor) {
