@@ -634,7 +634,7 @@ export default function LabDashboard() {
         }
         
         // Refresh the lab dashboard to remove completed patient from queue
-        await fetchLabTests();
+        await fetchData(false);
       } else {
         console.warn('⚠️  No active lab visit found, creating new visit for patient:', patientId);
         
@@ -668,7 +668,7 @@ export default function LabDashboard() {
           toast.success('Lab results sent to doctor for review');
           
           // Refresh the lab dashboard
-          await fetchLabTests();
+          await fetchData(false);
         } else {
           toast.warning('Could not create visit - no doctor assigned');
         }
@@ -846,9 +846,9 @@ export default function LabDashboard() {
                   Lab Tests Queue
                   <Badge variant="default" className="bg-blue-600">
                     {Object.entries(groupedTests).filter(([_, tests]) => 
-                      tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
+                      tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress' || t.status === 'Awaiting Tests')
                     ).length} patient{Object.entries(groupedTests).filter(([_, tests]) => 
-                      tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
+                      tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress' || t.status === 'Awaiting Tests')
                     ).length !== 1 ? 's' : ''}
                   </Badge>
                 </CardTitle>
@@ -883,8 +883,14 @@ export default function LabDashboard() {
                 <TableBody>
                   {Object.entries(groupedTests)
                     .filter(([_, tests]) => {
-                      // Filter by status
-                      const hasActiveTests = tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress');
+                      // Filter by status - include visits without tests (Awaiting Tests)
+                      const hasActiveTests = tests.some(t => 
+                        t.status === 'Pending' || 
+                        t.status === 'Ordered' || 
+                        t.status === 'Sample Collected' || 
+                        t.status === 'In Progress' ||
+                        t.status === 'Awaiting Tests'
+                      );
                       if (!hasActiveTests) return false;
                       
                       // Filter by search term
@@ -1064,7 +1070,7 @@ export default function LabDashboard() {
                       );
                     })}
                   {Object.entries(groupedTests).filter(([_, tests]) => 
-                    tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress')
+                    tests.some(t => t.status === 'Pending' || t.status === 'Ordered' || t.status === 'Sample Collected' || t.status === 'In Progress' || t.status === 'Awaiting Tests')
                   ).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
