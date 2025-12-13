@@ -234,16 +234,36 @@ export default function PharmacyDashboard() {
         visit.visit_type === 'Direct Pharmacy'
       );
       
-      const doctorPrescriptions = allPharmacyVisits.filter(visit => 
-        visit.visit_type !== 'Pharmacy Only' && 
-        visit.visit_type !== 'Direct Pharmacy' &&
-        (visit.doctor_status === 'Completed' || visit.doctor_status === 'In Progress')
-      );
+      const doctorPrescriptions = allPharmacyVisits.filter(visit => {
+        // Include visits that are NOT direct pharmacy visits
+        const isNotDirectPharmacy = visit.visit_type !== 'Pharmacy Only' && visit.visit_type !== 'Direct Pharmacy';
+        
+        // For consultation visits, assume they came from doctor (since they're in pharmacy stage)
+        const isConsultationVisit = visit.visit_type === 'Consultation' || !visit.visit_type;
+        
+        // Has doctor involvement (either status, ID, or is consultation visit)
+        const hasDoctorInvolvement = 
+          visit.doctor_status === 'Completed' || 
+          visit.doctor_status === 'In Progress' || 
+          visit.doctor_id ||
+          isConsultationVisit; // If it's a consultation visit in pharmacy, assume doctor sent it
+        
+        return isNotDirectPharmacy && hasDoctorInvolvement;
+      });
       
       console.log('🏥 Pharmacy Queues Debug:', {
         totalVisits: allPharmacyVisits.length,
         directPharmacy: directPharmacy.length,
         doctorPrescriptions: doctorPrescriptions.length,
+        allVisitsDetails: allPharmacyVisits.map(v => ({
+          id: v.id,
+          patient_name: v.patient?.full_name,
+          visit_type: v.visit_type,
+          doctor_status: v.doctor_status,
+          nurse_status: v.nurse_status,
+          current_stage: v.current_stage,
+          pharmacy_status: v.pharmacy_status
+        })),
         directSample: directPharmacy.slice(0, 2).map(v => ({
           id: v.id,
           patient_name: v.patient?.full_name,
