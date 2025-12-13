@@ -1191,7 +1191,13 @@ export default function ReceptionistDashboard() {
         notes: 'Consultation Fee - Returning Patient'
       });
       
+      console.log('Invoice creation response:', invoiceRes.data);
       const invoiceId = invoiceRes.data.invoice?.id || invoiceRes.data.invoiceId;
+      
+      if (!invoiceId) {
+        console.error('No invoice ID found in response:', invoiceRes.data);
+        throw new Error('Failed to get invoice ID from invoice creation');
+      }
       
       const paymentData = {
         patient_id: selectedReturningPatient.id,
@@ -1204,6 +1210,7 @@ export default function ReceptionistDashboard() {
         reference_number: invoiceRes.data.invoice?.invoice_number || null
       };
       
+      console.log('Creating payment with data:', paymentData);
       await api.post('/payments', paymentData);
 
       // Create visit

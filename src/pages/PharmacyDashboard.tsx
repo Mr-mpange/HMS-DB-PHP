@@ -1292,7 +1292,7 @@ export default function PharmacyDashboard() {
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
             <TabsTrigger value="queue">
-              Patient Queue {patientQueue.length > 0 && <Badge className="ml-2" variant="destructive">{patientQueue.length}</Badge>}
+              Patient Queue {directPharmacyQueue.length > 0 && <Badge className="ml-2" variant="destructive">{directPharmacyQueue.length}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="inventory">Inventory</TabsTrigger>
           </TabsList>
@@ -1615,61 +1615,7 @@ export default function PharmacyDashboard() {
               </CardContent>
             </Card>
 
-            {/* Doctor Prescription Queue */}
-            <Card className="shadow-lg border-blue-200 bg-blue-50/30">
-              <CardHeader className="bg-blue-100/50">
-                <CardTitle className="flex items-center gap-2 text-blue-800">
-                  <FileText className="h-5 w-5" />
-                  Doctor Prescription Queue ({prescriptionQueue.length})
-                </CardTitle>
-                <CardDescription>Patients with doctor prescriptions to dispense</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {prescriptionQueue.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No prescription patients</p>
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Patient</TableHead>
-                        <TableHead>Visit Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Action</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {prescriptionQueue.map((visit) => (
-                        <TableRow key={visit.id} className="bg-blue-50/50">
-                          <TableCell>
-                            <div className="font-medium">{visit.patient?.full_name || 'Unknown'}</div>
-                            <div className="text-sm text-muted-foreground">{visit.patient?.phone}</div>
-                          </TableCell>
-                          <TableCell>{format(new Date(visit.visit_date), 'MMM dd, yyyy')}</TableCell>
-                          <TableCell>
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
-                              Doctor Prescription
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              size="sm"
-                              onClick={() => handleOpenPrescriptionDialog(visit)}
-                              className="bg-blue-600 hover:bg-blue-700 text-white"
-                            >
-                              <Pill className="h-4 w-4 mr-1" />
-                              Dispense Prescription
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+
           </TabsContent>
 
           <TabsContent value="inventory">
