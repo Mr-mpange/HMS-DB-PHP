@@ -1125,7 +1125,7 @@ export default function PharmacyDashboard() {
             tax: tax,
             due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             notes: `Auto-generated invoice for prescription: ${medicationData.name} (${prescription.dosage})`,
-            status: 'unpaid' // Using 'unpaid' as it's a standard invoice status
+            status: 'Pending' // Using 'Pending' as it's a valid invoice status
           };
 
           console.log(`Attempt ${attempts + 1}: Creating invoice with number:`, invoiceNumber);
@@ -1156,7 +1156,7 @@ export default function PharmacyDashboard() {
                   const fallbackRes = await api.post('/billing/invoices', {
                     ...invoiceData,
                     invoice_number: fallbackInvoiceNumber,
-                    status: 'unpaid' // Ensure status is set for fallback as well
+                    status: 'Pending' // Ensure status is set for fallback as well
                   });
                   
                   data = fallbackRes.data.invoice;
@@ -2545,6 +2545,43 @@ export default function PharmacyDashboard() {
                             
                             console.log(`📦 Stock updated: ${medication.name} -${quantity} (New stock: ${newStock})`);
                           }
+                        }
+                        
+                        // Create invoice for direct pharmacy medications
+                        try {
+                          const totalAmount = validItems.reduce((sum, item) => {
+                            const medication = medications.find(m => m.id === item.medication_id);
+                            const unitPrice = parseFloat(medication?.unit_price || '0') || 0;
+                            const quantity = parseInt(item.quantity) || 1;
+                            return sum + (unitPrice * quantity);
+                          }, 0);
+
+                          const invoiceRes = await api.post('/invoices', {
+                            patient_id: selectedPatientForPrescription.patient_id,
+                            invoice_date: new Date().toISOString().split('T')[0],
+                            total_amount: totalAmount,
+                            paid_amount: 0,
+                            balance: totalAmount,
+                            status: 'Pending',
+                            notes: `Direct pharmacy medications`,
+                            items: validItems.map(item => {
+                              const medication = medications.find(m => m.id === item.medication_id);
+                              const unitPrice = parseFloat(medication?.unit_price || '0') || 0;
+                              const quantity = parseInt(item.quantity) || 1;
+                              return {
+                                service_name: `${medication?.name} - ${item.dosage}`,
+                                description: `${item.frequency}${item.instructions ? '. ' + item.instructions : ''}`,
+                                quantity: quantity,
+                                unit_price: unitPrice,
+                                total_price: unitPrice * quantity
+                              };
+                            })
+                          });
+
+                          console.log('✅ Invoice created for direct pharmacy medications:', invoiceRes.data.invoice);
+                        } catch (error: any) {
+                          console.error('Error creating invoice for direct pharmacy:', error);
+                          toast.warning('Medications dispensed but invoice creation failed');
                         }
                         
                         // Update visit to billing stage
