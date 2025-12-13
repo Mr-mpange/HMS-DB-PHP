@@ -452,13 +452,13 @@ export default function LabDashboard() {
         );
         
         const orderedByNurse = (
-          // Lab Only visit type (nurse workflow)
-          visit.visit_type === 'Lab Only' ||
-          // Nurse completed and doctor not required
+          // Nurse completed and doctor not required (nurse workflow)
           (visit.nurse_status === 'Completed' && visit.doctor_status === 'Not Required') || 
           // Notes indicate nurse ordering
           (visit.notes && visit.notes.includes('nurse'))
         );
+        
+        const isLabOnlyVisit = visit.visit_type === 'Lab Only';
         
         console.log('🔍 Workflow Decision:', {
           visitId: visit.id,
@@ -483,24 +483,34 @@ export default function LabDashboard() {
             doctor_status: 'Pending Review'
           };
           console.log('📤 Sending to DOCTOR for review (ordered by doctor):', updateData);
-        } else if (orderedByNurse) {
-          // Lab tests ordered by nurse → send back to nurse for next steps
+        } else if (orderedByNurse && !isLabOnlyVisit) {
+          // Lab tests ordered by nurse in consultation → send back to nurse for review
           updateData = {
             lab_status: 'Completed',
             lab_completed_at: new Date().toISOString(),
             current_stage: 'nurse',
             nurse_status: 'Pending Review' // Nurse needs to review lab results
           };
-          console.log('📤 Sending back to NURSE for review (ordered by nurse):', updateData);
-        } else {
-          // Direct lab orders or other cases → send to billing
+          console.log('📤 Sending back to NURSE for review (consultation with nurse-ordered tests):', updateData);
+        } else if (isLabOnlyVisit || orderedByNurse) {
+          // Lab Only visits or nurse-ordered direct lab → send to billing
           updateData = {
             lab_status: 'Completed',
             lab_completed_at: new Date().toISOString(),
             current_stage: 'billing',
             billing_status: 'Pending'
           };
-          console.log('📤 Sending to BILLING (direct lab order):', updateData);
+          console.log('📤 Sending to BILLING (Lab Only visit or direct nurse order):', updateData);
+        } else {
+          // Direct lab orders (Lab Only visits) → send to billing
+          // Consultation visits with unclear routing → send to billing as fallback
+          updateData = {
+            lab_status: 'Completed',
+            lab_completed_at: new Date().toISOString(),
+            current_stage: 'billing',
+            billing_status: 'Pending'
+          };
+          console.log('📤 Sending to BILLING (direct lab order or fallback):', updateData);
         }
         
         const response = await api.put(`/visits/${visitId}`, updateData);
