@@ -2904,9 +2904,8 @@ export default function BillingDashboard() {
         </div>
 
         {/* Main Content with Tabs */}
-        <Tabs defaultValue="pending" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="pending">Awaiting Billing ({billingVisits.length})</TabsTrigger>
+        <Tabs defaultValue="invoices" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="invoices">Unpaid Invoices</TabsTrigger>
             <TabsTrigger value="paid">Paid Invoices</TabsTrigger>
             <TabsTrigger value="payments">Today's Payments</TabsTrigger>
