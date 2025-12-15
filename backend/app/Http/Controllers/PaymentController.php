@@ -82,6 +82,19 @@ class PaymentController extends Controller
         if (isset($validated['invoice_id']) && $validated['invoice_id']) {
             $invoice = Invoice::find($validated['invoice_id']);
             if ($invoice) {
+                // Validate that patient_id matches invoice's patient_id
+                if (isset($validated['patient_id']) && $validated['patient_id'] !== $invoice->patient_id) {
+                    \Log::error('Patient ID mismatch in payment', [
+                        'payment_patient_id' => $validated['patient_id'],
+                        'invoice_patient_id' => $invoice->patient_id,
+                        'invoice_id' => $validated['invoice_id']
+                    ]);
+                    return response()->json([
+                        'message' => 'Patient ID does not match the invoice patient ID.',
+                        'error' => 'patient_invoice_mismatch'
+                    ], 422);
+                }
+                
                 $invoice->paid_amount += $validated['amount'];
                 $invoice->balance = $invoice->total_amount - $invoice->paid_amount;
                 

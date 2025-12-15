@@ -31,6 +31,105 @@ import {
   Download
 } from 'lucide-react';
 
+// Helper component for invoice details
+const InvoiceDetailsSection = ({ selectedInvoice }: { selectedInvoice: any }) => {
+  // Unwrap invoice if it's wrapped in an object
+  const actualInvoice = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice 
+    ? selectedInvoice.invoice 
+    : selectedInvoice;
+  
+  return (
+    <div className="border rounded-lg p-4 mb-4 bg-gray-50">
+      <h4 className="font-semibold mb-3">Invoice Details</h4>
+      <div className="space-y-2 text-sm">
+        <div className="flex justify-between">
+          <span>Patient:</span>
+          <span className="font-medium">{actualInvoice.patient?.full_name}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Invoice Date:</span>
+          <span>{format(new Date(actualInvoice.invoice_date), 'MMM dd, yyyy')}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>Due Date:</span>
+          <span>{format(new Date(actualInvoice.due_date), 'MMM dd, yyyy')}</span>
+        </div>
+
+        {/* Invoice Items */}
+        {actualInvoice.items && actualInvoice.items.length > 0 && (
+          <div className="mt-4 border-t pt-2">
+            <h5 className="font-medium mb-2">Invoice Items:</h5>
+            <div className="space-y-1">
+              {actualInvoice.items.map((item: any, index: number) => (
+                <div key={item.id || index} className="flex justify-between text-sm bg-gray-100 p-2 rounded">
+                  <span className="flex-1">{item.description}</span>
+                  <span className="text-right">
+                    {item.quantity} × TSh{Number(item.unit_price as number).toFixed(2)} = <span className="font-semibold">TSh{Number(item.total_price as number).toFixed(2)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="border-t pt-2 mt-2">
+          <div className="flex justify-between font-semibold text-base">
+            <span>Total:</span>
+            <span>TSh{Number(actualInvoice.total_amount as number).toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Paid:</span>
+            <span>TSh{Number(actualInvoice.paid_amount as number || 0).toFixed(2)}</span>
+          </div>
+          <div className="flex justify-between font-semibold text-green-600">
+            <span>Remaining:</span>
+            <span>TSh{(Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0)).toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Helper component for payment amount input
+const PaymentAmountInput = ({ selectedInvoice }: { selectedInvoice: any }) => {
+  // Unwrap invoice for payment calculations
+  const actualInvoice = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice 
+    ? selectedInvoice.invoice 
+    : selectedInvoice;
+  
+  const remainingBalance = actualInvoice ? Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0) : 0;
+  
+  return (
+    <>
+      <Input
+        id="amount"
+        name="amount"
+        type="number"
+        step="0.01"
+        min="0.01"
+        max={actualInvoice ? remainingBalance : undefined}
+        defaultValue={actualInvoice ? remainingBalance.toFixed(2) : ''}
+        className={`bg-white ${actualInvoice ? 'border-green-300 focus:border-green-500' : 'border-red-300'}`}
+        required
+      />
+      <p className="text-sm text-muted-foreground">
+        💰 Enter payment amount (max: TSh{actualInvoice ? remainingBalance.toFixed(2) : '0.00'})
+      </p>
+      {actualInvoice && (
+        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+          <div className="flex justify-between text-sm">
+            <span className="text-green-700">Remaining Balance:</span>
+            <span className="font-semibold text-green-800">
+              TSh{remainingBalance.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 export default function BillingDashboard() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
@@ -48,6 +147,8 @@ export default function BillingDashboard() {
   const [invoicePayments, setInvoicePayments] = useState<any[]>([]);
   const [patientReportDialogOpen, setPatientReportDialogOpen] = useState(false);
   const [selectedPatientForReport, setSelectedPatientForReport] = useState<any>(null);
+  const [invoiceSelectionDialogOpen, setInvoiceSelectionDialogOpen] = useState(false);
+  const [selectedPatientForInvoiceSelection, setSelectedPatientForInvoiceSelection] = useState<any>(null);
   const [hospitalSettings, setHospitalSettings] = useState({
     hospital_name: 'Hospital Management System',
     hospital_address: '[Address to be configured]',
@@ -2744,12 +2845,25 @@ export default function BillingDashboard() {
     }
 
     // Validate UUID format (basic check)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(patientId)) {
       toast.error('Invalid patient ID format. Please refresh and try again.');
       console.error('Invalid patient_id format:', {
         patientId,
         invoice: selectedInvoice
+      });
+      setMobilePaymentProcessing(false);
+      setPaymentStatus('');
+      return;
+    }
+
+    // Validate that patient_id matches invoice's patient_id
+    if (patientId !== actualInvoice.patient_id) {
+      toast.error('Patient ID mismatch with invoice. Please refresh and try again.');
+      console.error('Patient ID mismatch in mobile payment:', {
+        extractedPatientId: patientId,
+        invoicePatientId: actualInvoice.patient_id,
+        invoice: actualInvoice
       });
       setMobilePaymentProcessing(false);
       setPaymentStatus('');
@@ -2894,6 +3008,11 @@ export default function BillingDashboard() {
   const handleRecordPayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    // Debug: Log selectedInvoice at the start of form submission
+    console.log('🔍 handleRecordPayment - selectedInvoice at start:', selectedInvoice);
+    console.log('🔍 handleRecordPayment - selectedInvoice type:', typeof selectedInvoice);
+    console.log('🔍 handleRecordPayment - selectedInvoice keys:', Object.keys(selectedInvoice || {}));
+
     // Handle mobile payments separately
     if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(paymentMethod)) {
       return handleInitiateMobilePayment(e);
@@ -2913,12 +3032,6 @@ export default function BillingDashboard() {
       return;
     }
 
-    const maxAmount = Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0);
-    if (amount > maxAmount) {
-      toast.error(`Payment amount cannot exceed remaining balance of TSh${maxAmount.toFixed(2)}`);
-      return;
-    }
-
     // Validate patient_id before sending payment
     let patientId;
     let actualInvoice = selectedInvoice;
@@ -2930,6 +3043,18 @@ export default function BillingDashboard() {
       patientId = selectedInvoice.patientId || actualInvoice.patient_id || actualInvoice.patient?.id;
     } else {
       patientId = selectedInvoice.patient_id || selectedInvoice.patient?.id;
+    }
+
+    // Debug: Log patient ID extraction
+    console.log('🔍 Extracted patientId:', patientId);
+    console.log('🔍 patientId type:', typeof patientId);
+    console.log('🔍 selectedInvoice.patient_id:', selectedInvoice.patient_id);
+    console.log('🔍 selectedInvoice.patient?.id:', selectedInvoice.patient?.id);
+
+    const maxAmount = Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0);
+    if (amount > maxAmount) {
+      toast.error(`Payment amount cannot exceed remaining balance of TSh${maxAmount.toFixed(2)}`);
+      return;
     }
     
     // If still no patient_id, try to find it from the patients array using invoice data
@@ -2955,12 +3080,27 @@ export default function BillingDashboard() {
     }
 
     // Validate UUID format (basic check)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    console.log('🔍 UUID validation - patientId:', patientId);
+    console.log('🔍 UUID validation - regex test result:', uuidRegex.test(patientId));
+    console.log('🔍 UUID validation - patientId length:', patientId?.length);
+    
     if (!uuidRegex.test(patientId)) {
       toast.error('Invalid patient ID format. Please refresh and try again.');
       console.error('Invalid patient_id format:', {
         patientId,
         invoice: selectedInvoice
+      });
+      return;
+    }
+
+    // Validate that patient_id matches invoice's patient_id
+    if (patientId !== actualInvoice.patient_id) {
+      toast.error('Patient ID mismatch with invoice. Please refresh and try again.');
+      console.error('Patient ID mismatch:', {
+        extractedPatientId: patientId,
+        invoicePatientId: actualInvoice.patient_id,
+        invoice: actualInvoice
       });
       return;
     }
@@ -3414,12 +3554,19 @@ export default function BillingDashboard() {
                                 size="sm"
                                 className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
                                 onClick={() => {
-                                  // For now, select the first unpaid invoice for payment
-                                  const unpaidInvoice = patientData.invoices.find(inv => inv.status !== 'Paid');
-                                  console.log('Pay Now clicked - unpaidInvoice:', unpaidInvoice);
+                                  const unpaidInvoices = patientData.invoices.filter(inv => inv.status !== 'Paid');
+                                  console.log('Pay Now clicked - unpaidInvoices:', unpaidInvoices);
                                   console.log('Pay Now clicked - patientData.invoices:', patientData.invoices);
-                                  if (unpaidInvoice) {
-                                    handleOpenPaymentDialog(unpaidInvoice);
+                                  
+                                  if (unpaidInvoices.length === 1) {
+                                    // If only one unpaid invoice, open payment dialog directly
+                                    handleOpenPaymentDialog(unpaidInvoices[0]);
+                                  } else if (unpaidInvoices.length > 1) {
+                                    // If multiple unpaid invoices, show selection dialog
+                                    setSelectedPatientForInvoiceSelection(patientData);
+                                    setInvoiceSelectionDialogOpen(true);
+                                  } else {
+                                    toast.error('No unpaid invoices found for this patient');
                                   }
                                 }}
                               >
@@ -3796,63 +3943,9 @@ export default function BillingDashboard() {
             </DialogHeader>
 
             {/* Invoice Details */}
-            {selectedInvoice && (() => {
-              // Unwrap invoice if it's wrapped in an object
-              const actualInvoice = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice 
-                ? selectedInvoice.invoice 
-                : selectedInvoice;
-              
-              return (
-                <div className="border rounded-lg p-4 mb-4 bg-gray-50">
-                  <h4 className="font-semibold mb-3">Invoice Details</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                    <span>Patient:</span>
-                    <span className="font-medium">{actualInvoice.patient?.full_name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Invoice Date:</span>
-                    <span>{format(new Date(actualInvoice.invoice_date), 'MMM dd, yyyy')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Due Date:</span>
-                    <span>{format(new Date(actualInvoice.due_date), 'MMM dd, yyyy')}</span>
-                  </div>
-
-                  {/* Invoice Items */}
-                  {actualInvoice.items && actualInvoice.items.length > 0 && (
-                    <div className="mt-4 border-t pt-2">
-                      <h5 className="font-medium mb-2">Invoice Items:</h5>
-                      <div className="space-y-1">
-                        {actualInvoice.items.map((item: any, index: number) => (
-                          <div key={item.id || index} className="flex justify-between text-sm bg-gray-100 p-2 rounded">
-                            <span className="flex-1">{item.description}</span>
-                            <span className="text-right">
-                              {item.quantity} × TSh{Number(item.unit_price as number).toFixed(2)} = <span className="font-semibold">TSh{Number(item.total_price as number).toFixed(2)}</span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="border-t pt-2 mt-2">
-                    <div className="flex justify-between font-semibold text-base">
-                      <span>Total:</span>
-                      <span>TSh{Number(actualInvoice.total_amount as number).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Paid:</span>
-                      <span>TSh{Number(actualInvoice.paid_amount as number || 0).toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold text-green-600">
-                      <span>Remaining:</span>
-                      <span>TSh{(Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0)).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
+            {selectedInvoice && (
+              <InvoiceDetailsSection selectedInvoice={selectedInvoice} />
+            )}
 
             <form onSubmit={handleRecordPayment} className="space-y-4">
               {/* Form validation helper */}
@@ -3868,43 +3961,7 @@ export default function BillingDashboard() {
 
               <div className="space-y-2">
                 <Label htmlFor="amount">Payment Amount (TSh)</Label>
-                {(() => {
-                  // Unwrap invoice for payment calculations
-                  const actualInvoice = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice 
-                    ? selectedInvoice.invoice 
-                    : selectedInvoice;
-                  
-                  const remainingBalance = actualInvoice ? Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0) : 0;
-                  
-                  return (
-                    <>
-                      <Input
-                        id="amount"
-                        name="amount"
-                        type="number"
-                        step="0.01"
-                        min="0.01"
-                        max={actualInvoice ? remainingBalance : undefined}
-                        defaultValue={actualInvoice ? remainingBalance.toFixed(2) : ''}
-                        className={`bg-white ${actualInvoice ? 'border-green-300 focus:border-green-500' : 'border-red-300'}`}
-                        required
-                      />
-                      <p className="text-sm text-muted-foreground">
-                        💰 Enter payment amount (max: TSh{actualInvoice ? remainingBalance.toFixed(2) : '0.00'})
-                      </p>
-                      {actualInvoice && (
-                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-green-700">Remaining Balance:</span>
-                            <span className="font-semibold text-green-800">
-                              TSh{remainingBalance.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
+                <PaymentAmountInput selectedInvoice={selectedInvoice} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
@@ -4780,6 +4837,90 @@ export default function BillingDashboard() {
                 Generate Report
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Invoice Selection Dialog */}
+        <Dialog open={invoiceSelectionDialogOpen} onOpenChange={setInvoiceSelectionDialogOpen}>
+          <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Select Invoice to Pay</DialogTitle>
+              <DialogDescription>
+                This patient has multiple unpaid invoices. Please select which invoice you want to make a payment for.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {selectedPatientForInvoiceSelection && (
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="font-semibold text-blue-900">Patient: {selectedPatientForInvoiceSelection.patient?.full_name}</h4>
+                  <p className="text-sm text-blue-700">Total Outstanding: TSh{Number(selectedPatientForInvoiceSelection.unpaidAmount || 0).toFixed(2)}</p>
+                </div>
+                
+                <div className="space-y-3">
+                  <h5 className="font-medium">Unpaid Invoices:</h5>
+                  {selectedPatientForInvoiceSelection.invoices
+                    ?.filter((invoice: any) => invoice.status !== 'Paid')
+                    .map((invoice: any) => (
+                      <div key={invoice.id} className="border rounded-lg p-4 hover:bg-gray-50">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h6 className="font-medium">{invoice.invoice_number}</h6>
+                            <p className="text-sm text-gray-600">
+                              Date: {format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}
+                            </p>
+                          </div>
+                          <Badge variant={invoice.status === 'Partial' ? 'secondary' : 'destructive'}>
+                            {invoice.status}
+                          </Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-4 text-sm mb-3">
+                          <div>
+                            <span className="text-gray-500">Total:</span>
+                            <div className="font-semibold">TSh{Number(invoice.total_amount || 0).toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Paid:</span>
+                            <div className="font-semibold">TSh{Number(invoice.paid_amount || 0).toFixed(2)}</div>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Remaining:</span>
+                            <div className="font-semibold text-red-600">
+                              TSh{(Number(invoice.total_amount || 0) - Number(invoice.paid_amount || 0)).toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <Button
+                          size="sm"
+                          className="w-full bg-green-600 hover:bg-green-700"
+                          onClick={() => {
+                            setInvoiceSelectionDialogOpen(false);
+                            setSelectedPatientForInvoiceSelection(null);
+                            handleOpenPaymentDialog(invoice);
+                          }}
+                        >
+                          <CreditCard className="mr-2 h-4 w-4" />
+                          Pay This Invoice
+                        </Button>
+                      </div>
+                    ))}
+                </div>
+                
+                <div className="flex justify-end gap-3 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setInvoiceSelectionDialogOpen(false);
+                      setSelectedPatientForInvoiceSelection(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
