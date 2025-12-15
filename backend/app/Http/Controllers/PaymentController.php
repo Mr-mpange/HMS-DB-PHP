@@ -95,14 +95,25 @@ class PaymentController extends Controller
                     ], 422);
                 }
                 
+                $oldPaidAmount = $invoice->paid_amount;
                 $invoice->paid_amount += $validated['amount'];
                 $invoice->balance = $invoice->total_amount - $invoice->paid_amount;
                 
                 if ($invoice->balance <= 0) {
                     $invoice->status = 'Paid';
                 } elseif ($invoice->paid_amount > 0) {
-                    $invoice->status = 'Partial';
+                    $invoice->status = 'Partially Paid';  // Use consistent status name
                 }
+                
+                \Log::info('Updating invoice after payment', [
+                    'invoice_id' => $invoice->id,
+                    'old_paid_amount' => $oldPaidAmount,
+                    'payment_amount' => $validated['amount'],
+                    'new_paid_amount' => $invoice->paid_amount,
+                    'total_amount' => $invoice->total_amount,
+                    'new_balance' => $invoice->balance,
+                    'new_status' => $invoice->status
+                ]);
                 
                 $invoice->save();
             }

@@ -2955,16 +2955,11 @@ export default function BillingDashboard() {
       }
 
       if (invoice) {
+        // Note: Invoice is automatically updated by PaymentController when payment is created
+        // We just need to check the current status for visit completion logic
         const newPaidAmount = Number(invoice.paid_amount) + amount;
         const totalAmount = Number(invoice.total_amount);
         const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
-
-        try {
-          await api.put(`/billing/invoices/${invoiceId}`, { paid_amount: newPaidAmount, status: newStatus });
-        } catch (error) {
-          console.error('Error updating invoice:', error);
-          return;
-        }
 
         // If fully paid, complete the visit
         if (newStatus === 'Paid') {
@@ -3141,13 +3136,8 @@ export default function BillingDashboard() {
     const newBalance = totalAmount - newPaidAmount;
     const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
 
-    try {
-      await api.put(`/billing/invoices/${actualInvoice.id}`, { paid_amount: newPaidAmount, status: newStatus });
-    } catch (error) {
-      console.error('Error updating invoice:', error);
-      toast.error('Failed to update invoice');
-      return;
-    }
+    // Note: Invoice is automatically updated by PaymentController when payment is created
+    // No need to update invoice manually here
 
     // If fully paid, complete the visit
     if (newStatus === 'Paid') {
