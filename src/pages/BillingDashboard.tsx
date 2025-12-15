@@ -1130,15 +1130,27 @@ export default function BillingDashboard() {
 
   const printMedicalHistoryReport = async () => {
     try {
-      const [visitsResponse, prescriptionsResponse, labTestsResponse] = await Promise.all([
+      const [visitsResponse, prescriptionsResponse, labTestsResponse, medicationsResponse, prescriptionItemsResponse] = await Promise.all([
         api.get('/visits'),
         api.get('/prescriptions'),
-        api.get('/lab-tests')
+        api.get('/lab-tests'),
+        api.get('/pharmacy/medications').catch(() => ({ data: { medications: [] } })),
+        api.get('/prescription-items').catch(() => ({ data: { prescription_items: [] } }))
       ]);
       
       const allVisits = visitsResponse.data.visits || [];
       const allPrescriptions = prescriptionsResponse.data.prescriptions || [];
       const allLabTests = labTestsResponse.data.lab_tests || [];
+      const allMedications = medicationsResponse.data.medications || [];
+      const allPrescriptionItems = prescriptionItemsResponse.data.prescription_items || [];
+      
+      console.log('Medical History Report Data:', {
+        visits: allVisits.length,
+        prescriptions: allPrescriptions.length,
+        labTests: allLabTests.length,
+        medications: allMedications.length,
+        prescriptionItems: allPrescriptionItems.length
+      });
       
       const printContent = `
         <html>
@@ -1186,10 +1198,14 @@ export default function BillingDashboard() {
                 <div class="summary-number">${allLabTests.length}</div>
                 <div>Total Lab Tests</div>
               </div>
+              <div class="summary-card">
+                <div class="summary-number">${allPrescriptionItems.length}</div>
+                <div>Medication Items</div>
+              </div>
             </div>
 
             <div class="section">
-              <div class="section-title">Recent Patient Visits</div>
+              <div class="section-title">All Patient Visits (${allVisits.length} total)</div>
               <table>
                 <thead>
                   <tr>
@@ -1197,16 +1213,18 @@ export default function BillingDashboard() {
                     <th>Patient Name</th>
                     <th>Visit Type</th>
                     <th>Chief Complaint</th>
+                    <th>Current Stage</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${allVisits.slice(0, 20).map(visit => `
+                  ${allVisits.map(visit => `
                     <tr>
                       <td>${visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td>${visit.patient?.full_name || 'Unknown'}</td>
                       <td>${visit.visit_type || 'N/A'}</td>
                       <td>${visit.chief_complaint || 'N/A'}</td>
+                      <td>${visit.current_stage || 'N/A'}</td>
                       <td>${visit.overall_status || visit.status || 'N/A'}</td>
                     </tr>
                   `).join('')}
@@ -1215,7 +1233,7 @@ export default function BillingDashboard() {
             </div>
 
             <div class="section">
-              <div class="section-title">Recent Prescriptions</div>
+              <div class="section-title">All Prescriptions (${allPrescriptions.length} total)</div>
               <table>
                 <thead>
                   <tr>
@@ -1224,16 +1242,57 @@ export default function BillingDashboard() {
                     <th>Doctor</th>
                     <th>Diagnosis</th>
                     <th>Status</th>
+                    <th>Medications</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${allPrescriptions.slice(0, 15).map(prescription => `
+                  ${allPrescriptions.map(prescription => {
+                    // Find prescription items for this prescription
+                    const prescriptionMeds = allPrescriptionItems.filter(item => item.prescription_id === prescription.id);
+                    const medicationsList = prescriptionMeds.map(item => {
+                      const medication = allMedications.find(med => med.id === item.medication_id);
+                      return `${medication?.name || 'Unknown'} (${item.quantity || 0} ${item.dosage_form || ''})`;
+                    }).join(', ') || 'No medications found';
+                    
+                    return `
+                      <tr>
+                        <td>${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                        <td>${prescription.patient?.full_name || 'Unknown'}</td>
+                        <td>${prescription.doctor_profile?.name || prescription.doctor_profile?.full_name || 'Unknown'}</td>
+                        <td>${prescription.diagnosis || 'N/A'}</td>
+                        <td>${prescription.status || 'N/A'}</td>
+                        <td style="font-size: 11px;">${medicationsList}</td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="section">
+              <div class="section-title">All Lab Tests (${allLabTests.length} total)</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Patient Name</th>
+                    <th>Test Name</th>
+                    <th>Test Type</th>
+                    <th>Status</th>
+                    <th>Results Summary</th>
+                    <th>Doctor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${allLabTests.map(test => `
                     <tr>
-                      <td>${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                      <td>${prescription.patient?.full_name || 'Unknown'}</td>
-                      <td>${prescription.doctor_profile?.name || prescription.doctor_profile?.full_name || 'Unknown'}</td>
-                      <td>${prescription.diagnosis || 'N/A'}</td>
-                      <td>${prescription.status || 'N/A'}</td>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td>${test.patient?.full_name || 'Unknown'}</td>
+                      <td>${test.test_name || 'N/A'}</td>
+                      <td>${test.test_type || 'N/A'}</td>
+                      <td>${test.status || 'N/A'}</td>
+                      <td style="font-size: 11px;">${test.results ? (test.results.length > 100 ? test.results.substring(0, 100) + '...' : test.results) : 'Pending'}</td>
+                      <td>${test.doctor_profile?.name || test.doctor_profile?.full_name || 'N/A'}</td>
                     </tr>
                   `).join('')}
                 </tbody>
@@ -1241,34 +1300,43 @@ export default function BillingDashboard() {
             </div>
 
             <div class="section">
-              <div class="section-title">Recent Lab Tests</div>
+              <div class="section-title">Medication Dispensing Details (${allPrescriptionItems.length} total)</div>
               <table>
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Patient Name</th>
-                    <th>Test Name</th>
+                    <th>Patient</th>
+                    <th>Medication</th>
+                    <th>Strength</th>
+                    <th>Quantity</th>
+                    <th>Dosage Instructions</th>
                     <th>Status</th>
-                    <th>Results</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${allLabTests.slice(0, 15).map(test => `
-                    <tr>
-                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                      <td>${test.patient?.full_name || 'Unknown'}</td>
-                      <td>${test.test_name || 'N/A'}</td>
-                      <td>${test.status || 'N/A'}</td>
-                      <td>${test.results ? 'Available' : 'Pending'}</td>
-                    </tr>
-                  `).join('')}
+                  ${allPrescriptionItems.map(item => {
+                    const medication = allMedications.find(med => med.id === item.medication_id);
+                    const prescription = allPrescriptions.find(pres => pres.id === item.prescription_id);
+                    
+                    return `
+                      <tr>
+                        <td>${prescription?.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                        <td>${prescription?.patient?.full_name || 'Unknown'}</td>
+                        <td>${medication?.name || 'Unknown Medication'}</td>
+                        <td>${medication?.strength || 'N/A'}</td>
+                        <td>${item.quantity || 0} ${item.dosage_form || medication?.dosage_form || ''}</td>
+                        <td style="font-size: 11px;">${item.dosage_instructions || 'No instructions'}</td>
+                        <td>${item.status || prescription?.status || 'N/A'}</td>
+                      </tr>
+                    `;
+                  }).join('')}
                 </tbody>
               </table>
             </div>
 
             <div class="footer">
               <p>Hospital Management System - Medical History Report</p>
-              <p>Visits: ${allVisits.length} | Prescriptions: ${allPrescriptions.length} | Lab Tests: ${allLabTests.length}</p>
+              <p>Visits: ${allVisits.length} | Prescriptions: ${allPrescriptions.length} | Lab Tests: ${allLabTests.length} | Medications: ${allPrescriptionItems.length}</p>
             </div>
           </body>
         </html>
@@ -1407,13 +1475,27 @@ export default function BillingDashboard() {
 
   const printIndividualPatientReport = async (patient: any) => {
     try {
+      // Validate patient ID
+      if (!patient?.id) {
+        toast.error('Invalid patient selected for report');
+        return;
+      }
+
+      console.log('Generating report for patient:', {
+        id: patient.id,
+        name: patient.full_name,
+        phone: patient.phone
+      });
+
       // Fetch all data for this specific patient
-      const [visitsResponse, prescriptionsResponse, labTestsResponse, paymentsResponse, invoicesResponse] = await Promise.all([
+      const [visitsResponse, prescriptionsResponse, labTestsResponse, paymentsResponse, invoicesResponse, medicationsResponse, prescriptionItemsResponse] = await Promise.all([
         api.get(`/visits?patient_id=${patient.id}`),
         api.get(`/prescriptions?patient_id=${patient.id}`),
         api.get(`/lab-tests?patient_id=${patient.id}`),
         api.get(`/payments?patient_id=${patient.id}`),
-        api.get(`/billing/invoices?patient_id=${patient.id}`)
+        api.get(`/billing/invoices?patient_id=${patient.id}`),
+        api.get('/pharmacy/medications').catch(() => ({ data: { medications: [] } })),
+        api.get('/prescription-items').catch(() => ({ data: { prescription_items: [] } }))
       ]);
       
       const patientVisits = visitsResponse.data.visits || [];
@@ -1421,6 +1503,38 @@ export default function BillingDashboard() {
       const patientLabTests = labTestsResponse.data.lab_tests || [];
       const patientPayments = paymentsResponse.data.payments || [];
       const patientInvoices = invoicesResponse.data.invoices || [];
+      const allMedications = medicationsResponse.data.medications || [];
+      const allPrescriptionItems = prescriptionItemsResponse.data.prescription_items || [];
+      
+      // Filter prescription items for this patient
+      const patientPrescriptionItems = allPrescriptionItems.filter(item => 
+        patientPrescriptions.some(pres => pres.id === item.prescription_id)
+      );
+
+      // Log data counts for verification
+      console.log('Patient report data:', {
+        patientId: patient.id,
+        visits: patientVisits.length,
+        prescriptions: patientPrescriptions.length,
+        labTests: patientLabTests.length,
+        payments: patientPayments.length,
+        invoices: patientInvoices.length,
+        medications: allMedications.length,
+        prescriptionItems: patientPrescriptionItems.length
+      });
+
+      // Verify data belongs to correct patient
+      const invalidVisits = patientVisits.filter(v => v.patient_id !== patient.id);
+      const invalidPayments = patientPayments.filter(p => p.patient_id !== patient.id);
+      const invalidInvoices = patientInvoices.filter(i => i.patient_id !== patient.id);
+      
+      if (invalidVisits.length > 0 || invalidPayments.length > 0 || invalidInvoices.length > 0) {
+        console.warn('Found data for wrong patient:', {
+          invalidVisits: invalidVisits.length,
+          invalidPayments: invalidPayments.length,
+          invalidInvoices: invalidInvoices.length
+        });
+      }
       
       // Calculate totals
       const totalPaid = patientPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
@@ -1447,6 +1561,7 @@ export default function BillingDashboard() {
             <div class="patient-info">
               <h3>👤 Patient Information</h3>
               <div class="patient-details">
+                <p><strong>Patient ID:</strong> <span class="patient-id">${patient.id}</span></p>
                 <p><strong>Full Name:</strong> ${patient.full_name || 'N/A'}</p>
                 <p><strong>Patient ID:</strong> ${patient.id.substring(0, 8)}...</p>
                 <p><strong>Phone:</strong> ${patient.phone || 'N/A'}</p>
@@ -1659,6 +1774,17 @@ export default function BillingDashboard() {
 
   const printMedicalOnlyReport = async (patient: any) => {
     try {
+      // Validate patient ID
+      if (!patient?.id) {
+        toast.error('Invalid patient selected for medical report');
+        return;
+      }
+
+      console.log('Generating medical report for patient:', {
+        id: patient.id,
+        name: patient.full_name
+      });
+
       const [visitsResponse, prescriptionsResponse, labTestsResponse] = await Promise.all([
         api.get(`/visits?patient_id=${patient.id}`),
         api.get(`/prescriptions?patient_id=${patient.id}`),
@@ -1668,6 +1794,21 @@ export default function BillingDashboard() {
       const patientVisits = visitsResponse.data.visits || [];
       const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
       const patientLabTests = labTestsResponse.data.lab_tests || [];
+
+      // Verify data belongs to correct patient
+      const invalidVisits = patientVisits.filter(v => v.patient_id !== patient.id);
+      const invalidPrescriptions = patientPrescriptions.filter(p => p.patient_id !== patient.id);
+      const invalidLabTests = patientLabTests.filter(l => l.patient_id !== patient.id);
+      
+      if (invalidVisits.length > 0 || invalidPrescriptions.length > 0 || invalidLabTests.length > 0) {
+        console.warn('Medical report: Found data for wrong patient:', {
+          invalidVisits: invalidVisits.length,
+          invalidPrescriptions: invalidPrescriptions.length,
+          invalidLabTests: invalidLabTests.length,
+          expectedPatientId: patient.id
+        });
+        toast.warning('Some medical data may not belong to this patient. Check console for details.');
+      }
       
       const printContent = `
         <!DOCTYPE html>
@@ -1813,6 +1954,17 @@ export default function BillingDashboard() {
 
   const printFinancialOnlyReport = async (patient: any) => {
     try {
+      // Validate patient ID
+      if (!patient?.id) {
+        toast.error('Invalid patient selected for financial report');
+        return;
+      }
+
+      console.log('Generating financial report for patient:', {
+        id: patient.id,
+        name: patient.full_name
+      });
+
       const [paymentsResponse, invoicesResponse] = await Promise.all([
         api.get(`/payments?patient_id=${patient.id}`),
         api.get(`/billing/invoices?patient_id=${patient.id}`)
@@ -1820,6 +1972,25 @@ export default function BillingDashboard() {
       
       const patientPayments = paymentsResponse.data.payments || [];
       const patientInvoices = invoicesResponse.data.invoices || [];
+
+      // Verify data belongs to correct patient
+      const invalidPayments = patientPayments.filter(p => p.patient_id !== patient.id);
+      const invalidInvoices = patientInvoices.filter(i => i.patient_id !== patient.id);
+      
+      if (invalidPayments.length > 0 || invalidInvoices.length > 0) {
+        console.warn('Financial report: Found data for wrong patient:', {
+          invalidPayments: invalidPayments.length,
+          invalidInvoices: invalidInvoices.length,
+          expectedPatientId: patient.id
+        });
+        toast.warning('Some data may not belong to this patient. Check console for details.');
+      }
+
+      console.log('Financial report data:', {
+        patientId: patient.id,
+        payments: patientPayments.length,
+        invoices: patientInvoices.length
+      });
       
       const totalPaid = patientPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
       const totalInvoiced = patientInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0);
@@ -1956,8 +2127,30 @@ export default function BillingDashboard() {
 
   const printPrescriptionsOnlyReport = async (patient: any) => {
     try {
+      // Validate patient ID
+      if (!patient?.id) {
+        toast.error('Invalid patient selected for prescriptions report');
+        return;
+      }
+
+      console.log('Generating prescriptions report for patient:', {
+        id: patient.id,
+        name: patient.full_name
+      });
+
       const prescriptionsResponse = await api.get(`/prescriptions?patient_id=${patient.id}`);
       const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
+
+      // Verify data belongs to correct patient
+      const invalidPrescriptions = patientPrescriptions.filter(p => p.patient_id !== patient.id);
+      
+      if (invalidPrescriptions.length > 0) {
+        console.warn('Prescriptions report: Found data for wrong patient:', {
+          invalidPrescriptions: invalidPrescriptions.length,
+          expectedPatientId: patient.id
+        });
+        toast.warning('Some prescription data may not belong to this patient. Check console for details.');
+      }
       
       const printContent = `
         <!DOCTYPE html>
@@ -2062,8 +2255,30 @@ export default function BillingDashboard() {
 
   const printLabResultsOnlyReport = async (patient: any) => {
     try {
+      // Validate patient ID
+      if (!patient?.id) {
+        toast.error('Invalid patient selected for lab results report');
+        return;
+      }
+
+      console.log('Generating lab results report for patient:', {
+        id: patient.id,
+        name: patient.full_name
+      });
+
       const labTestsResponse = await api.get(`/lab-tests?patient_id=${patient.id}`);
       const patientLabTests = labTestsResponse.data.lab_tests || [];
+
+      // Verify data belongs to correct patient
+      const invalidLabTests = patientLabTests.filter(l => l.patient_id !== patient.id);
+      
+      if (invalidLabTests.length > 0) {
+        console.warn('Lab results report: Found data for wrong patient:', {
+          invalidLabTests: invalidLabTests.length,
+          expectedPatientId: patient.id
+        });
+        toast.warning('Some lab test data may not belong to this patient. Check console for details.');
+      }
       
       const printContent = `
         <!DOCTYPE html>
@@ -2333,10 +2548,35 @@ export default function BillingDashboard() {
   };
 
   const handleOpenPaymentDialog = (invoice: any) => {
-    setSelectedInvoice(invoice);
+    console.log('Opening payment dialog for invoice:', invoice);
+    console.log('Invoice type:', typeof invoice);
+    console.log('Invoice keys:', Object.keys(invoice || {}));
+    
+    // Check if invoice is wrapped in an object and unwrap it
+    let actualInvoice = invoice;
+    if (invoice && typeof invoice === 'object' && invoice.invoice) {
+      console.warn('Invoice is wrapped in an object, unwrapping:', invoice);
+      actualInvoice = invoice.invoice;
+    }
+    
+    // Validate invoice has required data
+    if (!actualInvoice.id) {
+      toast.error('Invalid invoice data. Please refresh and try again.');
+      console.error('Invalid invoice structure:', { original: invoice, unwrapped: actualInvoice });
+      return;
+    }
+    
+    const patientId = actualInvoice.patient_id || actualInvoice.patient?.id;
+    if (!patientId) {
+      toast.error('Invoice is missing patient information. Please refresh and try again.');
+      console.error('Invoice missing patient_id:', { original: invoice, unwrapped: actualInvoice });
+      return;
+    }
+    
+    setSelectedInvoice(actualInvoice);
     
     // Check if patient has insurance - auto-select Insurance payment method
-    const patient = patients.find(p => p.id === invoice.patient_id);
+    const patient = patients.find(p => p.id === patientId);
     if (patient?.insurance_company_id) {
       setPaymentMethod('Insurance');
       toast.info('Patient has insurance - Insurance payment method selected');
@@ -2439,6 +2679,13 @@ export default function BillingDashboard() {
     e.preventDefault();
     if (!selectedInvoice) return;
 
+    // Handle case where selectedInvoice might be wrapped in an object
+    let actualInvoice = selectedInvoice;
+    if (selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice) {
+      console.warn('selectedInvoice is wrapped in an object, extracting actual invoice:', selectedInvoice);
+      actualInvoice = selectedInvoice.invoice;
+    }
+
     const formData = new FormData(e.currentTarget);
     const phoneNumber = formData.get('phoneNumber') as string;
     const amount = Number(formData.get('amount'));
@@ -2449,7 +2696,7 @@ export default function BillingDashboard() {
       return;
     }
 
-    const maxAmount = Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0);
+    const maxAmount = Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0);
     if (amount > maxAmount) {
       toast.error(`Payment amount cannot exceed remaining balance of TSh${maxAmount.toFixed(2)}`);
       return;
@@ -2465,15 +2712,59 @@ export default function BillingDashboard() {
     setMobilePaymentProcessing(true);
     setPaymentStatus('processing');
 
+    // Validate patient_id before initiating mobile payment
+    let patientId;
+    if (selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice) {
+      patientId = selectedInvoice.patientId || actualInvoice.patient_id || actualInvoice.patient?.id;
+    } else {
+      patientId = actualInvoice.patient_id || actualInvoice.patient?.id;
+    }
+    
+    // If still no patient_id, try to find it from the patients array using invoice data
+    if (!patientId && actualInvoice.patient) {
+      const foundPatient = patients.find(p => 
+        p.full_name === actualInvoice.patient.full_name || 
+        p.phone === actualInvoice.patient.phone
+      );
+      if (foundPatient) {
+        patientId = foundPatient.id;
+        console.log('Found patient_id from patients array:', patientId);
+      }
+    }
+    
+    if (!patientId) {
+      toast.error('Invalid patient information. Please refresh and try again.');
+      console.error('Missing patient_id in invoice:', {
+        invoice: selectedInvoice,
+        availablePatients: patients.length
+      });
+      setMobilePaymentProcessing(false);
+      setPaymentStatus('');
+      return;
+    }
+
+    // Validate UUID format (basic check)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(patientId)) {
+      toast.error('Invalid patient ID format. Please refresh and try again.');
+      console.error('Invalid patient_id format:', {
+        patientId,
+        invoice: selectedInvoice
+      });
+      setMobilePaymentProcessing(false);
+      setPaymentStatus('');
+      return;
+    }
+
     try {
       const paymentRequest: MobilePaymentRequest = {
         phoneNumber,
         amount,
-        invoiceId: selectedInvoice.id,
-        patientId: selectedInvoice.patient_id,
+        invoiceId: actualInvoice.id,
+        patientId: patientId,
         paymentType: 'Invoice Payment',
         paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-        description: `Payment for invoice ${selectedInvoice.invoice_number}`
+        description: `Payment for invoice ${actualInvoice.invoice_number}`
       };
 
       const response = await mobilePaymentService.initiatePayment(paymentRequest);
@@ -2622,22 +2913,70 @@ export default function BillingDashboard() {
       return;
     }
 
-    const maxAmount = Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0);
+    const maxAmount = Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0);
     if (amount > maxAmount) {
       toast.error(`Payment amount cannot exceed remaining balance of TSh${maxAmount.toFixed(2)}`);
       return;
     }
 
+    // Validate patient_id before sending payment
+    let patientId;
+    let actualInvoice = selectedInvoice;
+    
+    // Handle case where selectedInvoice might be wrapped in an object
+    if (selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice) {
+      console.warn('selectedInvoice is wrapped in an object, extracting actual invoice:', selectedInvoice);
+      actualInvoice = selectedInvoice.invoice;
+      patientId = selectedInvoice.patientId || actualInvoice.patient_id || actualInvoice.patient?.id;
+    } else {
+      patientId = selectedInvoice.patient_id || selectedInvoice.patient?.id;
+    }
+    
+    // If still no patient_id, try to find it from the patients array using invoice data
+    if (!patientId && actualInvoice.patient) {
+      const foundPatient = patients.find(p => 
+        p.full_name === actualInvoice.patient.full_name || 
+        p.phone === actualInvoice.patient.phone
+      );
+      if (foundPatient) {
+        patientId = foundPatient.id;
+        console.log('Found patient_id from patients array:', patientId);
+      }
+    }
+    
+    if (!patientId) {
+      toast.error('Invalid patient information. Please refresh and try again.');
+      console.error('Missing patient_id in invoice:', {
+        invoice: selectedInvoice,
+        actualInvoice: actualInvoice,
+        availablePatients: patients.length
+      });
+      return;
+    }
+
+    // Validate UUID format (basic check)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(patientId)) {
+      toast.error('Invalid patient ID format. Please refresh and try again.');
+      console.error('Invalid patient_id format:', {
+        patientId,
+        invoice: selectedInvoice
+      });
+      return;
+    }
+
     const paymentData = {
-      invoice_id: selectedInvoice.id,
-      patient_id: selectedInvoice.patient_id,
+      invoice_id: actualInvoice.id,
+      patient_id: patientId,
       amount,
       payment_method: paymentMethod,
       payment_date: new Date().toISOString(),
-      reference_number: formData.get('referenceNumber') as string || selectedInvoice.invoice_number || null,
+      reference_number: formData.get('referenceNumber') as string || actualInvoice.invoice_number || null,
       notes: formData.get('notes') as string || null,
       status: 'Completed',
     };
+
+    console.log('Payment data being sent:', paymentData);
 
     try {
       await api.post('/payments', paymentData);
@@ -2650,20 +2989,20 @@ export default function BillingDashboard() {
 
     // Log payment received
     await logActivity('billing.payment.received', {
-      invoice_id: selectedInvoice.id,
-      patient_id: selectedInvoice.patient_id,
+      invoice_id: actualInvoice.id,
+      patient_id: patientId,
       amount: amount,
       payment_method: paymentMethod,
       reference_number: formData.get('referenceNumber') as string || null
     });
 
-    const newPaidAmount = Number(selectedInvoice.paid_amount) + amount;
-    const totalAmount = Number(selectedInvoice.total_amount);
+    const newPaidAmount = Number(actualInvoice.paid_amount) + amount;
+    const totalAmount = Number(actualInvoice.total_amount);
     const newBalance = totalAmount - newPaidAmount;
     const newStatus = newPaidAmount >= totalAmount ? 'Paid' : newPaidAmount > 0 ? 'Partially Paid' : 'Unpaid';
 
     try {
-      await api.put(`/billing/invoices/${selectedInvoice.id}`, { paid_amount: newPaidAmount, status: newStatus });
+      await api.put(`/billing/invoices/${actualInvoice.id}`, { paid_amount: newPaidAmount, status: newStatus });
     } catch (error) {
       console.error('Error updating invoice:', error);
       toast.error('Failed to update invoice');
@@ -2673,18 +3012,18 @@ export default function BillingDashboard() {
     // If fully paid, complete the visit
     if (newStatus === 'Paid') {
       console.log('Payment fully completed, updating patient visit...', {
-        patient_id: selectedInvoice?.patient_id,
-        invoice_id: selectedInvoice?.id
+        patient_id: patientId,
+        invoice_id: actualInvoice?.id
       });
 
-      if (!selectedInvoice?.patient_id) {
+      if (!patientId) {
         console.error('No patient_id found on invoice');
         toast.warning('Payment recorded but could not update patient visit - no patient ID');
       } else {
         // First, try to find visit in billing stage
         let visits = [];
         try {
-          const visitsRes = await api.get(`/visits?patient_id=${selectedInvoice.patient_id}&current_stage=billing&overall_status=Active&limit=1`);
+          const visitsRes = await api.get(`/visits?patient_id=${patientId}&current_stage=billing&overall_status=Active&limit=1`);
           visits = visitsRes.data.visits || [];
         } catch (error) {
           console.error('Error fetching patient visit:', error);
@@ -2696,7 +3035,7 @@ export default function BillingDashboard() {
         if (!visits || visits.length === 0) {
           console.log('No visit in billing stage, checking for any active visit...');
           try {
-            const anyVisitsRes = await api.get(`/visits?patient_id=${selectedInvoice.patient_id}&overall_status=Active&limit=1`);
+            const anyVisitsRes = await api.get(`/visits?patient_id=${patientId}&overall_status=Active&limit=1`);
             const anyVisits = anyVisitsRes.data.visits || [];
             
             console.log('Found any active visits:', anyVisits.length, anyVisits[0]?.current_stage);
@@ -2765,7 +3104,7 @@ export default function BillingDashboard() {
     
     // Update local state instead of full refresh
     setRawInvoicesData(prev => prev.map(inv => 
-      inv.id === selectedInvoice.id 
+      inv.id === actualInvoice.id 
         ? { ...inv, paid_amount: newPaidAmount, balance: newBalance, status: newStatus }
         : inv
     ));
@@ -3077,6 +3416,8 @@ export default function BillingDashboard() {
                                 onClick={() => {
                                   // For now, select the first unpaid invoice for payment
                                   const unpaidInvoice = patientData.invoices.find(inv => inv.status !== 'Paid');
+                                  console.log('Pay Now clicked - unpaidInvoice:', unpaidInvoice);
+                                  console.log('Pay Now clicked - patientData.invoices:', patientData.invoices);
                                   if (unpaidInvoice) {
                                     handleOpenPaymentDialog(unpaidInvoice);
                                   }
@@ -3434,34 +3775,56 @@ export default function BillingDashboard() {
             <DialogHeader>
               <DialogTitle>Record Payment</DialogTitle>
               <DialogDescription>
-                Record payment for invoice {selectedInvoice?.invoice_number}
+                {(() => {
+                  const actualInvoice = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice 
+                    ? selectedInvoice.invoice 
+                    : selectedInvoice;
+                  const patientId = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.patientId
+                    ? selectedInvoice.patientId
+                    : actualInvoice?.patient_id || actualInvoice?.patient?.id;
+                  
+                  return (
+                    <>
+                      Record payment for invoice {actualInvoice?.invoice_number}
+                      <div className="mt-2 text-xs text-gray-500">
+                        Patient ID: {patientId || 'Not found'}
+                      </div>
+                    </>
+                  );
+                })()}
               </DialogDescription>
             </DialogHeader>
 
             {/* Invoice Details */}
-            {selectedInvoice && (
-              <div className="border rounded-lg p-4 mb-4 bg-gray-50">
-                <h4 className="font-semibold mb-3">Invoice Details</h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
+            {selectedInvoice && (() => {
+              // Unwrap invoice if it's wrapped in an object
+              const actualInvoice = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice 
+                ? selectedInvoice.invoice 
+                : selectedInvoice;
+              
+              return (
+                <div className="border rounded-lg p-4 mb-4 bg-gray-50">
+                  <h4 className="font-semibold mb-3">Invoice Details</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
                     <span>Patient:</span>
-                    <span className="font-medium">{selectedInvoice.patient?.full_name}</span>
+                    <span className="font-medium">{actualInvoice.patient?.full_name}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Invoice Date:</span>
-                    <span>{format(new Date(selectedInvoice.invoice_date), 'MMM dd, yyyy')}</span>
+                    <span>{format(new Date(actualInvoice.invoice_date), 'MMM dd, yyyy')}</span>
                   </div>
                   <div className="flex justify-between">
                     <span>Due Date:</span>
-                    <span>{format(new Date(selectedInvoice.due_date), 'MMM dd, yyyy')}</span>
+                    <span>{format(new Date(actualInvoice.due_date), 'MMM dd, yyyy')}</span>
                   </div>
 
                   {/* Invoice Items */}
-                  {selectedInvoice.items && selectedInvoice.items.length > 0 && (
+                  {actualInvoice.items && actualInvoice.items.length > 0 && (
                     <div className="mt-4 border-t pt-2">
                       <h5 className="font-medium mb-2">Invoice Items:</h5>
                       <div className="space-y-1">
-                        {selectedInvoice.items.map((item: any, index: number) => (
+                        {actualInvoice.items.map((item: any, index: number) => (
                           <div key={item.id || index} className="flex justify-between text-sm bg-gray-100 p-2 rounded">
                             <span className="flex-1">{item.description}</span>
                             <span className="text-right">
@@ -3476,20 +3839,20 @@ export default function BillingDashboard() {
                   <div className="border-t pt-2 mt-2">
                     <div className="flex justify-between font-semibold text-base">
                       <span>Total:</span>
-                      <span>TSh{Number(selectedInvoice.total_amount as number).toFixed(2)}</span>
+                      <span>TSh{Number(actualInvoice.total_amount as number).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Paid:</span>
-                      <span>TSh{Number(selectedInvoice.paid_amount as number || 0).toFixed(2)}</span>
+                      <span>TSh{Number(actualInvoice.paid_amount as number || 0).toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-semibold text-green-600">
                       <span>Remaining:</span>
-                      <span>TSh{(Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2)}</span>
+                      <span>TSh{(Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0)).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             <form onSubmit={handleRecordPayment} className="space-y-4">
               {/* Form validation helper */}
@@ -3505,30 +3868,43 @@ export default function BillingDashboard() {
 
               <div className="space-y-2">
                 <Label htmlFor="amount">Payment Amount (TSh)</Label>
-                <Input
-                  id="amount"
-                  name="amount"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max={selectedInvoice ? Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0) : undefined}
-                  defaultValue={selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : ''}
-                  className={`bg-white ${selectedInvoice ? 'border-green-300 focus:border-green-500' : 'border-red-300'}`}
-                  required
-                />
-                <p className="text-sm text-muted-foreground">
-                  💰 Enter payment amount (max: TSh{selectedInvoice ? (Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2) : '0.00'})
-                </p>
-                {selectedInvoice && (
-                  <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-green-700">Remaining Balance:</span>
-                      <span className="font-semibold text-green-800">
-                        TSh{(Number(selectedInvoice.total_amount as number) - Number(selectedInvoice.paid_amount as number || 0)).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                {(() => {
+                  // Unwrap invoice for payment calculations
+                  const actualInvoice = selectedInvoice && typeof selectedInvoice === 'object' && selectedInvoice.invoice 
+                    ? selectedInvoice.invoice 
+                    : selectedInvoice;
+                  
+                  const remainingBalance = actualInvoice ? Number(actualInvoice.total_amount as number) - Number(actualInvoice.paid_amount as number || 0) : 0;
+                  
+                  return (
+                    <>
+                      <Input
+                        id="amount"
+                        name="amount"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max={actualInvoice ? remainingBalance : undefined}
+                        defaultValue={actualInvoice ? remainingBalance.toFixed(2) : ''}
+                        className={`bg-white ${actualInvoice ? 'border-green-300 focus:border-green-500' : 'border-red-300'}`}
+                        required
+                      />
+                      <p className="text-sm text-muted-foreground">
+                        💰 Enter payment amount (max: TSh{actualInvoice ? remainingBalance.toFixed(2) : '0.00'})
+                      </p>
+                      {actualInvoice && (
+                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-green-700">Remaining Balance:</span>
+                            <span className="font-semibold text-green-800">
+                              TSh{remainingBalance.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>

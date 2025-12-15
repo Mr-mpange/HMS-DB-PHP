@@ -54,6 +54,9 @@ class PaymentController extends Controller
 
     public function store(Request $request)
     {
+        // Log the incoming request for debugging
+        \Log::info('Payment creation request:', $request->all());
+        
         $validated = $request->validate([
             'patient_id' => 'nullable|uuid|exists:patients,id',
             'invoice_id' => 'nullable|uuid|exists:invoices,id',
@@ -63,6 +66,11 @@ class PaymentController extends Controller
             'payment_date' => 'required|date',
             'reference_number' => 'nullable|string|max:100',
             'notes' => 'nullable|string',
+        ], [
+            'patient_id.uuid' => 'The patient ID must be a valid UUID format.',
+            'patient_id.exists' => 'The selected patient does not exist in our records.',
+            'invoice_id.uuid' => 'The invoice ID must be a valid UUID format.',
+            'invoice_id.exists' => 'The selected invoice does not exist in our records.',
         ]);
 
         $validated['id'] = (string) Str::uuid();

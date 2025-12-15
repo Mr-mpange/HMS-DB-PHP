@@ -48,6 +48,9 @@ export default function NurseDashboard() {
   // Patient selection mode for lab registration
   const [isNewPatientMode, setIsNewPatientMode] = useState(true);
   const [labPatientSearchTerm, setLabPatientSearchTerm] = useState('');
+  
+  // Patient services for Quick Service visits
+  const [patientServices, setPatientServices] = useState<Record<string, any[]>>({});
   const [labPatientSearchResults, setLabPatientSearchResults] = useState<any[]>([]);
   const [selectedLabPatient, setSelectedLabPatient] = useState<any>(null);
   const [showNotesDialog, setShowNotesDialog] = useState(false);
@@ -1415,41 +1418,301 @@ export default function NurseDashboard() {
     try {
       console.log('🔄 Completing Quick Service for visit:', visit);
       
+      // Get patient services for this visit
+      const visitServices = patientServices[visit.id] || [];
+      console.log('📋 Visit services:', visitServices);
+      
+      if (visitServices.length === 0) {
+        console.log('⚠️ No services found for visit, trying to fetch...');
+        // Try to fetch services if not already loaded
+        try {
+          const servicesRes = await api.get(`/patient-services?patient_id=${visit.patient_id}&service_date=${visit.visit_date}`);
+          const freshServices = servicesRes.data.services || [];
+          if (freshServices.length > 0) {
+            // Update local state
+            setPatientServices(prev => ({ ...prev, [visit.id]: freshServices }));
+            visitServices.push(...freshServices);
+          }
+        } catch (error) {
+          console.error('Failed to fetch services:', error);
+        }
+      }
+      
       // Always fetch fresh services data to ensure we have the latest forms
       const servicesRes = await api.get('/services');
       const allServices = servicesRes.data.services || [];
       
       console.log('📋 Available services:', allServices.length);
       
-      // Find the service from visit notes (extract service name)
-      const serviceMatch = visit.notes?.match(/Quick Service: ([^-]+)/);
-      const serviceName = serviceMatch ? serviceMatch[1].trim() : null;
+      // Find the primary service from patient services
+      let primaryService = null;
+      if (visitServices.length > 0) {
+        const patientService = visitServices[0];
+        primaryService = allServices.find((s: any) => s.id === patientService.service_id);
+        console.log('🎯 Found primary service from patient services:', primaryService);
+      }
       
-      console.log('🔍 Extracted service name:', serviceName);
-      
-      let service = null;
-      if (serviceName) {
-        // Try exact match first
-        service = allServices.find((s: any) => s.service_name === serviceName);
+      // Fallback: try to extract service name from visit notes if no patient services
+      if (!primaryService) {
+        const serviceMatch = visit.notes?.match(/Quick Service: ([^-,]+)/);
+        const serviceName = serviceMatch ? serviceMatch[1].trim() : null;
         
-        // If no exact match, try partial match
-        if (!service) {
-          service = allServices.find((s: any) => 
-            serviceName.includes(s.service_name) || s.service_name.includes(serviceName)
-          );
+        console.log('🔍 Fallback - extracted service name from notes:', serviceName);
+        
+        if (serviceName) {
+          // Try exact match first
+          primaryService = allServices.find((s: any) => s.service_name === serviceName);
+          
+          // If no exact match, try partial match
+          if (!primaryService) {
+            primaryService = allServices.find((s: any) => 
+              serviceName.includes(s.service_name) || s.service_name.includes(serviceName)
+            );
+          }
         }
       }
       
-      console.log('🎯 Found service:', service);
-      console.log('📝 Service requires form:', service?.requires_form);
-      console.log('📄 Service has template:', !!service?.form_template);
+      console.log('🎯 Final primary service:', primaryService);
+      console.log('📝 Service requires form:', primaryService?.requires_form);
+      console.log('📄 Service has template:', !!primaryService?.form_template);
       
-      // Check if service requires form
-      if (service && service.requires_form && service.form_template) {
+      // Check if service requires form or create default form for medical services
+      let shouldShowForm = false;
+      let formTemplate = null;
+      
+      if (primaryService && primaryService.requires_form && primaryService.form_template) {
+        shouldShowForm = true;
+        formTemplate = primaryService.form_template;
+        console.log('✅ Using service-specific form template');
+      } else if (primaryService) {
+        // Create default forms for common medical services that don't have templates
+        const serviceType = primaryService.service_type?.toLowerCase() || '';
+        const serviceName = primaryService.service_name?.toLowerCase() || '';
+        
+        if (serviceType === 'vaccination' || serviceName.includes('vaccination') || serviceName.includes('vaccine') || serviceName.includes('immunization')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Vaccination Record',
+            fields: [
+              { name: 'vaccine_name', label: 'Vaccine Name', type: 'text', required: true, value: primaryService.service_name },
+              { name: 'batch_number', label: 'Batch Number', type: 'text', required: true },
+              { name: 'expiry_date', label: 'Expiry Date', type: 'date', required: true },
+              { name: 'site_of_injection', label: 'Site of Injection', type: 'select', required: true, options: ['Left arm', 'Right arm', 'Left thigh', 'Right thigh'] },
+              { name: 'dose', label: 'Dose (ml)', type: 'number', required: true, step: '0.1' },
+              { name: 'adverse_reactions', label: 'Adverse Reactions', type: 'textarea', required: false },
+              { name: 'next_dose_date', label: 'Next Dose Date (if applicable)', type: 'date', required: false },
+              { name: 'notes', label: 'Additional Notes', type: 'textarea', required: false }
+            ]
+          };
+          console.log('✅ Using default vaccination form template');
+        } else if (serviceType === 'injection' || serviceName.includes('injection') || serviceName.includes('shot')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Injection Record',
+            fields: [
+              { name: 'medication_name', label: 'Medication Name', type: 'text', required: true },
+              { name: 'dosage', label: 'Dosage', type: 'text', required: true },
+              { name: 'route', label: 'Route', type: 'select', required: true, options: ['Intramuscular', 'Subcutaneous', 'Intravenous', 'Intradermal'] },
+              { name: 'site_of_injection', label: 'Site of Injection', type: 'select', required: true, options: ['Left arm', 'Right arm', 'Left thigh', 'Right thigh', 'Abdomen', 'Other'] },
+              { name: 'adverse_reactions', label: 'Adverse Reactions', type: 'textarea', required: false },
+              { name: 'notes', label: 'Additional Notes', type: 'textarea', required: false }
+            ]
+          };
+          console.log('✅ Using default injection form template');
+        } else if (serviceType === 'procedure' || serviceName.includes('wound') || serviceName.includes('dressing')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Procedure Record',
+            fields: [
+              { name: 'procedure_name', label: 'Procedure Name', type: 'text', required: true, value: primaryService.service_name },
+              { name: 'procedure_site', label: 'Procedure Site', type: 'text', required: true },
+              { name: 'materials_used', label: 'Materials Used', type: 'textarea', required: true },
+              { name: 'procedure_notes', label: 'Procedure Notes', type: 'textarea', required: true },
+              { name: 'patient_response', label: 'Patient Response', type: 'textarea', required: false },
+              { name: 'follow_up_required', label: 'Follow-up Required', type: 'select', required: true, options: ['Yes', 'No'] },
+              { name: 'follow_up_date', label: 'Follow-up Date (if required)', type: 'date', required: false },
+              { name: 'complications', label: 'Complications', type: 'textarea', required: false }
+            ]
+          };
+          console.log('✅ Using default procedure form template');
+        } else if (serviceType === 'surgery' || serviceName.includes('surgery') || serviceName.includes('surgical') || serviceName.includes('operation')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Surgery Record',
+            fields: [
+              { name: 'surgery_name', label: 'Surgery Name', type: 'text', required: true, value: primaryService.service_name },
+              { name: 'surgeon', label: 'Surgeon', type: 'text', required: true },
+              { name: 'anesthesia_type', label: 'Anesthesia Type', type: 'select', required: true, options: ['Local', 'General', 'Regional', 'Sedation'] },
+              { name: 'surgery_duration', label: 'Surgery Duration (minutes)', type: 'number', required: true },
+              { name: 'surgery_notes', label: 'Surgery Notes', type: 'textarea', required: true },
+              { name: 'complications', label: 'Complications', type: 'textarea', required: false },
+              { name: 'post_op_instructions', label: 'Post-Op Instructions', type: 'textarea', required: true },
+              { name: 'follow_up_date', label: 'Follow-up Date', type: 'date', required: true }
+            ]
+          };
+          console.log('✅ Using default surgery form template');
+        } else if (serviceName.includes('pressure') || serviceName.includes('bp') || serviceName.includes('blood pressure')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Blood Pressure Monitoring',
+            fields: [
+              { name: 'systolic', label: 'Systolic Pressure (mmHg)', type: 'number', required: true },
+              { name: 'diastolic', label: 'Diastolic Pressure (mmHg)', type: 'number', required: true },
+              { name: 'pulse_rate', label: 'Pulse Rate (bpm)', type: 'number', required: true },
+              { name: 'measurement_position', label: 'Measurement Position', type: 'select', required: true, options: ['Sitting', 'Standing', 'Lying down'] },
+              { name: 'interpretation', label: 'Interpretation', type: 'select', required: true, options: ['Normal', 'Elevated', 'High Stage 1', 'High Stage 2', 'Hypertensive Crisis'] },
+              { name: 'recommendations', label: 'Recommendations', type: 'textarea', required: false }
+            ]
+          };
+          console.log('✅ Using default blood pressure form template');
+        } else if (serviceName.includes('bed') || serviceName.includes('admission') || serviceName.includes('ward')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Bed Assignment & Admission',
+            fields: [
+              { name: 'ward_name', label: 'Ward Name', type: 'text', required: true },
+              { name: 'bed_number', label: 'Bed Number', type: 'text', required: true },
+              { name: 'admission_reason', label: 'Admission Reason', type: 'textarea', required: true },
+              { name: 'admission_type', label: 'Admission Type', type: 'select', required: true, options: ['Emergency', 'Elective', 'Observation', 'Day Care'] },
+              { name: 'special_requirements', label: 'Special Requirements', type: 'textarea', required: false },
+              { name: 'nursing_notes', label: 'Nursing Notes', type: 'textarea', required: true }
+            ]
+          };
+          console.log('✅ Using default bed assignment form template');
+        } else if (serviceName.includes('iv') || serviceName.includes('drip') || serviceName.includes('infusion')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'IV Therapy Record',
+            fields: [
+              { name: 'iv_solution', label: 'IV Solution', type: 'text', required: true },
+              { name: 'volume', label: 'Volume (ml)', type: 'number', required: true },
+              { name: 'flow_rate', label: 'Flow Rate (ml/hr)', type: 'number', required: true },
+              { name: 'insertion_site', label: 'Insertion Site', type: 'select', required: true, options: ['Left hand', 'Right hand', 'Left forearm', 'Right forearm'] },
+              { name: 'start_time', label: 'Start Time', type: 'datetime-local', required: true },
+              { name: 'patient_response', label: 'Patient Response', type: 'textarea', required: false }
+            ]
+          };
+          console.log('✅ Using default IV therapy form template');
+        } else if (serviceType === 'surgery' || serviceName.includes('surgery') || serviceName.includes('surgical') || serviceName.includes('operation')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Surgery Record',
+            fields: [
+              { name: 'surgery_name', label: 'Surgery Name', type: 'text', required: true, value: primaryService.service_name },
+              { name: 'surgeon', label: 'Surgeon', type: 'text', required: true },
+              { name: 'anesthesia_type', label: 'Anesthesia Type', type: 'select', required: true, options: ['Local', 'General', 'Regional', 'Sedation'] },
+              { name: 'surgery_duration', label: 'Surgery Duration (minutes)', type: 'number', required: true },
+              { name: 'surgery_notes', label: 'Surgery Notes', type: 'textarea', required: true },
+              { name: 'complications', label: 'Complications', type: 'textarea', required: false },
+              { name: 'post_op_instructions', label: 'Post-Op Instructions', type: 'textarea', required: true },
+              { name: 'follow_up_date', label: 'Follow-up Date', type: 'date', required: true },
+              { name: 'discharge_condition', label: 'Discharge Condition', type: 'select', required: true, options: ['Stable', 'Critical', 'Observation Required'] }
+            ]
+          };
+          console.log('✅ Using default surgery form template');
+        } else if (serviceName.includes('pressure') || serviceName.includes('bp') || serviceName.includes('blood pressure')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Blood Pressure Monitoring',
+            fields: [
+              { name: 'systolic', label: 'Systolic Pressure (mmHg)', type: 'number', required: true },
+              { name: 'diastolic', label: 'Diastolic Pressure (mmHg)', type: 'number', required: true },
+              { name: 'pulse_rate', label: 'Pulse Rate (bpm)', type: 'number', required: true },
+              { name: 'measurement_position', label: 'Measurement Position', type: 'select', required: true, options: ['Sitting', 'Standing', 'Lying down'] },
+              { name: 'arm_used', label: 'Arm Used', type: 'select', required: true, options: ['Left', 'Right'] },
+              { name: 'cuff_size', label: 'Cuff Size', type: 'select', required: true, options: ['Adult', 'Large Adult', 'Pediatric'] },
+              { name: 'interpretation', label: 'Interpretation', type: 'select', required: true, options: ['Normal', 'Elevated', 'High Stage 1', 'High Stage 2', 'Hypertensive Crisis'] },
+              { name: 'recommendations', label: 'Recommendations', type: 'textarea', required: false },
+              { name: 'follow_up_required', label: 'Follow-up Required', type: 'select', required: true, options: ['Yes', 'No'] }
+            ]
+          };
+          console.log('✅ Using default blood pressure form template');
+        } else if (serviceName.includes('bed') || serviceName.includes('admission') || serviceName.includes('ward')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Bed Assignment & Admission',
+            fields: [
+              { name: 'ward_name', label: 'Ward Name', type: 'text', required: true },
+              { name: 'bed_number', label: 'Bed Number', type: 'text', required: true },
+              { name: 'admission_reason', label: 'Admission Reason', type: 'textarea', required: true },
+              { name: 'admission_type', label: 'Admission Type', type: 'select', required: true, options: ['Emergency', 'Elective', 'Observation', 'Day Care'] },
+              { name: 'expected_duration', label: 'Expected Duration (days)', type: 'number', required: false },
+              { name: 'special_requirements', label: 'Special Requirements', type: 'textarea', required: false },
+              { name: 'diet_instructions', label: 'Diet Instructions', type: 'textarea', required: false },
+              { name: 'mobility_status', label: 'Mobility Status', type: 'select', required: true, options: ['Ambulatory', 'Bed Rest', 'Limited Mobility', 'Wheelchair'] },
+              { name: 'nursing_notes', label: 'Nursing Notes', type: 'textarea', required: true }
+            ]
+          };
+          console.log('✅ Using default bed assignment form template');
+        } else if (serviceName.includes('iv') || serviceName.includes('drip') || serviceName.includes('infusion')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'IV Therapy Record',
+            fields: [
+              { name: 'iv_solution', label: 'IV Solution', type: 'text', required: true },
+              { name: 'volume', label: 'Volume (ml)', type: 'number', required: true },
+              { name: 'flow_rate', label: 'Flow Rate (ml/hr)', type: 'number', required: true },
+              { name: 'insertion_site', label: 'Insertion Site', type: 'select', required: true, options: ['Left hand', 'Right hand', 'Left forearm', 'Right forearm', 'Left antecubital', 'Right antecubital'] },
+              { name: 'catheter_size', label: 'Catheter Size', type: 'select', required: true, options: ['18G', '20G', '22G', '24G'] },
+              { name: 'start_time', label: 'Start Time', type: 'datetime-local', required: true },
+              { name: 'expected_duration', label: 'Expected Duration (hours)', type: 'number', required: true },
+              { name: 'complications', label: 'Complications', type: 'textarea', required: false },
+              { name: 'patient_response', label: 'Patient Response', type: 'textarea', required: false }
+            ]
+          };
+          console.log('✅ Using default IV therapy form template');
+        } else if (serviceName.includes('suture') || serviceName.includes('stitch') || serviceName.includes('laceration')) {
+          shouldShowForm = true;
+          formTemplate = {
+            title: 'Suturing Record',
+            fields: [
+              { name: 'wound_location', label: 'Wound Location', type: 'text', required: true },
+              { name: 'wound_size', label: 'Wound Size (cm)', type: 'text', required: true },
+              { name: 'suture_type', label: 'Suture Type', type: 'select', required: true, options: ['Absorbable', 'Non-absorbable', 'Silk', 'Nylon', 'Vicryl'] },
+              { name: 'suture_size', label: 'Suture Size', type: 'select', required: true, options: ['2-0', '3-0', '4-0', '5-0', '6-0'] },
+              { name: 'number_of_sutures', label: 'Number of Sutures', type: 'number', required: true },
+              { name: 'anesthesia_used', label: 'Local Anesthesia Used', type: 'select', required: true, options: ['Yes', 'No'] },
+              { name: 'wound_cleaning', label: 'Wound Cleaning Method', type: 'text', required: true },
+              { name: 'suture_removal_date', label: 'Suture Removal Date', type: 'date', required: true },
+              { name: 'post_care_instructions', label: 'Post-Care Instructions', type: 'textarea', required: true }
+            ]
+          };
+          console.log('✅ Using default suturing form template');
+        } else {
+          // Generic form for any service we haven't specifically created a form for
+          shouldShowForm = true;
+          formTemplate = {
+            title: `${primaryService.service_name} - Service Record`,
+            fields: [
+              { name: 'service_name', label: 'Service Name', type: 'text', required: true, value: primaryService.service_name, readonly: true },
+              { name: 'service_type', label: 'Service Type', type: 'text', required: true, value: primaryService.service_type || 'Medical Service', readonly: true },
+              { name: 'service_provided', label: 'Service Provided', type: 'textarea', required: true, placeholder: 'Describe the service provided to the patient...' },
+              { name: 'patient_condition_before', label: 'Patient Condition Before Service', type: 'textarea', required: true, placeholder: 'Describe patient condition before service...' },
+              { name: 'procedure_details', label: 'Procedure/Service Details', type: 'textarea', required: true, placeholder: 'Detailed description of what was done...' },
+              { name: 'materials_used', label: 'Materials/Equipment Used', type: 'textarea', required: false, placeholder: 'List any materials or equipment used...' },
+              { name: 'patient_response', label: 'Patient Response', type: 'textarea', required: true, placeholder: 'How did the patient respond to the service?' },
+              { name: 'patient_condition_after', label: 'Patient Condition After Service', type: 'textarea', required: true, placeholder: 'Describe patient condition after service...' },
+              { name: 'complications', label: 'Complications (if any)', type: 'textarea', required: false, placeholder: 'Any complications or adverse reactions...' },
+              { name: 'follow_up_required', label: 'Follow-up Required', type: 'select', required: true, options: ['Yes', 'No'] },
+              { name: 'follow_up_date', label: 'Follow-up Date (if required)', type: 'date', required: false },
+              { name: 'follow_up_instructions', label: 'Follow-up Instructions', type: 'textarea', required: false, placeholder: 'Instructions for follow-up care...' },
+              { name: 'discharge_instructions', label: 'Discharge Instructions', type: 'textarea', required: true, placeholder: 'Instructions for patient after discharge...' },
+              { name: 'additional_notes', label: 'Additional Notes', type: 'textarea', required: false, placeholder: 'Any additional observations or notes...' }
+            ]
+          };
+          console.log('✅ Using generic service form template for:', primaryService.service_name);
+        }
+      }
+      
+      if (shouldShowForm && formTemplate) {
         console.log('✅ Showing service form dialog');
         // Show form dialog
-        setSelectedVisitForForm(visit);
-        setServiceFormTemplate(service.form_template);
+        setSelectedVisitForForm({
+          ...visit,
+          service: primaryService,
+          patientServices: visitServices
+        });
+        setServiceFormTemplate(formTemplate);
         setShowServiceFormDialog(true);
         return;
       }
@@ -1785,6 +2048,22 @@ export default function NurseDashboard() {
       const labResultsResponse = await api.get('/visits?visit_type=Lab Only&lab_status=Completed&current_stage=nurse');
       const labResultsData = Array.isArray(labResultsResponse.data.visits) ? labResultsResponse.data.visits : [];
 
+      // Fetch patient services for Quick Service visits
+      const quickServiceVisits = visitsData.filter(v => v.visit_type === 'Quick Service');
+      const servicesMap: Record<string, any[]> = {};
+      
+      for (const visit of quickServiceVisits) {
+        try {
+          const servicesRes = await api.get(`/patient-services?patient_id=${visit.patient_id}&service_date=${visit.visit_date}`);
+          servicesMap[visit.id] = servicesRes.data.services || [];
+        } catch (error) {
+          console.error(`Failed to fetch services for visit ${visit.id}:`, error);
+          servicesMap[visit.id] = [];
+        }
+      }
+      
+      setPatientServices(servicesMap);
+
       // Calculate stats
       setPendingVisits(visitsData);
       setLabResultsReady(labResultsData);
@@ -2094,31 +2373,80 @@ export default function NurseDashboard() {
                       </Button>
                     ) : visit.visit_type === 'Quick Service' ? (
                       (() => {
-                        // Determine service type from visit notes
-                        const serviceType = visit.notes?.toLowerCase() || '';
-                        let buttonText = 'Complete Service';
-                        let icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        // Get actual patient services for this visit
+                        const visitServices = patientServices[visit.id] || [];
+                        console.log('🔍 Quick Service Visit Debug:', {
+                          visitId: visit.id,
+                          visitType: visit.visit_type,
+                          visitNotes: visit.notes,
+                          visitServices: visitServices,
+                          patientServicesKeys: Object.keys(patientServices),
+                          hasServices: visitServices.length > 0
+                        });
                         
-                        if (serviceType.includes('vaccination')) {
-                          buttonText = 'Administer Vaccination';
-                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
-                        } else if (serviceType.includes('injection')) {
-                          buttonText = 'Give Injection';
-                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
-                        } else if (serviceType.includes('wound dressing')) {
-                          buttonText = 'Dress Wound';
-                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
-                        } else if (serviceType.includes('blood pressure')) {
-                          buttonText = 'Check Blood Pressure';
-                          icon = <Thermometer className="h-4 w-4 mr-2" />;
-                        } else if (serviceType.includes('suturing')) {
-                          buttonText = 'Perform Suturing';
-                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
-                        } else if (serviceType.includes('iv drip')) {
-                          buttonText = 'Set Up IV Drip';
-                          icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                        // Determine service type from actual services assigned
+                        if (visitServices.length > 0) {
+                          const primaryService = visitServices[0];
+                          const serviceName = primaryService.service_name?.toLowerCase() || '';
+                          const serviceType = primaryService.service_type?.toLowerCase() || '';
+                          
+                          // Check service type first, then service name
+                          if (serviceType === 'vaccination' || serviceName.includes('vaccination') || serviceName.includes('vaccine') || serviceName.includes('immunization')) {
+                            buttonText = 'Administer Vaccination';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (serviceType === 'injection' || serviceName.includes('injection') || serviceName.includes('shot')) {
+                            buttonText = 'Give Injection';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (serviceType === 'procedure' || serviceName.includes('wound') || serviceName.includes('dressing')) {
+                            buttonText = 'Perform Procedure';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (serviceName.includes('blood pressure') || serviceName.includes('bp check')) {
+                            buttonText = 'Check Blood Pressure';
+                            icon = <Thermometer className="h-4 w-4 mr-2" />;
+                          } else if (serviceName.includes('suturing') || serviceName.includes('stitch')) {
+                            buttonText = 'Perform Suturing';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (serviceName.includes('iv') || serviceName.includes('drip') || serviceName.includes('infusion')) {
+                            buttonText = 'Set Up IV Drip';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (serviceType === 'diagnostic' || serviceName.includes('test') || serviceName.includes('screening')) {
+                            buttonText = 'Perform Diagnostic';
+                            icon = <Activity className="h-4 w-4 mr-2" />;
+                          } else if (serviceType === 'nursing' || serviceType === 'procedure') {
+                            buttonText = `Complete ${primaryService.service_name}`;
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          }
+                          
+                          // If multiple services, show generic text
+                          if (visitServices.length > 1) {
+                            buttonText = `Complete ${visitServices.length} Services`;
+                          }
                         }
                         
+                        // Always check visit notes as additional fallback (even if services found)
+                        const visitNotes = visit.notes?.toLowerCase() || '';
+                        console.log('🔍 Checking visit notes for service type:', visitNotes);
+                        
+                        if (!visitServices.length || buttonText === 'Complete Service') {
+                          // Enhanced fallback to checking visit notes
+                          if (visitNotes.includes('vaccination') || visitNotes.includes('vaccine') || visitNotes.includes('immunization')) {
+                            buttonText = 'Administer Vaccination';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (visitNotes.includes('injection') || visitNotes.includes('shot')) {
+                            buttonText = 'Give Injection';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (visitNotes.includes('surgery') || visitNotes.includes('surgical')) {
+                            buttonText = 'Complete Surgery';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          } else if (visitNotes.includes('pressure') || visitNotes.includes('bp')) {
+                            buttonText = 'Check Blood Pressure';
+                            icon = <Thermometer className="h-4 w-4 mr-2" />;
+                          } else if (visitNotes.includes('iv') || visitNotes.includes('drip')) {
+                            buttonText = 'Set Up IV Drip';
+                            icon = <Stethoscope className="h-4 w-4 mr-2" />;
+                          }
+                        }
+                          
                         return (
                           <Button 
                             onClick={() => handleCompleteQuickService(visit)}
