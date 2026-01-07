@@ -32,15 +32,34 @@ export function DispenseDialog({
   useEffect(() => {
     const prescriptionItems = prescription?.items || prescription?.medications || [];
     
+    console.log('🔍 DispenseDialog - Prescription data:', {
+      prescription: prescription,
+      items: prescriptionItems,
+      itemsWithDetails: prescriptionItems.map((item: any) => ({
+        id: item.id,
+        medication_name: item.medication_name,
+        dosage: item.dosage,
+        frequency: item.frequency,
+        duration: item.duration,
+        quantity: item.quantity
+      }))
+    });
+    
     if (prescriptionItems.length > 0) {
       setEditableMedications(
         prescriptionItems.map((med: any) => ({
           ...med,
           dispensed_quantity: med.quantity,
           dispensed_dosage: med.dosage,
+          // Keep original prescription values as defaults
+          frequency: med.frequency || '',
+          duration: med.duration || '',
+          instructions: med.instructions || '',
           original_medication_name: med.medication_name,
           original_dosage: med.dosage,
           original_quantity: med.quantity,
+          original_frequency: med.frequency,
+          original_duration: med.duration,
           is_new: false
         }))
       );
@@ -91,7 +110,7 @@ export function DispenseDialog({
       medication_id: '',
       medication_name: '',
       dosage: '',
-      frequency: 'As needed',
+      frequency: '',
       duration: '',
       quantity: 1,
       dispensed_quantity: 1,
@@ -244,9 +263,67 @@ export function DispenseDialog({
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1">
+                          Frequency (times per day)
+                          {med.original_frequency && med.frequency !== med.original_frequency && (
+                            <span className="text-orange-600 text-xs">• Modified</span>
+                          )}
+                        </Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="24"
+                          value={med.frequency || ''}
+                          onChange={(e) => updateMedication(index, 'frequency', e.target.value)}
+                          placeholder={med.original_frequency ? `Original: ${med.original_frequency}` : "e.g., 3"}
+                          className={`h-9 ${med.original_frequency && med.frequency !== med.original_frequency ? 'border-orange-400' : ''}`}
+                        />
+                        {med.original_frequency && (
+                          <div className="text-xs text-muted-foreground">
+                            Doctor prescribed: {med.original_frequency} times/day
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <Label className="text-xs flex items-center gap-1">
+                          Duration (days)
+                          {med.original_duration && med.duration !== med.original_duration && (
+                            <span className="text-orange-600 text-xs">• Modified</span>
+                          )}
+                        </Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="365"
+                          value={med.duration || ''}
+                          onChange={(e) => updateMedication(index, 'duration', e.target.value)}
+                          placeholder={med.original_duration ? `Original: ${med.original_duration}` : "e.g., 7"}
+                          className={`h-9 ${med.original_duration && med.duration !== med.original_duration ? 'border-orange-400' : ''}`}
+                        />
+                        {med.original_duration && (
+                          <div className="text-xs text-muted-foreground">
+                            Doctor prescribed: {med.original_duration} days
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 mt-3">
+                      <Label className="text-xs">Instructions</Label>
+                      <Input
+                        value={med.instructions || ''}
+                        onChange={(e) => updateMedication(index, 'instructions', e.target.value)}
+                        placeholder="e.g., Take after meals"
+                        className="h-9"
+                      />
+                    </div>
+
                     <div className="flex justify-between items-center pt-2 border-t">
-                      <div className="text-sm text-muted-foreground">
-                        {med.frequency} • {med.duration || 'As prescribed'}
+                      <div className="text-xs text-muted-foreground">
+                        {med.frequency ? `${med.frequency} times/day` : 'Set frequency'} • {med.duration ? `${med.duration} days` : 'Set duration'}
                       </div>
                       <div className="text-right">
                         <div className="font-semibold text-green-700">TSh {itemTotal.toLocaleString()}</div>

@@ -1547,11 +1547,15 @@ export default function PharmacyDashboard() {
                                           </TableCell>
                                           <TableCell>
                                             <div className="text-sm">{med.dosage}</div>
-                                            <div className="text-xs text-muted-foreground">{med.frequency}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                              {med.frequency ? `${med.frequency} times/day` : 'Frequency not set'}
+                                            </div>
                                           </TableCell>
                                           <TableCell>
                                             <div className="font-medium">{med.quantity}</div>
-                                            <div className="text-xs text-muted-foreground">{med.duration}</div>
+                                            <div className="text-xs text-muted-foreground">
+                                              {med.duration ? `${med.duration} days` : 'Duration not set'}
+                                            </div>
                                           </TableCell>
                                         <TableCell>
                                           {prescription.doctor_profile ? (
@@ -2161,7 +2165,7 @@ export default function PharmacyDashboard() {
                             <div className="flex-1">
                               <div className="text-sm font-medium">{item.medication_name}</div>
                               <div className="text-xs text-gray-600">
-                                {item.dosage} • {item.frequency} • {item.duration} • Qty: {item.quantity}
+                                {item.dosage} • {item.frequency ? `${item.frequency} times/day` : 'No frequency'} • {item.duration ? `${item.duration} days` : 'No duration'} • Qty: {item.quantity}
                               </div>
                               {item.instructions && (
                                 <div className="text-xs text-gray-500 italic">{item.instructions}</div>
@@ -2395,28 +2399,62 @@ export default function PharmacyDashboard() {
 
                     <div className="space-y-2">
                       <Label>Frequency *</Label>
-                      <Input
-                        placeholder="e.g., 3 times daily"
+                      <Select
                         value={item.frequency}
-                        onChange={(e) => {
+                        onValueChange={(value) => {
                           const updated = [...newPrescriptionItems];
-                          updated[index].frequency = e.target.value;
+                          updated[index].frequency = value;
                           setNewPrescriptionItems(updated);
                         }}
-                      />
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select frequency" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Once daily">Once daily</SelectItem>
+                          <SelectItem value="Twice daily">Twice daily</SelectItem>
+                          <SelectItem value="3 times daily">3 times daily</SelectItem>
+                          <SelectItem value="4 times daily">4 times daily</SelectItem>
+                          <SelectItem value="Every 4 hours">Every 4 hours</SelectItem>
+                          <SelectItem value="Every 6 hours">Every 6 hours</SelectItem>
+                          <SelectItem value="Every 8 hours">Every 8 hours</SelectItem>
+                          <SelectItem value="Every 12 hours">Every 12 hours</SelectItem>
+                          <SelectItem value="As needed">As needed</SelectItem>
+                          <SelectItem value="Before meals">Before meals</SelectItem>
+                          <SelectItem value="After meals">After meals</SelectItem>
+                          <SelectItem value="At bedtime">At bedtime</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
                       <Label>Duration *</Label>
-                      <Input
-                        placeholder="e.g., 7 days"
+                      <Select
                         value={item.duration}
-                        onChange={(e) => {
+                        onValueChange={(value) => {
                           const updated = [...newPrescriptionItems];
-                          updated[index].duration = e.target.value;
+                          updated[index].duration = value;
                           setNewPrescriptionItems(updated);
                         }}
-                      />
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select duration" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="3 days">3 days</SelectItem>
+                          <SelectItem value="5 days">5 days</SelectItem>
+                          <SelectItem value="7 days">7 days (1 week)</SelectItem>
+                          <SelectItem value="10 days">10 days</SelectItem>
+                          <SelectItem value="14 days">14 days (2 weeks)</SelectItem>
+                          <SelectItem value="21 days">21 days (3 weeks)</SelectItem>
+                          <SelectItem value="30 days">30 days (1 month)</SelectItem>
+                          <SelectItem value="60 days">60 days (2 months)</SelectItem>
+                          <SelectItem value="90 days">90 days (3 months)</SelectItem>
+                          <SelectItem value="Until finished">Until finished</SelectItem>
+                          <SelectItem value="As needed">As needed</SelectItem>
+                          <SelectItem value="Ongoing">Ongoing</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div className="space-y-2">
