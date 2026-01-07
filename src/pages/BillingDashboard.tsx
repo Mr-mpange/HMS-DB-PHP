@@ -1787,7 +1787,17 @@ export default function BillingDashboard() {
                       <td>${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td>${prescription.doctor_profile?.name || prescription.doctor_profile?.full_name || 'Unknown'}</td>
                       <td>${prescription.diagnosis || 'N/A'}</td>
-                      <td>${prescription.items ? prescription.items.map(item => `${item.medication_name} (${item.quantity})`).join(', ') : 'N/A'}</td>
+                      <td>${prescription.items && prescription.items.length > 0 ? 
+                        prescription.items.map(item => {
+                          const details = [];
+                          details.push(item.medication_name || 'Unknown medication');
+                          if (item.dosage) details.push(`Dosage: ${item.dosage}`);
+                          if (item.frequency) details.push(`Frequency: ${item.frequency} times/day`);
+                          if (item.duration) details.push(`Duration: ${item.duration} days`);
+                          if (item.quantity) details.push(`Qty: ${item.quantity}`);
+                          if (item.instructions) details.push(`Instructions: ${item.instructions}`);
+                          return `<div style="margin-bottom: 8px; padding: 4px; border-left: 3px solid #3b82f6; background: #f8fafc;">${details.join(' • ')}</div>`;
+                        }).join('') : 'No medications prescribed'}</td>
                       <td class="status-${(prescription.status || 'pending').toLowerCase()}">${prescription.status || 'N/A'}</td>
                       <td>${prescription.notes || 'N/A'}</td>
                     </tr>
@@ -1976,6 +1986,43 @@ export default function BillingDashboard() {
       const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
       const patientLabTests = labTestsResponse.data.labTests || [];
 
+      console.log('📋 Medical Report Data:', {
+        patient: {
+          id: patient.id,
+          name: patient.full_name
+        },
+        visits: patientVisits.length,
+        prescriptions: {
+          total: patientPrescriptions.length,
+          withItems: patientPrescriptions.filter(p => p.items && p.items.length > 0).length,
+          samplePrescription: patientPrescriptions[0] ? {
+            id: patientPrescriptions[0].id,
+            hasItems: !!patientPrescriptions[0].items,
+            itemsCount: patientPrescriptions[0].items?.length || 0,
+            sampleItem: patientPrescriptions[0].items?.[0],
+            hasMedications: !!patientPrescriptions[0].medications,
+            medicationsCount: patientPrescriptions[0].medications?.length || 0,
+            fullPrescription: patientPrescriptions[0]
+          } : null
+        },
+        labTests: {
+          total: patientLabTests.length,
+          withResults: patientLabTests.filter(t => t.results).length,
+          sampleTest: patientLabTests[0] ? {
+            id: patientLabTests[0].id,
+            name: patientLabTests[0].test_name,
+            hasResults: !!patientLabTests[0].results,
+            status: patientLabTests[0].status,
+            resultsType: typeof patientLabTests[0].results,
+            resultsPreview: patientLabTests[0].results ? 
+              (typeof patientLabTests[0].results === 'string' ? 
+                patientLabTests[0].results.substring(0, 100) : 
+                JSON.stringify(patientLabTests[0].results).substring(0, 100)
+              ) : null
+          } : null
+        }
+      });
+
       // Verify data belongs to correct patient
       const invalidVisits = patientVisits.filter(v => v.patient_id !== patient.id);
       const invalidPrescriptions = patientPrescriptions.filter(p => p.patient_id !== patient.id);
@@ -2066,7 +2113,17 @@ export default function BillingDashboard() {
                       <td>${prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td>${prescription.doctor_profile?.name || 'Unknown'}</td>
                       <td>${prescription.diagnosis || 'N/A'}</td>
-                      <td>${prescription.items ? prescription.items.map(item => `${item.medication_name} (${item.quantity})`).join(', ') : 'N/A'}</td>
+                      <td>${prescription.items && prescription.items.length > 0 ? 
+                        prescription.items.map(item => {
+                          const details = [];
+                          details.push(item.medication_name || 'Unknown medication');
+                          if (item.dosage) details.push(`Dosage: ${item.dosage}`);
+                          if (item.frequency) details.push(`Frequency: ${item.frequency} times/day`);
+                          if (item.duration) details.push(`Duration: ${item.duration} days`);
+                          if (item.quantity) details.push(`Qty: ${item.quantity}`);
+                          if (item.instructions) details.push(`Instructions: ${item.instructions}`);
+                          return `<div style="margin-bottom: 8px; padding: 4px; border-left: 3px solid #3b82f6; background: #f8fafc;">${details.join(' • ')}</div>`;
+                        }).join('') : 'No medications prescribed'}</td>
                       <td>${prescription.status || 'N/A'}</td>
                     </tr>
                   `).join('') : '<tr><td colspan="5" style="text-align: center;">No prescriptions recorded</td></tr>'}
