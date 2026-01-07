@@ -573,7 +573,7 @@ export default function PharmacyDashboard() {
           
           await api.post('/patient-services', serviceData);
           
-          console.log('✅ Added ' + medDetail.name + ' (TSh ' + (medDetail.unit_price * medDetail.prescribed_quantity) + ') to patient services');
+          console.log('✅ Added ' + medDetail.name + ' (TSh ' + (Number(medDetail.unit_price || 0) * medDetail.prescribed_quantity) + ') to patient services');
         }
       } catch (error: any) {
         console.error('❌ Error adding medications to patient services:', error);
@@ -690,7 +690,7 @@ export default function PharmacyDashboard() {
           // Create invoice for medications
           try {
             const totalAmount = medicationDetails.reduce((sum, med) => 
-              sum + (med.unit_price || 0) * med.prescribed_quantity, 0
+              sum + Number(med.unit_price || 0) * med.prescribed_quantity, 0
             );
 
             const invoiceRes = await api.post('/invoices', {
@@ -705,8 +705,8 @@ export default function PharmacyDashboard() {
                 service_name: `${med.name} - ${med.prescribed_dosage}`,
                 description: `${med.prescribed_frequency}${med.prescribed_instructions ? '. ' + med.prescribed_instructions : ''}`,
                 quantity: med.prescribed_quantity,
-                unit_price: med.unit_price || 0,
-                total_price: (med.unit_price || 0) * med.prescribed_quantity
+                unit_price: Number(med.unit_price || 0),
+                total_price: Number(med.unit_price || 0) * med.prescribed_quantity
               }))
             });
 
@@ -937,6 +937,83 @@ export default function PharmacyDashboard() {
     setMedicationDialogOpen(true);
   };
 
+  const handleDeleteMedication = async (medication: any) => {
+    // First, check if medication might be in use (optional pre-check)
+    try {
+      // We could add a pre-check here, but for now let's proceed with the delete attempt
+      
+      // Create a more detailed confirmation message
+      const confirmMessage = `Are you sure you want to delete "${medication.name}"?\n\n` +
+        `Details:\n` +
+        `• Name: ${medication.name}\n` +
+        `• Strength: ${medication.strength || 'N/A'}\n` +
+        `• Stock: ${medication.stock_quantity || medication.quantity_in_stock || 0}\n` +
+        `• Unit Price: TSh${Number(medication.unit_price || 0).toFixed(2)}\n\n` +
+        `⚠️ This action cannot be undone!\n` +
+        `⚠️ If this medication is used in prescriptions, deletion will be prevented.`;
+
+      if (!confirm(confirmMessage)) {
+        return;
+      }
+
+      const response = await api.delete(`/pharmacy/medications/${medication.id}`);
+      
+      // Remove from local state
+      setMedications(prev => prev.filter(med => med.id !== medication.id));
+      
+      // Recalculate stats
+      const updatedMeds = medications.filter(med => med.id !== medication.id);
+      const totalMeds = updatedMeds.length;
+      const lowStockMeds = updatedMeds.filter(med => (med.stock_quantity || med.quantity_in_stock || 0) <= (med.reorder_level || 0)).length;
+      const outOfStockMeds = updatedMeds.filter(med => (med.stock_quantity || med.quantity_in_stock || 0) === 0).length;
+      const totalValue = updatedMeds.reduce((sum, med) => sum + ((med.stock_quantity || med.quantity_in_stock || 0) * Number(med.unit_price || 0)), 0);
+      
+      setStats({
+        totalMedications: totalMeds,
+        lowStock: lowStockMeds,
+        outOfStock: outOfStockMeds,
+        totalValue: totalValue
+      });
+
+      toast.success(`Medication "${medication.name}" deleted successfully`);
+      
+      await logActivity('pharmacy.medication.deleted', {
+        medication_id: medication.id,
+        medication_name: medication.name,
+        reason: 'Deleted by pharmacy staff'
+      });
+
+    } catch (error: any) {
+      console.error('Delete medication error:', error);
+      console.error('Error response:', error.response);
+      
+      // Handle specific error messages from backend
+      if (error.response?.status === 422) {
+        const errorMessage = error.response?.data?.message || 
+                           error.response?.data?.error || 
+                           'Cannot delete medication - it may be in use';
+        
+        // Show a more detailed error with guidance
+        toast.error(
+          `❌ ${errorMessage}\n\n` +
+          `💡 To delete this medication:\n` +
+          `1. Go to patient prescriptions\n` +
+          `2. Remove this medication from all prescriptions\n` +
+          `3. Then try deleting again`,
+          { duration: 8000 } // Show longer for detailed message
+        );
+      } else if (error.response?.status === 404) {
+        toast.error('Medication not found - it may have already been deleted');
+      } else {
+        const errorMessage = error.response?.data?.message || 
+                           error.response?.data?.error || 
+                           error.message || 
+                           'Failed to delete medication';
+        toast.error(`Failed to delete medication: ${errorMessage}`);
+      }
+    }
+  };
+
 
 
   const parseCSV = (text: string) => {
@@ -1104,7 +1181,7 @@ export default function PharmacyDashboard() {
       console.log('Medication found:', medicationData.name);
 
       // Calculate total amount (medication price * quantity + 10% tax)
-      const subtotal = medicationData.unit_price * prescription.quantity;
+      const subtotal = Number(medicationData.unit_price || 0) * prescription.quantity;
       const tax = subtotal * 0.1;
       const totalAmount = subtotal + tax;
 
@@ -1737,6 +1814,16 @@ export default function PharmacyDashboard() {
                                 </Button>
                                 <Button size="sm" onClick={() => openStockDialog(med)}>
                                   Update Stock
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="destructive"
+                                  onClick={() => handleDeleteMedication(med)}
+                                  title="Delete medication (may be prevented if used in prescriptions)"
+                                  className="bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  <span className="ml-1 hidden sm:inline">Delete</span>
                                 </Button>
                               </div>
                             </TableCell>

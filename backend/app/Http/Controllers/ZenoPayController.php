@@ -31,6 +31,12 @@ class ZenoPayController extends Controller
      */
     public function initiatePayment(Request $request)
     {
+        // Log the incoming request for debugging
+        Log::info('ZenoPay initiate payment request:', [
+            'data' => $request->all(),
+            'headers' => $request->headers->all()
+        ]);
+
         $validated = $request->validate([
             'invoice_id' => 'nullable|uuid|exists:invoices,id', // Made optional for registration payments
             'patient_id' => 'nullable|uuid|exists:patients,id', // For payments without invoice
@@ -38,6 +44,7 @@ class ZenoPayController extends Controller
             'customer_name' => 'required|string',
             'customer_email' => 'required|email',
             'customer_phone' => 'required|string',
+            'payment_method' => 'required|string', // Add this validation rule
             'payment_type' => 'nullable|string', // e.g., 'Registration', 'Consultation', 'Invoice', 'Quick Service'
             'service_id' => 'nullable|uuid', // For Quick Service
             'service_name' => 'nullable|string', // For Quick Service
@@ -200,6 +207,18 @@ class ZenoPayController extends Controller
             }
 
             // PRODUCTION MODE: Call real ZenoPay API
+            
+            // Check if API key is configured
+            if (empty($this->apiKey)) {
+                Log::error('ZenoPay API key not configured');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Payment gateway not configured. Please contact support.',
+                    'error' => 'API_KEY_MISSING',
+                    'details' => 'ZenoPay API key is not set. Please configure ZENOPAY_API_KEY in .env file or enable TEST MODE.',
+                ], 400);
+            }
+            
             try {
                 $response = Http::timeout(10)->withHeaders([
                     'x-api-key' => $this->apiKey,
@@ -254,17 +273,29 @@ class ZenoPayController extends Controller
 
             // ZenoPay returned an error
             $errorData = $response->json();
+            $status = $response->status();
+            
             Log::error('ZenoPay API error:', [
-                'status' => $response->status(),
+                'status' => $status,
                 'error' => $errorData,
                 'request' => $paymentData
             ]);
+
+            // Handle specific error codes
+            if ($status === 403) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid ZenoPay API credentials. Please contact support.',
+                    'error' => 'INVALID_API_KEY',
+                    'details' => 'The ZenoPay API key is invalid or expired. Please update ZENOPAY_API_KEY in .env file.',
+                ], 400);
+            }
 
             return response()->json([
                 'success' => false,
                 'message' => $errorData['message'] ?? 'Failed to initiate payment with ZenoPay',
                 'error' => $errorData,
-                'zenopay_status' => $response->status(),
+                'zenopay_status' => $status,
             ], 400);
 
         } catch (\Exception $e) {

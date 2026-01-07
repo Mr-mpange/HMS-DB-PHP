@@ -775,6 +775,53 @@ Route::middleware('auth:sanctum')->group(function () {
         }
     });
     
+    Route::delete('/pharmacy/medications/{id}', function(Request $request, $id) {
+        try {
+            $medication = \App\Models\Medication::findOrFail($id);
+            
+            // Check if medication is used in any prescriptions
+            $prescriptionItemsCount = \DB::table('prescription_items')
+                ->where('medication_id', $id)
+                ->count();
+            
+            if ($prescriptionItemsCount > 0) {
+                return response()->json([
+                    'error' => 'Cannot delete medication',
+                    'message' => "This medication is used in {$prescriptionItemsCount} prescription(s). Please remove it from all prescriptions first."
+                ], 422);
+            }
+            
+            $medicationName = $medication->name;
+            $medication->delete();
+            
+            \Log::info('Medication deleted', [
+                'medication_id' => $id,
+                'medication_name' => $medicationName,
+                'deleted_by' => auth()->user()->id ?? 'system'
+            ]);
+            
+            return response()->json([
+                'message' => "Medication '{$medicationName}' deleted successfully"
+            ]);
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'error' => 'Medication not found',
+                'message' => "Medication with ID {$id} does not exist"
+            ], 404);
+        } catch (\Exception $e) {
+            \Log::error('Medication deletion error: ' . $e->getMessage(), [
+                'medication_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'error' => 'Failed to delete medication',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    });
+    
     Route::post('/pharmacy/medications/bulk', function(Request $request) {
         $request->validate([
             'medications' => 'required|array',
@@ -1010,7 +1057,7 @@ Route::middleware('auth:sanctum')->group(function () {
         ]);
         
         // Update related visit
-        $visit = \App\Models\Visit::where('appointment_id', $request->appointment_id)->first();
+        $visit = \App\Models\PatientVisit::where('appointment_id', $request->appointment_id)->first();
         if ($visit) {
             $visit->update([
                 'doctor_status' => 'Completed',

@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             ServiceFormsSeeder::class, // Add service forms for proper documentation
             LocalUsersSeeder::class,
             AppointmentTestSeeder::class,
+            LabTestDataSeeder::class, // Add lab test data with results
         ]);
 
         // User::factory(10)->create();

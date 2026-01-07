@@ -149,6 +149,14 @@ export default function BillingDashboard() {
   const [selectedPatientForReport, setSelectedPatientForReport] = useState<any>(null);
   const [invoiceSelectionDialogOpen, setInvoiceSelectionDialogOpen] = useState(false);
   const [selectedPatientForInvoiceSelection, setSelectedPatientForInvoiceSelection] = useState<any>(null);
+  const [payAllDialogOpen, setPayAllDialogOpen] = useState(false);
+  const [selectedPatientForPayAll, setSelectedPatientForPayAll] = useState<any>(null);
+  const [payAllPaymentMethod, setPayAllPaymentMethod] = useState<string>('');
+  const [payAllProcessing, setPayAllProcessing] = useState<boolean>(false);
+  const [reportDateFrom, setReportDateFrom] = useState<string>('');
+  const [reportDateTo, setReportDateTo] = useState<string>('');
+  const [patientReportDateFrom, setPatientReportDateFrom] = useState<string>('');
+  const [patientReportDateTo, setPatientReportDateTo] = useState<string>('');
   const [hospitalSettings, setHospitalSettings] = useState({
     hospital_name: 'Hospital Management System',
     hospital_address: '[Address to be configured]',
@@ -1229,19 +1237,25 @@ export default function BillingDashboard() {
     }
   };
 
-  const printMedicalHistoryReport = async () => {
+  const printMedicalHistoryReport = async (fromDate?: string, toDate?: string) => {
     try {
+      // Build API URLs with date filters if provided
+      const dateParams = new URLSearchParams();
+      if (fromDate) dateParams.append('from', fromDate);
+      if (toDate) dateParams.append('to', toDate);
+      const dateQuery = dateParams.toString() ? `?${dateParams.toString()}` : '';
+
       const [visitsResponse, prescriptionsResponse, labTestsResponse, medicationsResponse, prescriptionItemsResponse] = await Promise.all([
-        api.get('/visits'),
-        api.get('/prescriptions'),
-        api.get('/lab-tests'),
+        api.get(`/visits${dateQuery}`),
+        api.get(`/prescriptions${dateQuery}`),
+        api.get(`/lab-tests${dateQuery}`),
         api.get('/pharmacy/medications').catch(() => ({ data: { medications: [] } })),
         api.get('/prescription-items').catch(() => ({ data: { prescription_items: [] } }))
       ]);
       
       const allVisits = visitsResponse.data.visits || [];
       const allPrescriptions = prescriptionsResponse.data.prescriptions || [];
-      const allLabTests = labTestsResponse.data.lab_tests || [];
+      const allLabTests = labTestsResponse.data.labTests || [];
       const allMedications = medicationsResponse.data.medications || [];
       const allPrescriptionItems = prescriptionItemsResponse.data.prescription_items || [];
       
@@ -1385,17 +1399,40 @@ export default function BillingDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  ${allLabTests.map(test => `
+                  ${allLabTests.map(test => {
+                    let resultsDisplay = 'Pending';
+                    if (test.results) {
+                      try {
+                        const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                        if (parsedResults.results) {
+                          // Format the results nicely
+                          const resultEntries = Object.entries(parsedResults.results).map(([key, value]: [string, any]) => {
+                            return `${key}: ${value.value} ${value.unit || ''} (${value.status || 'N/A'})`;
+                          }).join('; ');
+                          resultsDisplay = resultEntries.length > 150 ? resultEntries.substring(0, 150) + '...' : resultEntries;
+                        } else if (parsedResults.interpretation) {
+                          resultsDisplay = parsedResults.interpretation.length > 100 ? parsedResults.interpretation.substring(0, 100) + '...' : parsedResults.interpretation;
+                        } else {
+                          resultsDisplay = 'Results available';
+                        }
+                      } catch (e) {
+                        // If not JSON, display as text
+                        resultsDisplay = test.results.length > 100 ? test.results.substring(0, 100) + '...' : test.results;
+                      }
+                    }
+                    
+                    return `
                     <tr>
                       <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td>${test.patient?.full_name || 'Unknown'}</td>
                       <td>${test.test_name || 'N/A'}</td>
                       <td>${test.test_type || 'N/A'}</td>
                       <td>${test.status || 'N/A'}</td>
-                      <td style="font-size: 11px;">${test.results ? (test.results.length > 100 ? test.results.substring(0, 100) + '...' : test.results) : 'Pending'}</td>
-                      <td>${test.doctor_profile?.name || test.doctor_profile?.full_name || 'N/A'}</td>
+                      <td style="font-size: 11px;">${resultsDisplay}</td>
+                      <td>${test.doctor?.name || test.doctor?.full_name || 'N/A'}</td>
                     </tr>
-                  `).join('')}
+                  `;
+                  }).join('')}
                 </tbody>
               </table>
             </div>
@@ -1574,7 +1611,7 @@ export default function BillingDashboard() {
     }
   };
 
-  const printIndividualPatientReport = async (patient: any) => {
+  const printIndividualPatientReport = async (patient: any, fromDate?: string, toDate?: string) => {
     try {
       // Validate patient ID
       if (!patient?.id) {
@@ -1585,23 +1622,33 @@ export default function BillingDashboard() {
       console.log('Generating report for patient:', {
         id: patient.id,
         name: patient.full_name,
-        phone: patient.phone
+        phone: patient.phone,
+        dateRange: fromDate && toDate ? `${fromDate} to ${toDate}` : 'All dates'
       });
 
-      // Fetch all data for this specific patient
+      // Build API URLs with date filters if provided
+      const buildDateQuery = (baseUrl: string) => {
+        const params = new URLSearchParams();
+        params.append('patient_id', patient.id);
+        if (fromDate) params.append('from', fromDate);
+        if (toDate) params.append('to', toDate);
+        return `${baseUrl}?${params.toString()}`;
+      };
+
+      // Fetch all data for this specific patient with date filtering
       const [visitsResponse, prescriptionsResponse, labTestsResponse, paymentsResponse, invoicesResponse, medicationsResponse, prescriptionItemsResponse] = await Promise.all([
-        api.get(`/visits?patient_id=${patient.id}`),
-        api.get(`/prescriptions?patient_id=${patient.id}`),
-        api.get(`/lab-tests?patient_id=${patient.id}`),
-        api.get(`/payments?patient_id=${patient.id}`),
-        api.get(`/billing/invoices?patient_id=${patient.id}`),
+        api.get(buildDateQuery('/visits')),
+        api.get(buildDateQuery('/prescriptions')),
+        api.get(buildDateQuery('/lab-tests')),
+        api.get(buildDateQuery('/payments')),
+        api.get(buildDateQuery('/billing/invoices')),
         api.get('/pharmacy/medications').catch(() => ({ data: { medications: [] } })),
         api.get('/prescription-items').catch(() => ({ data: { prescription_items: [] } }))
       ]);
       
       const patientVisits = visitsResponse.data.visits || [];
       const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
-      const patientLabTests = labTestsResponse.data.lab_tests || [];
+      const patientLabTests = labTestsResponse.data.labTests || [];
       const patientPayments = paymentsResponse.data.payments || [];
       const patientInvoices = invoicesResponse.data.invoices || [];
       const allMedications = medicationsResponse.data.medications || [];
@@ -1656,7 +1703,7 @@ export default function BillingDashboard() {
             <div class="page-title">
               <h1>PATIENT MEDICAL REPORT</h1>
               <h2>${patient.full_name}</h2>
-              <p>Complete Medical and Financial History</p>
+              <p>Complete Medical and Financial History${fromDate && toDate ? ` (${format(new Date(fromDate), 'MMM dd, yyyy')} - ${format(new Date(toDate), 'MMM dd, yyyy')})` : fromDate ? ` (From ${format(new Date(fromDate), 'MMM dd, yyyy')})` : toDate ? ` (Until ${format(new Date(toDate), 'MMM dd, yyyy')})` : ''}</p>
             </div>
             
             <div class="patient-info">
@@ -1763,16 +1810,39 @@ export default function BillingDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  ${patientLabTests.length > 0 ? patientLabTests.map(test => `
+                  ${patientLabTests.length > 0 ? patientLabTests.map(test => {
+                    let resultsDisplay = 'Pending';
+                    if (test.results) {
+                      try {
+                        const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                        if (parsedResults.results) {
+                          // Format the results nicely
+                          const resultEntries = Object.entries(parsedResults.results).map(([key, value]: [string, any]) => {
+                            return `${key}: ${value.value} ${value.unit || ''} (${value.status || 'N/A'})`;
+                          }).join('; ');
+                          resultsDisplay = resultEntries;
+                        } else if (parsedResults.interpretation) {
+                          resultsDisplay = parsedResults.interpretation;
+                        } else {
+                          resultsDisplay = 'Results available';
+                        }
+                      } catch (e) {
+                        // If not JSON, display as text
+                        resultsDisplay = test.results;
+                      }
+                    }
+                    
+                    return `
                     <tr>
                       <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td>${test.test_name || 'N/A'}</td>
                       <td>${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
                       <td class="status-${(test.status || 'pending').toLowerCase()}">${test.status || 'N/A'}</td>
-                      <td>${test.results || 'Pending'}</td>
+                      <td>${resultsDisplay}</td>
                       <td>${test.normal_range || 'N/A'}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No lab tests recorded</td></tr>'}
+                  `;
+                  }).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No lab tests recorded</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -1873,7 +1943,7 @@ export default function BillingDashboard() {
     }
   };
 
-  const printMedicalOnlyReport = async (patient: any) => {
+  const printMedicalOnlyReport = async (patient: any, fromDate?: string, toDate?: string) => {
     try {
       // Validate patient ID
       if (!patient?.id) {
@@ -1883,18 +1953,28 @@ export default function BillingDashboard() {
 
       console.log('Generating medical report for patient:', {
         id: patient.id,
-        name: patient.full_name
+        name: patient.full_name,
+        dateRange: fromDate && toDate ? `${fromDate} to ${toDate}` : 'All dates'
       });
 
+      // Build API URLs with date filters if provided
+      const buildDateQuery = (baseUrl: string) => {
+        const params = new URLSearchParams();
+        params.append('patient_id', patient.id);
+        if (fromDate) params.append('from', fromDate);
+        if (toDate) params.append('to', toDate);
+        return `${baseUrl}?${params.toString()}`;
+      };
+
       const [visitsResponse, prescriptionsResponse, labTestsResponse] = await Promise.all([
-        api.get(`/visits?patient_id=${patient.id}`),
-        api.get(`/prescriptions?patient_id=${patient.id}`),
-        api.get(`/lab-tests?patient_id=${patient.id}`)
+        api.get(buildDateQuery('/visits')),
+        api.get(buildDateQuery('/prescriptions')),
+        api.get(buildDateQuery('/lab-tests'))
       ]);
       
       const patientVisits = visitsResponse.data.visits || [];
       const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
-      const patientLabTests = labTestsResponse.data.lab_tests || [];
+      const patientLabTests = labTestsResponse.data.labTests || [];
 
       // Verify data belongs to correct patient
       const invalidVisits = patientVisits.filter(v => v.patient_id !== patient.id);
@@ -2007,15 +2087,38 @@ export default function BillingDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  ${patientLabTests.length > 0 ? patientLabTests.map(test => `
+                  ${patientLabTests.length > 0 ? patientLabTests.map(test => {
+                    let resultsDisplay = 'Pending';
+                    if (test.results) {
+                      try {
+                        const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                        if (parsedResults.results) {
+                          // Format the results nicely
+                          const resultEntries = Object.entries(parsedResults.results).map(([key, value]: [string, any]) => {
+                            return `${key}: ${value.value} ${value.unit || ''} (${value.status || 'N/A'})`;
+                          }).join('; ');
+                          resultsDisplay = resultEntries;
+                        } else if (parsedResults.interpretation) {
+                          resultsDisplay = parsedResults.interpretation;
+                        } else {
+                          resultsDisplay = 'Results available';
+                        }
+                      } catch (e) {
+                        // If not JSON, display as text
+                        resultsDisplay = test.results;
+                      }
+                    }
+                    
+                    return `
                     <tr>
                       <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td>${test.test_name || 'N/A'}</td>
                       <td>${test.doctor?.name || 'Unknown'}</td>
                       <td>${test.status || 'N/A'}</td>
-                      <td>${test.results || 'Pending'}</td>
+                      <td>${resultsDisplay}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="5" style="text-align: center;">No lab tests recorded</td></tr>'}
+                  `;
+                  }).join('') : '<tr><td colspan="5" style="text-align: center;">No lab tests recorded</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -2053,7 +2156,7 @@ export default function BillingDashboard() {
     }
   };
 
-  const printFinancialOnlyReport = async (patient: any) => {
+  const printFinancialOnlyReport = async (patient: any, fromDate?: string, toDate?: string) => {
     try {
       // Validate patient ID
       if (!patient?.id) {
@@ -2063,12 +2166,22 @@ export default function BillingDashboard() {
 
       console.log('Generating financial report for patient:', {
         id: patient.id,
-        name: patient.full_name
+        name: patient.full_name,
+        dateRange: fromDate && toDate ? `${fromDate} to ${toDate}` : 'All dates'
       });
 
+      // Build API URLs with date filters if provided
+      const buildDateQuery = (baseUrl: string) => {
+        const params = new URLSearchParams();
+        params.append('patient_id', patient.id);
+        if (fromDate) params.append('from', fromDate);
+        if (toDate) params.append('to', toDate);
+        return `${baseUrl}?${params.toString()}`;
+      };
+
       const [paymentsResponse, invoicesResponse] = await Promise.all([
-        api.get(`/payments?patient_id=${patient.id}`),
-        api.get(`/billing/invoices?patient_id=${patient.id}`)
+        api.get(buildDateQuery('/payments')),
+        api.get(buildDateQuery('/billing/invoices'))
       ]);
       
       const patientPayments = paymentsResponse.data.payments || [];
@@ -2226,7 +2339,7 @@ export default function BillingDashboard() {
     }
   };
 
-  const printPrescriptionsOnlyReport = async (patient: any) => {
+  const printPrescriptionsOnlyReport = async (patient: any, fromDate?: string, toDate?: string) => {
     try {
       // Validate patient ID
       if (!patient?.id) {
@@ -2236,10 +2349,18 @@ export default function BillingDashboard() {
 
       console.log('Generating prescriptions report for patient:', {
         id: patient.id,
-        name: patient.full_name
+        name: patient.full_name,
+        dateRange: fromDate && toDate ? `${fromDate} to ${toDate}` : 'All dates'
       });
 
-      const prescriptionsResponse = await api.get(`/prescriptions?patient_id=${patient.id}`);
+      // Build API URL with date filters if provided
+      const params = new URLSearchParams();
+      params.append('patient_id', patient.id);
+      if (fromDate) params.append('from', fromDate);
+      if (toDate) params.append('to', toDate);
+      const queryString = params.toString();
+
+      const prescriptionsResponse = await api.get(`/prescriptions?${queryString}`);
       const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
 
       // Verify data belongs to correct patient
@@ -2354,7 +2475,7 @@ export default function BillingDashboard() {
     }
   };
 
-  const printLabResultsOnlyReport = async (patient: any) => {
+  const printLabResultsOnlyReport = async (patient: any, fromDate?: string, toDate?: string) => {
     try {
       // Validate patient ID
       if (!patient?.id) {
@@ -2364,11 +2485,19 @@ export default function BillingDashboard() {
 
       console.log('Generating lab results report for patient:', {
         id: patient.id,
-        name: patient.full_name
+        name: patient.full_name,
+        dateRange: fromDate && toDate ? `${fromDate} to ${toDate}` : 'All dates'
       });
 
-      const labTestsResponse = await api.get(`/lab-tests?patient_id=${patient.id}`);
-      const patientLabTests = labTestsResponse.data.lab_tests || [];
+      // Build API URL with date filters if provided
+      const params = new URLSearchParams();
+      params.append('patient_id', patient.id);
+      if (fromDate) params.append('from', fromDate);
+      if (toDate) params.append('to', toDate);
+      const queryString = params.toString();
+
+      const labTestsResponse = await api.get(`/lab-tests?${queryString}`);
+      const patientLabTests = labTestsResponse.data.labTests || [];
 
       // Verify data belongs to correct patient
       const invalidLabTests = patientLabTests.filter(l => l.patient_id !== patient.id);
@@ -2424,17 +2553,45 @@ export default function BillingDashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  ${patientLabTests.length > 0 ? patientLabTests.map(test => `
+                  ${patientLabTests.length > 0 ? patientLabTests.map(test => {
+                    let resultsDisplay = 'Pending';
+                    if (test.results) {
+                      try {
+                        const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                        if (parsedResults.results) {
+                          // Format the results nicely for detailed report
+                          const resultEntries = Object.entries(parsedResults.results).map(([key, value]: [string, any]) => {
+                            return `<strong>${key}:</strong> ${value.value} ${value.unit || ''} <em>(${value.status || 'N/A'})</em>`;
+                          }).join('<br>');
+                          resultsDisplay = resultEntries;
+                          
+                          // Add interpretation if available
+                          if (parsedResults.interpretation) {
+                            resultsDisplay += `<br><br><strong>Interpretation:</strong> ${parsedResults.interpretation}`;
+                          }
+                        } else if (parsedResults.interpretation) {
+                          resultsDisplay = parsedResults.interpretation;
+                        } else {
+                          resultsDisplay = 'Results available';
+                        }
+                      } catch (e) {
+                        // If not JSON, display as text
+                        resultsDisplay = test.results;
+                      }
+                    }
+                    
+                    return `
                     <tr>
                       <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td><strong>${test.test_name || 'N/A'}</strong></td>
                       <td>${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
                       <td class="status-${(test.status || 'pending').toLowerCase()}">${test.status || 'Pending'}</td>
-                      <td>${test.results || 'Pending'}</td>
+                      <td style="font-size: 12px;">${resultsDisplay}</td>
                       <td>${test.normal_range || 'N/A'}</td>
                       <td>${test.completed_at ? format(new Date(test.completed_at), 'MMM dd, yyyy') : 'N/A'}</td>
                     </tr>
-                  `).join('') : '<tr><td colspan="7" style="text-align: center; color: #6b7280;">No lab tests recorded for this patient</td></tr>'}
+                  `;
+                  }).join('') : '<tr><td colspan="7" style="text-align: center; color: #6b7280;">No lab tests recorded for this patient</td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -2475,7 +2632,7 @@ export default function BillingDashboard() {
   const printLabTestsReport = async () => {
     try {
       const response = await api.get('/lab-tests');
-      const allLabTests = response.data.lab_tests || [];
+      const allLabTests = response.data.labTests || [];
       
       const pendingTests = allLabTests.filter(test => test.status === 'Pending');
       const completedTests = allLabTests.filter(test => test.status === 'Completed');
@@ -2547,17 +2704,37 @@ export default function BillingDashboard() {
                 </tr>
               </thead>
               <tbody>
-                ${allLabTests.map(test => `
+                ${allLabTests.map(test => {
+                  let resultsDisplay = 'Pending';
+                  if (test.results) {
+                    try {
+                      const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
+                      if (parsedResults.results) {
+                        // Show summary for general report
+                        const resultCount = Object.keys(parsedResults.results).length;
+                        resultsDisplay = `${resultCount} result(s) available`;
+                      } else if (parsedResults.interpretation) {
+                        resultsDisplay = 'Results with interpretation';
+                      } else {
+                        resultsDisplay = 'Results available';
+                      }
+                    } catch (e) {
+                      resultsDisplay = 'Results available';
+                    }
+                  }
+                  
+                  return `
                   <tr>
                     <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
                     <td>${test.patient?.full_name || 'Unknown'}</td>
                     <td>${test.test_name || 'N/A'}</td>
                     <td>${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
                     <td class="${test.status?.toLowerCase() || 'pending'}">${test.status || 'Pending'}</td>
-                    <td>${test.results ? 'Available' : 'Pending'}</td>
+                    <td>${resultsDisplay}</td>
                     <td>${test.completed_at ? format(new Date(test.completed_at), 'MMM dd, yyyy') : 'N/A'}</td>
                   </tr>
-                `).join('')}
+                `;
+                }).join('')}
               </tbody>
             </table>
 
@@ -2689,6 +2866,159 @@ export default function BillingDashboard() {
     setTransactionId('');
     setMobilePaymentProcessing(false);
     setPaymentDialogOpen(true);
+  };
+
+  const handlePayAllInvoices = async (patientData: any) => {
+    if (payAllProcessing) return; // Prevent double-clicks
+    
+    try {
+      setPayAllProcessing(true);
+      
+      const unpaidInvoices = patientData.invoices.filter((inv: any) => inv.status !== 'Paid');
+      
+      if (unpaidInvoices.length === 0) {
+        toast.error('No unpaid invoices found for this patient');
+        return;
+      }
+
+      if (!payAllPaymentMethod) {
+        toast.error('Please select a payment method');
+        return;
+      }
+
+      const totalAmount = unpaidInvoices.reduce((sum: number, inv: any) => {
+        return sum + (Number(inv.total_amount) - Number(inv.paid_amount || 0));
+      }, 0);
+
+      // Handle Mobile Money Payment
+      if (['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(payAllPaymentMethod)) {
+        const phoneInput = document.getElementById('payall_mobile_phone') as HTMLInputElement;
+        const phoneNumber = phoneInput?.value;
+
+        if (!phoneNumber) {
+          toast.error('Please enter mobile phone number');
+          return;
+        }
+
+        // Validate phone number format for Tanzania
+        const phoneRegex = /^0[67][0-9]{8}$/;
+        if (!phoneRegex.test(phoneNumber)) {
+          toast.error('Please enter a valid Tanzanian phone number (07xxxxxxxx or 06xxxxxxxx)');
+          return;
+        }
+
+        // Get patient ID - ensure it's the correct format
+        const patientId = patientData.patient?.id;
+        if (!patientId) {
+          toast.error('Invalid patient information. Please refresh and try again.');
+          return;
+        }
+
+        // Validate UUID format
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(patientId)) {
+          toast.error('Invalid patient ID format. Please refresh and try again.');
+          return;
+        }
+
+        try {
+          toast.info(`Initiating ${payAllPaymentMethod} payment...`);
+          
+          // Debug: Log the payment request data
+          console.log('Pay All payment request data:', {
+            phoneNumber,
+            amount: totalAmount,
+            invoiceId: unpaidInvoices[0].id,
+            patientId: patientId,
+            paymentType: 'Invoice Payment',
+            paymentMethod: payAllPaymentMethod,
+            unpaidInvoicesCount: unpaidInvoices.length
+          });
+          
+          const paymentRequest: MobilePaymentRequest = {
+            phoneNumber,
+            amount: totalAmount,
+            invoiceId: unpaidInvoices[0].id, // Use first invoice ID as reference
+            patientId: patientId,
+            paymentType: 'Invoice Payment',
+            paymentMethod: payAllPaymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
+            description: `Bulk payment for ${unpaidInvoices.length} invoices`
+          };
+
+          const response = await mobilePaymentService.initiatePayment(paymentRequest);
+
+          if (response.success && response.transactionId) {
+            toast.success(`📱 ${payAllPaymentMethod} payment request sent to ${phoneNumber}. Payment will be processed automatically.`);
+            
+            // Close dialog
+            setPayAllDialogOpen(false);
+            setSelectedPatientForPayAll(null);
+            setPayAllPaymentMethod('');
+            
+            // Refresh data after a short delay
+            setTimeout(() => {
+              fetchData(false);
+            }, 2000);
+            
+            return;
+          } else {
+            toast.error(response.message || 'Failed to initiate mobile payment');
+            return;
+          }
+        } catch (error: any) {
+          console.error('Mobile money payment error:', error);
+          toast.error(error.response?.data?.message || error.message || 'Failed to initiate mobile money payment');
+          return;
+        }
+      }
+
+      // For non-mobile payments: Create a combined payment for all unpaid invoices
+      const paymentData = {
+        patient_id: patientData.patient.id,
+        amount: totalAmount,
+        payment_method: payAllPaymentMethod,
+        payment_date: new Date().toISOString(),
+        reference_number: `BULK-${Date.now()}`,
+        notes: `Bulk payment for ${unpaidInvoices.length} invoices`,
+        status: 'Completed',
+      };
+
+      // Record the bulk payment
+      await api.post('/payments', paymentData);
+
+      // Update each invoice
+      for (const invoice of unpaidInvoices) {
+        const remainingAmount = Number(invoice.total_amount) - Number(invoice.paid_amount || 0);
+        const newPaidAmount = Number(invoice.paid_amount || 0) + remainingAmount;
+        
+        await api.put(`/billing/invoices/${invoice.id}`, { 
+          paid_amount: newPaidAmount, 
+          status: 'Paid' 
+        });
+      }
+
+      // Log activity
+      await logActivity('billing.bulk_payment.received', {
+        patient_id: patientData.patient.id,
+        amount: totalAmount,
+        invoice_count: unpaidInvoices.length,
+        payment_method: payAllPaymentMethod
+      });
+
+      toast.success(`Bulk payment of TSh${totalAmount.toFixed(2)} recorded for ${unpaidInvoices.length} invoices!`);
+      
+      // Refresh data
+      fetchData(false);
+      setPayAllDialogOpen(false);
+      setSelectedPatientForPayAll(null);
+      setPayAllPaymentMethod('');
+
+    } catch (error: any) {
+      console.error('Pay All error:', error);
+      toast.error(error.message || 'Failed to process bulk payment');
+    } finally {
+      setPayAllProcessing(false);
+    }
   };
 
   const handleCreateInvoice = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -3107,7 +3437,7 @@ export default function BillingDashboard() {
       payment_method: paymentMethod,
       payment_date: new Date().toISOString(),
       reference_number: formData.get('referenceNumber') as string || actualInvoice.invoice_number || null,
-      notes: formData.get('notes') as string || null,
+      notes: formData.get('notes') as string || `Payment for ${actualInvoice.invoice_number} - Services: ${actualInvoice.items?.map((item: any) => item.description).join(', ') || 'Medical services'}`,
       status: 'Completed',
     };
 
@@ -3374,11 +3704,12 @@ export default function BillingDashboard() {
 
         {/* Main Content with Tabs */}
         <Tabs defaultValue="invoices" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="invoices">Unpaid Invoices</TabsTrigger>
             <TabsTrigger value="paid">Paid Invoices</TabsTrigger>
             <TabsTrigger value="payments">Today's Payments</TabsTrigger>
             <TabsTrigger value="insurance">Insurance Claims</TabsTrigger>
+            <TabsTrigger value="reports">Reports</TabsTrigger>
           </TabsList>
 
           {/* Pending Invoices Tab - Patients Awaiting Billing */}
@@ -3500,6 +3831,7 @@ export default function BillingDashboard() {
                       <TableRow>
                         <TableHead className="min-w-[120px]">Patient</TableHead>
                         <TableHead className="min-w-[100px]">Phone</TableHead>
+                        <TableHead className="min-w-[150px]">Services</TableHead>
                         <TableHead className="min-w-[120px]">Calculated Cost</TableHead>
                         <TableHead className="min-w-[100px]">Total Amount</TableHead>
                         <TableHead className="min-w-[100px]">Paid Amount</TableHead>
@@ -3517,6 +3849,39 @@ export default function BillingDashboard() {
                         <TableRow key={patientData.patient.id}>
                           <TableCell className="font-medium">{patientData.patient?.full_name || 'Unknown Patient'}</TableCell>
                           <TableCell className="text-sm">{patientData.patient?.phone || 'N/A'}</TableCell>
+                          <TableCell className="text-xs">
+                            {(() => {
+                              // Get services for this patient from their invoices
+                              const patientServicesList = patientServices.filter((s: any) => s.patient_id === patientData.patient.id);
+                              const serviceNames = patientServicesList.map((service: any) => {
+                                if (service.service?.service_name) {
+                                  return service.service.service_name;
+                                } else if (service.service_name) {
+                                  return service.service_name;
+                                } else {
+                                  return 'Medical Service';
+                                }
+                              });
+                              
+                              // Remove duplicates and limit to 3 services
+                              const uniqueServices = [...new Set(serviceNames)];
+                              const displayServices = uniqueServices.slice(0, 3);
+                              const hasMore = uniqueServices.length > 3;
+                              
+                              return (
+                                <div className="max-w-[150px]">
+                                  {displayServices.length > 0 ? (
+                                    <>
+                                      {displayServices.join(', ')}
+                                      {hasMore && <span className="text-muted-foreground"> +{uniqueServices.length - 3} more</span>}
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground">No services found</span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
                           <TableCell className="font-semibold text-blue-600">
                             TSh{(patientCosts[patientData.patient.id] || 0).toFixed(2)}
                           </TableCell>
@@ -3540,29 +3905,46 @@ export default function BillingDashboard() {
                           </TableCell>
                           <TableCell>
                             {(patientData.status === 'Unpaid' || patientData.status === 'Partially Paid') && (
-                              <Button
-                                size="sm"
-                                className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
-                                onClick={() => {
-                                  const unpaidInvoices = patientData.invoices.filter(inv => inv.status !== 'Paid');
-                                  console.log('Pay Now clicked - unpaidInvoices:', unpaidInvoices);
-                                  console.log('Pay Now clicked - patientData.invoices:', patientData.invoices);
-                                  
-                                  if (unpaidInvoices.length === 1) {
-                                    // If only one unpaid invoice, open payment dialog directly
-                                    handleOpenPaymentDialog(unpaidInvoices[0]);
-                                  } else if (unpaidInvoices.length > 1) {
-                                    // If multiple unpaid invoices, show selection dialog
-                                    setSelectedPatientForInvoiceSelection(patientData);
-                                    setInvoiceSelectionDialogOpen(true);
-                                  } else {
-                                    toast.error('No unpaid invoices found for this patient');
-                                  }
-                                }}
-                              >
-                                <CreditCard className="mr-1 h-3 w-3" />
-                                Pay Now
-                              </Button>
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white border-0 shadow-md hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                                  onClick={() => {
+                                    const unpaidInvoices = patientData.invoices.filter(inv => inv.status !== 'Paid');
+                                    console.log('Pay Now clicked - unpaidInvoices:', unpaidInvoices);
+                                    console.log('Pay Now clicked - patientData.invoices:', patientData.invoices);
+                                    
+                                    if (unpaidInvoices.length === 1) {
+                                      // If only one unpaid invoice, open payment dialog directly
+                                      handleOpenPaymentDialog(unpaidInvoices[0]);
+                                    } else if (unpaidInvoices.length > 1) {
+                                      // If multiple unpaid invoices, show selection dialog
+                                      setSelectedPatientForInvoiceSelection(patientData);
+                                      setInvoiceSelectionDialogOpen(true);
+                                    } else {
+                                      toast.error('No unpaid invoices found for this patient');
+                                    }
+                                  }}
+                                >
+                                  <CreditCard className="mr-1 h-3 w-3" />
+                                  Pay Now
+                                </Button>
+                                
+                                {patientData.invoices.filter(inv => inv.status !== 'Paid').length > 1 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-blue-500 text-blue-600 hover:bg-blue-50 shadow-md hover:shadow-lg transition-all duration-200"
+                                    onClick={() => {
+                                      setSelectedPatientForPayAll(patientData);
+                                      setPayAllDialogOpen(true);
+                                    }}
+                                  >
+                                    <CreditCard className="mr-1 h-3 w-3" />
+                                    Pay All
+                                  </Button>
+                                )}
+                              </div>
                             )}
                           </TableCell>
                         </TableRow>
@@ -3593,6 +3975,7 @@ export default function BillingDashboard() {
                       <TableRow>
                         <TableHead className="min-w-[120px]">Patient</TableHead>
                         <TableHead className="min-w-[100px]">Phone</TableHead>
+                        <TableHead className="min-w-[150px]">Services</TableHead>
                         <TableHead className="min-w-[100px]">Total Amount</TableHead>
                         <TableHead className="min-w-[100px]">Paid Amount</TableHead>
                         <TableHead className="min-w-[80px]">Invoice Count</TableHead>
@@ -3608,6 +3991,39 @@ export default function BillingDashboard() {
                         <TableRow key={patientData.patient.id}>
                           <TableCell className="font-medium">{patientData.patient?.full_name || 'Unknown Patient'}</TableCell>
                           <TableCell className="text-sm">{patientData.patient?.phone || 'N/A'}</TableCell>
+                          <TableCell className="text-xs">
+                            {(() => {
+                              // Get services for this patient from their invoices
+                              const patientServicesList = patientServices.filter((s: any) => s.patient_id === patientData.patient.id);
+                              const serviceNames = patientServicesList.map((service: any) => {
+                                if (service.service?.service_name) {
+                                  return service.service.service_name;
+                                } else if (service.service_name) {
+                                  return service.service_name;
+                                } else {
+                                  return 'Medical Service';
+                                }
+                              });
+                              
+                              // Remove duplicates and limit to 3 services
+                              const uniqueServices = [...new Set(serviceNames)];
+                              const displayServices = uniqueServices.slice(0, 3);
+                              const hasMore = uniqueServices.length > 3;
+                              
+                              return (
+                                <div className="max-w-[150px]">
+                                  {displayServices.length > 0 ? (
+                                    <>
+                                      {displayServices.join(', ')}
+                                      {hasMore && <span className="text-muted-foreground"> +{uniqueServices.length - 3} more</span>}
+                                    </>
+                                  ) : (
+                                    <span className="text-muted-foreground">No services found</span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
                           <TableCell className="font-semibold text-green-600">
                             TSh{Number(patientData.totalAmount as number).toFixed(2)}
                           </TableCell>
@@ -3893,6 +4309,133 @@ export default function BillingDashboard() {
                     </Table>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Reports Tab */}
+          <TabsContent value="reports" className="space-y-4">
+            <Card className="shadow-lg">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <div>
+                    <CardTitle>Medical & Financial Reports</CardTitle>
+                    <CardDescription>Generate comprehensive reports with date filtering</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {/* Date Range Filter */}
+                <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+                  <h4 className="font-semibold mb-3">Date Range Filter (Optional)</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="reportDateFrom">From Date</Label>
+                      <Input
+                        id="reportDateFrom"
+                        type="date"
+                        value={reportDateFrom}
+                        onChange={(e) => setReportDateFrom(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="reportDateTo">To Date</Label>
+                      <Input
+                        id="reportDateTo"
+                        type="date"
+                        value={reportDateTo}
+                        onChange={(e) => setReportDateTo(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Leave empty to include all records. Date range applies to creation/visit dates.
+                  </p>
+                </div>
+
+                {/* Report Buttons Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Button
+                    onClick={() => printMedicalHistoryReport(reportDateFrom, reportDateTo)}
+                    className="h-20 flex flex-col items-center justify-center bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Medical History Report</span>
+                    <span className="text-xs opacity-80">All visits, prescriptions & lab tests</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printPendingInvoicesReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-orange-600 hover:bg-orange-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Pending Invoices</span>
+                    <span className="text-xs opacity-80">Patients awaiting billing</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printPaidInvoicesReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-green-600 hover:bg-green-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Paid Invoices</span>
+                    <span className="text-xs opacity-80">All completed payments</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printTodaysPaymentsReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Today's Payments</span>
+                    <span className="text-xs opacity-80">Daily revenue report</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printLabTestsReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-teal-600 hover:bg-teal-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Lab Tests Report</span>
+                    <span className="text-xs opacity-80">All laboratory tests</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printPharmacyInventoryReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-indigo-600 hover:bg-indigo-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Pharmacy Inventory</span>
+                    <span className="text-xs opacity-80">Medication stock levels</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printPatientListReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-gray-600 hover:bg-gray-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Patient Registry</span>
+                    <span className="text-xs opacity-80">Complete patient list</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printComprehensiveBillingReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-red-600 hover:bg-red-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Comprehensive Report</span>
+                    <span className="text-xs opacity-80">Complete financial overview</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printInsuranceClaimsReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-cyan-600 hover:bg-cyan-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Insurance Claims</span>
+                    <span className="text-xs opacity-80">NHIF & insurance reports</span>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -4772,6 +5315,36 @@ export default function BillingDashboard() {
                       </label>
                     </div>
                   </div>
+
+                  {/* Date Range Filter */}
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <h4 className="font-medium text-blue-900 mb-3">📅 Date Range Filter (Optional)</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="patientReportDateFrom" className="text-sm font-medium">From Date</Label>
+                        <Input
+                          id="patientReportDateFrom"
+                          type="date"
+                          value={patientReportDateFrom}
+                          onChange={(e) => setPatientReportDateFrom(e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="patientReportDateTo" className="text-sm font-medium">To Date</Label>
+                        <Input
+                          id="patientReportDateTo"
+                          type="date"
+                          value={patientReportDateTo}
+                          onChange={(e) => setPatientReportDateTo(e.target.value)}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-blue-700 mt-2">
+                      💡 Leave empty to include all records. Date range applies to visit dates, prescription dates, and test dates.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -4797,27 +5370,31 @@ export default function BillingDashboard() {
                     // Generate the appropriate report
                     switch(reportType) {
                       case 'complete':
-                        printIndividualPatientReport(selectedPatientForReport);
+                        printIndividualPatientReport(selectedPatientForReport, patientReportDateFrom, patientReportDateTo);
                         break;
                       case 'medical-only':
-                        printMedicalOnlyReport(selectedPatientForReport);
+                        printMedicalOnlyReport(selectedPatientForReport, patientReportDateFrom, patientReportDateTo);
                         break;
                       case 'financial-only':
-                        printFinancialOnlyReport(selectedPatientForReport);
+                        printFinancialOnlyReport(selectedPatientForReport, patientReportDateFrom, patientReportDateTo);
                         break;
                       case 'prescriptions-only':
-                        printPrescriptionsOnlyReport(selectedPatientForReport);
+                        printPrescriptionsOnlyReport(selectedPatientForReport, patientReportDateFrom, patientReportDateTo);
                         break;
                       case 'lab-results-only':
-                        printLabResultsOnlyReport(selectedPatientForReport);
+                        printLabResultsOnlyReport(selectedPatientForReport, patientReportDateFrom, patientReportDateTo);
                         break;
                       default:
-                        printIndividualPatientReport(selectedPatientForReport);
+                        printIndividualPatientReport(selectedPatientForReport, patientReportDateFrom, patientReportDateTo);
                     }
                     
                     setPatientReportDialogOpen(false);
                     setSelectedPatientForReport(null);
                     setPatientSearchTerm('');
+                    setPatientReportDateFrom('');
+                    setPatientReportDateTo('');
+                    setPatientReportDateFrom('');
+                    setPatientReportDateTo('');
                   }
                 }}
                 disabled={!selectedPatientForReport}
@@ -4907,6 +5484,116 @@ export default function BillingDashboard() {
                     }}
                   >
                     Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Pay All Dialog */}
+        <Dialog open={payAllDialogOpen} onOpenChange={(open) => {
+          setPayAllDialogOpen(open);
+          if (!open) {
+            setSelectedPatientForPayAll(null);
+            setPayAllPaymentMethod('');
+            setPayAllProcessing(false);
+          }
+        }}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Pay All Invoices</DialogTitle>
+              <DialogDescription>
+                Pay all outstanding invoices for {selectedPatientForPayAll?.patient?.full_name}
+              </DialogDescription>
+            </DialogHeader>
+            
+            {selectedPatientForPayAll && (
+              <div className="space-y-4">
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h4 className="font-semibold mb-2">Payment Summary</h4>
+                  <div className="space-y-2 text-sm">
+                    {selectedPatientForPayAll.invoices
+                      .filter((inv: any) => inv.status !== 'Paid')
+                      .map((invoice: any, index: number) => (
+                        <div key={invoice.id} className="flex justify-between">
+                          <span>Invoice #{invoice.invoice_number}</span>
+                          <span>TSh{(Number(invoice.total_amount) - Number(invoice.paid_amount || 0)).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    <div className="border-t pt-2 mt-2 font-semibold">
+                      <div className="flex justify-between">
+                        <span>Total Amount:</span>
+                        <span>TSh{selectedPatientForPayAll.invoices
+                          .filter((inv: any) => inv.status !== 'Paid')
+                          .reduce((sum: number, inv: any) => sum + (Number(inv.total_amount) - Number(inv.paid_amount || 0)), 0)
+                          .toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Method Selection */}
+                <div className="space-y-2">
+                  <Label>Payment Method *</Label>
+                  <Select value={payAllPaymentMethod} onValueChange={setPayAllPaymentMethod}>
+                    <SelectTrigger className={payAllPaymentMethod ? 'border-green-500' : 'border-red-500'}>
+                      <SelectValue placeholder="Select payment method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Cash">💵 Cash</SelectItem>
+                      <SelectItem value="Card">💳 Debit/Credit Card</SelectItem>
+                      <SelectItem value="M-Pesa">📱 M-Pesa</SelectItem>
+                      <SelectItem value="Airtel Money">📱 Airtel Money</SelectItem>
+                      <SelectItem value="Tigo Pesa">📱 Tigo Pesa</SelectItem>
+                      <SelectItem value="Halopesa">📱 Halopesa</SelectItem>
+                      <SelectItem value="Bank Transfer">🏦 Bank Transfer</SelectItem>
+                      <SelectItem value="Cheque">📄 Cheque</SelectItem>
+                      <SelectItem value="Insurance">🛡️ Insurance</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {!payAllPaymentMethod && (
+                    <p className="text-sm text-red-600">Please select a payment method</p>
+                  )}
+                </div>
+
+                {/* Mobile Payment Phone Number Input */}
+                {['M-Pesa', 'Airtel Money', 'Tigo Pesa', 'Halopesa'].includes(payAllPaymentMethod) && (
+                  <div className="space-y-2">
+                    <Label>Mobile Phone Number *</Label>
+                    <Input
+                      id="payall_mobile_phone"
+                      type="tel"
+                      placeholder="e.g., 0712345678"
+                      className="border-blue-300 focus:border-blue-500"
+                    />
+                    <p className="text-xs text-gray-600">
+                      Enter phone number in format: 07XXXXXXXX or 06XXXXXXXX
+                    </p>
+                  </div>
+                )}
+                
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setPayAllDialogOpen(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => handlePayAllInvoices(selectedPatientForPayAll)}
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    disabled={!payAllPaymentMethod || payAllProcessing}
+                  >
+                    {payAllProcessing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Pay All'
+                    )}
                   </Button>
                 </div>
               </div>

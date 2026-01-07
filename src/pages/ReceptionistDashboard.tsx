@@ -111,7 +111,7 @@ export default function ReceptionistDashboard() {
   const [appointmentTime, setAppointmentTime] = useState<string>('');
   const [appointmentReason, setAppointmentReason] = useState<string>('');
   const [departmentDoctors, setDepartmentDoctors] = useState<any[]>([]);
-  const [visitType, setVisitType] = useState<'Consultation' | 'Lab Only' | 'Pharmacy Only'>('Consultation');
+  const [visitType, setVisitType] = useState<'Consultation' | 'Pharmacy Only'>('Consultation');
 
   const [appointmentForm, setAppointmentForm] = useState({
     patient_id: '',
@@ -1038,8 +1038,8 @@ export default function ReceptionistDashboard() {
   const completeReturningPatientVisit = async () => {
     if (!selectedReturningPatient) return;
 
-    // Check if this is a non-consultation visit (Lab Only or Pharmacy Only)
-    if (visitType === 'Lab Only' || visitType === 'Pharmacy Only') {
+    // Check if this is a non-consultation visit (Pharmacy Only)
+    if (visitType === 'Pharmacy Only') {
       // Skip payment and create visit directly
       try {
         setLoading(true);
@@ -1065,13 +1065,7 @@ export default function ReceptionistDashboard() {
           notes: `${visitType} - No consultation fee required`
         };
 
-        if (nextStage === 'nurse') {
-          visitData['nurse_status'] = nextStatus;
-          visitData['doctor_status'] = 'Not Required';
-          visitData['pharmacy_status'] = 'Not Required';
-          visitData['lab_status'] = 'Pending';
-          visitData['billing_status'] = 'Not Required';
-        } else if (nextStage === 'pharmacy') {
+        if (nextStage === 'pharmacy') {
           visitData['pharmacy_status'] = nextStatus;
           visitData['doctor_status'] = 'Not Required';
           visitData['nurse_status'] = 'Not Required';
@@ -1238,12 +1232,8 @@ export default function ReceptionistDashboard() {
     let pharmacyStatus = 'Not Required';
     let billingStatus = 'Not Required';
     
-    // Route based on visit type
-    if (visitType === 'Lab Only') {
-      currentStage = 'lab';
-      labStatus = 'Pending';
-      nurseStatus = 'Not Required';
-    } else if (visitType === 'Pharmacy Only') {
+    // Route based on visit type - only pharmacy now
+    if (visitType === 'Pharmacy Only') {
       currentStage = 'pharmacy';
       pharmacyStatus = 'Pending';
       nurseStatus = 'Not Required';
@@ -1338,9 +1328,9 @@ export default function ReceptionistDashboard() {
       return;
     }
 
-    // Check if this is a non-consultation visit (Lab Only or Pharmacy Only)
+    // Check if this is a non-consultation visit (Pharmacy Only)
     // These visits should NOT charge consultation fee
-    if (visitType === 'Lab Only' || visitType === 'Pharmacy Only') {
+    if (visitType === 'Pharmacy Only') {
       // Skip payment and create visit directly
       await createVisitWithoutPayment();
       return;
@@ -1393,12 +1383,8 @@ export default function ReceptionistDashboard() {
       let pharmacyStatus = 'Not Required';
       let billingStatus = 'Not Required';
       
-      // Route based on visit type
-      if (visitType === 'Lab Only') {
-        currentStage = 'lab';
-        labStatus = 'Pending';
-        nurseStatus = 'Not Required';
-      } else if (visitType === 'Pharmacy Only') {
+      // Route based on visit type - only pharmacy now
+      if (visitType === 'Pharmacy Only') {
         currentStage = 'pharmacy';
         pharmacyStatus = 'Pending';
         nurseStatus = 'Not Required';
@@ -2968,12 +2954,10 @@ export default function ReceptionistDashboard() {
                 onChange={(e) => setVisitType(e.target.value as any)}
               >
                 <option value="Consultation">🩺 Consultation (Doctor Visit)</option>
-                <option value="Lab Only">🔬 Lab Only (Tests Only)</option>
                 <option value="Pharmacy Only">💊 Pharmacy Only (Buy Medicine)</option>
               </select>
               <p className="text-xs text-muted-foreground">
                 {visitType === 'Consultation' && '→ Nurse → Doctor → Lab/Pharmacy/Discharge'}
-                {visitType === 'Lab Only' && '→ Nurse (sample) → Lab → Nurse (report) → Billing'}
                 {visitType === 'Pharmacy Only' && '→ Pharmacist writes prescription → Dispense → Billing'}
               </p>
             </div>
