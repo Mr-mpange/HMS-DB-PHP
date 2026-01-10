@@ -833,148 +833,309 @@ export default function BillingDashboard() {
   `;
 
   // Print Functions
-  const printPendingInvoicesReport = () => {
-    const printContent = `
-      <html>
-        <head>
-          <title>Pending Invoices Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
-            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: bold; }
-            .total { font-weight: bold; background-color: #f9f9f9; }
-            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Pending Invoices Report</h1>
-            <h3>Patients Awaiting Billing</h3>
-          </div>
-          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })}</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Patient Name</th>
-                <th>Phone</th>
-                <th>Visit Date</th>
-                <th>Services</th>
-                <th>Amount (TSh)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${billingVisits.map(visit => {
-                const patient = patients.find(p => p.id === visit.patient_id) || visit.patient;
-                const patientServicesList = patientServices.filter(s => s.patient_id === visit.patient_id);
-                const totalCost = patientCosts[visit.patient_id] || 0;
-                return `
-                  <tr>
-                    <td>${patient?.full_name || 'Unknown'}</td>
-                    <td>${patient?.phone || 'N/A'}</td>
-                    <td>${visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                    <td>${patientServicesList.length} service(s)</td>
-                    <td>${totalCost.toFixed(2)}</td>
-                  </tr>
-                `;
-              }).join('')}
-              <tr class="total">
-                <td colspan="4"><strong>Total Pending Amount</strong></td>
-                <td><strong>TSh ${billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0).toFixed(2)}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="footer">
-            <p>Hospital Management System - Billing Report</p>
-            <p>Total Patients: ${billingVisits.length} | Total Amount: TSh ${billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0).toFixed(2)}</p>
-          </div>
-        </body>
-      </html>
-    `;
-    
-    handlePrint(printContent, 'Pending Invoices Report');
+  const printPendingInvoicesReport = async () => {
+    try {
+      // Fetch detailed patient services for pending billing
+      const servicesResponse = await api.get('/patient-services');
+      const allServices = servicesResponse.data.services || [];
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Pending Invoices Report with Service Details</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .total { font-weight: bold; background-color: #f9f9f9; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              .service-details { font-size: 11px; background: #f8f9fa; padding: 3px; border-radius: 2px; margin: 1px 0; }
+              .service-item { display: block; margin: 1px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Pending Invoices Report</h1>
+              <h3>Patients Awaiting Billing with Service Details</h3>
+            </div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient Name</th>
+                  <th>Phone</th>
+                  <th>Visit Date</th>
+                  <th>Services Used</th>
+                  <th>Amount (TSh)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${billingVisits.map(visit => {
+                  const patient = patients.find(p => p.id === visit.patient_id) || visit.patient;
+                  const patientServicesList = allServices.filter(s => s.patient_id === visit.patient_id);
+                  const totalCost = patientCosts[visit.patient_id] || 0;
+                  
+                  const servicesDisplay = patientServicesList.length > 0 
+                    ? patientServicesList.map(service => {
+                        const serviceName = service.service?.name || service.service_name || 'Unknown Service';
+                        const serviceType = service.service?.service_type || service.service_type || '';
+                        const quantity = service.quantity || 1;
+                        const price = service.total_price || service.unit_price || service.service?.base_price || service.price || 0;
+                        
+                        return `<span class="service-item">${serviceName}${serviceType ? ` (${serviceType})` : ''} - Qty: ${quantity} - TSh${Number(price).toFixed(2)}</span>`;
+                      }).join('')
+                    : '<span class="service-item">No services recorded</span>';
+                  
+                  return `
+                    <tr>
+                      <td>${patient?.full_name || 'Unknown'}</td>
+                      <td>${patient?.phone || 'N/A'}</td>
+                      <td>${visit.visit_date ? format(new Date(visit.visit_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td class="service-details">${servicesDisplay}</td>
+                      <td>${totalCost.toFixed(2)}</td>
+                    </tr>
+                  `;
+                }).join('')}
+                <tr class="total">
+                  <td colspan="4"><strong>Total Pending Amount</strong></td>
+                  <td><strong>TSh ${billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0).toFixed(2)}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="footer">
+              <p>Hospital Management System - Pending Invoices Report with Service Details</p>
+              <p>Total Patients: ${billingVisits.length} | Total Amount: TSh ${billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0).toFixed(2)}</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Pending Invoices Report with Details');
+    } catch (error) {
+      console.error('Error generating pending invoices report:', error);
+      toast.error('Failed to generate pending invoices report');
+    }
   };
 
-  const printPaidInvoicesReport = () => {
-    const paidInvoices = invoices.filter(patientData => patientData.status === 'Paid');
-    
-    const printContent = `
-      <html>
-        <head>
-          <title>Paid Invoices Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
-            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: bold; }
-            .total { font-weight: bold; background-color: #f9f9f9; }
-            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Paid Invoices Report</h1>
-            <h3>All Fully Paid Invoices</h3>
-          </div>
-          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })}</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Patient Name</th>
-                <th>Phone</th>
-                <th>Total Amount</th>
-                <th>Paid Amount</th>
-                <th>Invoice Count</th>
-                <th>Latest Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${paidInvoices.map(patientData => `
+  const printPaidInvoicesReport = async () => {
+    try {
+      // Fetch detailed invoice data with items
+      const invoicesWithItemsResponse = await api.get('/billing/invoices');
+      const detailedInvoices = invoicesWithItemsResponse.data.invoices || [];
+      
+      const paidInvoices = detailedInvoices.filter(invoice => invoice.status === 'Paid');
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Paid Invoices Report with Service Details</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .total { font-weight: bold; background-color: #f9f9f9; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              .service-details { font-size: 11px; background: #f8f9fa; padding: 3px; border-radius: 2px; margin: 1px 0; }
+              .service-item { display: block; margin: 1px 0; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Paid Invoices Report</h1>
+              <h3>All Fully Paid Invoices with Service Details</h3>
+            </div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            <table>
+              <thead>
                 <tr>
-                  <td>${patientData.patient?.full_name || 'Unknown'}</td>
-                  <td>${patientData.patient?.phone || 'N/A'}</td>
-                  <td>TSh ${Number(patientData.totalAmount || 0).toFixed(2)}</td>
-                  <td>TSh ${Number(patientData.paidAmount || 0).toFixed(2)}</td>
-                  <td>${patientData.invoiceCount}</td>
-                  <td>${format(new Date(patientData.latestInvoiceDate), 'MMM dd, yyyy')}</td>
+                  <th>Invoice #</th>
+                  <th>Patient Name</th>
+                  <th>Phone</th>
+                  <th>Services Used</th>
+                  <th>Total Amount</th>
+                  <th>Paid Amount</th>
+                  <th>Invoice Date</th>
                 </tr>
-              `).join('')}
-              <tr class="total">
-                <td colspan="2"><strong>Total Revenue</strong></td>
-                <td><strong>TSh ${paidInvoices.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0).toFixed(2)}</strong></td>
-                <td><strong>TSh ${paidInvoices.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0).toFixed(2)}</strong></td>
-                <td><strong>${paidInvoices.reduce((sum, p) => sum + p.invoiceCount, 0)}</strong></td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-          <div class="footer">
-            <p>Hospital Management System - Paid Invoices Report</p>
-            <p>Total Patients: ${paidInvoices.length} | Total Revenue: TSh ${paidInvoices.reduce((sum, p) => sum + Number(p.paidAmount || 0), 0).toFixed(2)}</p>
-          </div>
-        </body>
-      </html>
-    `;
-    
-    handlePrint(printContent, 'Paid Invoices Report');
+              </thead>
+              <tbody>
+                ${paidInvoices.map(invoice => {
+                  const servicesDisplay = invoice.items && invoice.items.length > 0 
+                    ? invoice.items.map(item => 
+                        `<span class="service-item">${item.description} (Qty: ${item.quantity || 1}) - TSh${Number(item.total_price || item.unit_price || 0).toFixed(2)}</span>`
+                      ).join('')
+                    : '<span class="service-item">No detailed services available</span>';
+                  
+                  return `
+                    <tr>
+                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td>${invoice.patient?.full_name || 'Unknown'}</td>
+                      <td>${invoice.patient?.phone || 'N/A'}</td>
+                      <td class="service-details">${servicesDisplay}</td>
+                      <td>TSh ${Number(invoice.total_amount || 0).toFixed(2)}</td>
+                      <td>TSh ${Number(invoice.paid_amount || 0).toFixed(2)}</td>
+                      <td>${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                    </tr>
+                  `;
+                }).join('')}
+                <tr class="total">
+                  <td colspan="4"><strong>Total Revenue</strong></td>
+                  <td><strong>TSh ${paidInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount || 0), 0).toFixed(2)}</strong></td>
+                  <td><strong>TSh ${paidInvoices.reduce((sum, invoice) => sum + Number(invoice.paid_amount || 0), 0).toFixed(2)}</strong></td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="footer">
+              <p>Hospital Management System - Paid Invoices Report with Service Details</p>
+              <p>Total Invoices: ${paidInvoices.length} | Total Revenue: TSh ${paidInvoices.reduce((sum, invoice) => sum + Number(invoice.paid_amount || 0), 0).toFixed(2)}</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Paid Invoices Report with Details');
+    } catch (error) {
+      console.error('Error generating paid invoices report:', error);
+      toast.error('Failed to generate paid invoices report');
+    }
+  };
+
+  const printDetailedInvoiceReport = async () => {
+    try {
+      // Fetch all invoices with detailed items
+      const invoicesResponse = await api.get('/billing/invoices');
+      const allInvoices = invoicesResponse.data.invoices || [];
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Detailed Invoice Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              .invoice-section { margin-bottom: 30px; border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+              .invoice-header { background: #f5f5f5; padding: 10px; margin: -15px -15px 15px -15px; border-radius: 5px 5px 0 0; }
+              .invoice-title { font-size: 16px; font-weight: bold; color: #333; margin: 0; }
+              .patient-info { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px; }
+              .patient-info div { font-size: 12px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+              th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+              th { background-color: #f8f9fa; font-weight: bold; font-size: 11px; }
+              td { font-size: 11px; }
+              .total-row { background-color: #e3f2fd; font-weight: bold; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              .amount { font-weight: bold; color: #2563eb; }
+              .status-paid { color: #059669; font-weight: bold; }
+              .status-pending { color: #d97706; font-weight: bold; }
+              .status-partially { color: #dc2626; font-weight: bold; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Detailed Invoice Report</h1>
+              <h3>Complete Invoice Breakdown with Service Details</h3>
+            </div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            
+            ${allInvoices.map(invoice => {
+              const statusClass = invoice.status === 'Paid' ? 'status-paid' : 
+                                invoice.status === 'Partially Paid' ? 'status-partially' : 'status-pending';
+              
+              return `
+                <div class="invoice-section">
+                  <div class="invoice-header">
+                    <div class="invoice-title">Invoice ${invoice.invoice_number || 'N/A'} - ${invoice.patient?.full_name || 'Unknown Patient'}</div>
+                  </div>
+                  
+                  <div class="patient-info">
+                    <div><strong>Patient:</strong> ${invoice.patient?.full_name || 'N/A'}</div>
+                    <div><strong>Phone:</strong> ${invoice.patient?.phone || 'N/A'}</div>
+                    <div><strong>Invoice Date:</strong> ${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</div>
+                    <div><strong>Status:</strong> <span class="${statusClass}">${invoice.status || 'Pending'}</span></div>
+                  </div>
+                  
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Service/Item Description</th>
+                        <th>Quantity</th>
+                        <th>Unit Price</th>
+                        <th>Total Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${invoice.items && invoice.items.length > 0 ? 
+                        invoice.items.map(item => `
+                          <tr>
+                            <td>${item.description || 'Service'}</td>
+                            <td>${item.quantity || 1}</td>
+                            <td class="amount">TSh ${Number(item.unit_price || 0).toFixed(2)}</td>
+                            <td class="amount">TSh ${Number(item.total_price || item.unit_price || 0).toFixed(2)}</td>
+                          </tr>
+                        `).join('') : 
+                        '<tr><td colspan="4" style="text-align: center; color: #6b7280;">No detailed items available</td></tr>'
+                      }
+                      <tr class="total-row">
+                        <td colspan="3"><strong>Total Amount</strong></td>
+                        <td class="amount"><strong>TSh ${Number(invoice.total_amount || 0).toFixed(2)}</strong></td>
+                      </tr>
+                      <tr>
+                        <td colspan="3"><strong>Amount Paid</strong></td>
+                        <td class="amount"><strong>TSh ${Number(invoice.paid_amount || 0).toFixed(2)}</strong></td>
+                      </tr>
+                      <tr>
+                        <td colspan="3"><strong>Balance Due</strong></td>
+                        <td class="amount"><strong>TSh ${Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)).toFixed(2)}</strong></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  
+                  ${invoice.notes ? `<div style="font-size: 11px; color: #6b7280; margin-top: 10px;"><strong>Notes:</strong> ${invoice.notes}</div>` : ''}
+                </div>
+              `;
+            }).join('')}
+            
+            <div class="footer">
+              <p>Hospital Management System - Detailed Invoice Report</p>
+              <p>Total Invoices: ${allInvoices.length} | Total Amount: TSh ${allInvoices.reduce((sum, inv) => sum + Number(inv.total_amount || 0), 0).toFixed(2)} | Total Paid: TSh ${allInvoices.reduce((sum, inv) => sum + Number(inv.paid_amount || 0), 0).toFixed(2)}</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Detailed Invoice Report');
+    } catch (error) {
+      console.error('Error generating detailed invoice report:', error);
+      toast.error('Failed to generate detailed invoice report');
+    }
   };
 
   const printTodaysPaymentsReport = () => {
@@ -1046,121 +1207,171 @@ export default function BillingDashboard() {
     handlePrint(printContent, "Today's Payments Report");
   };
 
-  const printComprehensiveBillingReport = () => {
-    const totalPendingAmount = billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0);
-    const totalPaidAmount = invoices.filter(p => p.status === 'Paid').reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
-    const todaysRevenue = rawPaymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-    const totalClaimsAmount = insuranceClaims.reduce((sum, c) => sum + Number(c.claim_amount || 0), 0);
-    
-    const printContent = `
-      <html>
-        <head>
-          <title>Comprehensive Billing Report</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
-            .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
-            .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }
-            .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
-            .summary-title { font-weight: bold; color: #333; margin-bottom: 5px; }
-            .summary-amount { font-size: 18px; font-weight: bold; color: #2563eb; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f5f5f5; font-weight: bold; }
-            .section-title { font-size: 16px; font-weight: bold; margin: 20px 0 10px 0; color: #333; }
-            .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>Comprehensive Billing Report</h1>
-            <h3>Complete Financial Overview</h3>
-          </div>
-          <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })}</div>
-          
-          <div class="summary">
-            <div class="summary-card">
-              <div class="summary-title">Pending Invoices</div>
-              <div class="summary-amount">TSh ${totalPendingAmount.toFixed(2)}</div>
-              <div>${billingVisits.length} patients awaiting billing</div>
+  const printComprehensiveBillingReport = async () => {
+    try {
+      // Fetch detailed invoice data with items
+      const invoicesWithItemsResponse = await api.get('/billing/invoices');
+      const detailedInvoices = invoicesWithItemsResponse.data.invoices || [];
+      
+      const totalPendingAmount = billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0);
+      const totalPaidAmount = invoices.filter(p => p.status === 'Paid').reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
+      const todaysRevenue = rawPaymentsData.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      const totalClaimsAmount = insuranceClaims.reduce((sum, c) => sum + Number(c.claim_amount || 0), 0);
+      
+      const printContent = `
+        <html>
+          <head>
+            <title>Comprehensive Billing Report with Invoice Details</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+              .date { text-align: right; margin-bottom: 20px; font-size: 12px; }
+              .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 30px; }
+              .summary-card { border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+              .summary-title { font-weight: bold; color: #333; margin-bottom: 5px; }
+              .summary-amount { font-size: 18px; font-weight: bold; color: #2563eb; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .section-title { font-size: 16px; font-weight: bold; margin: 20px 0 10px 0; color: #333; }
+              .footer { margin-top: 30px; text-align: center; font-size: 12px; color: #666; }
+              .invoice-items { font-size: 11px; background: #f8f9fa; padding: 5px; border-radius: 3px; margin: 2px 0; }
+              .item-detail { display: block; margin: 1px 0; }
+              .amount { font-weight: bold; color: #2563eb; }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Comprehensive Billing Report</h1>
+              <h3>Complete Financial Overview with Invoice Details</h3>
             </div>
-            <div class="summary-card">
-              <div class="summary-title">Total Revenue (Paid)</div>
-              <div class="summary-amount">TSh ${totalPaidAmount.toFixed(2)}</div>
-              <div>${invoices.filter(p => p.status === 'Paid').length} paid invoices</div>
+            <div class="date">Generated on: ${new Date().toLocaleDateString('en-US', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            })}</div>
+            
+            <div class="summary">
+              <div class="summary-card">
+                <div class="summary-title">Pending Invoices</div>
+                <div class="summary-amount">TSh ${totalPendingAmount.toFixed(2)}</div>
+                <div>${billingVisits.length} patients awaiting billing</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-title">Total Revenue (Paid)</div>
+                <div class="summary-amount">TSh ${totalPaidAmount.toFixed(2)}</div>
+                <div>${invoices.filter(p => p.status === 'Paid').length} paid invoices</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-title">Today's Revenue</div>
+                <div class="summary-amount">TSh ${todaysRevenue.toFixed(2)}</div>
+                <div>${rawPaymentsData.length} payments today</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-title">Insurance Claims</div>
+                <div class="summary-amount">TSh ${totalClaimsAmount.toFixed(2)}</div>
+                <div>${insuranceClaims.length} claims submitted</div>
+              </div>
             </div>
-            <div class="summary-card">
-              <div class="summary-title">Today's Revenue</div>
-              <div class="summary-amount">TSh ${todaysRevenue.toFixed(2)}</div>
-              <div>${rawPaymentsData.length} payments today</div>
-            </div>
-            <div class="summary-card">
-              <div class="summary-title">Insurance Claims</div>
-              <div class="summary-amount">TSh ${totalClaimsAmount.toFixed(2)}</div>
-              <div>${insuranceClaims.length} claims submitted</div>
-            </div>
-          </div>
 
-          <div class="section-title">Financial Summary</div>
-          <table>
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Count</th>
-                <th>Amount (TSh)</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Pending Invoices</td>
-                <td>${billingVisits.length}</td>
-                <td>${totalPendingAmount.toFixed(2)}</td>
-                <td>Awaiting Billing</td>
-              </tr>
-              <tr>
-                <td>Paid Invoices</td>
-                <td>${invoices.filter(p => p.status === 'Paid').length}</td>
-                <td>${totalPaidAmount.toFixed(2)}</td>
-                <td>Completed</td>
-              </tr>
-              <tr>
-                <td>Today's Payments</td>
-                <td>${rawPaymentsData.length}</td>
-                <td>${todaysRevenue.toFixed(2)}</td>
-                <td>Received Today</td>
-              </tr>
-              <tr>
-                <td>Insurance Claims</td>
-                <td>${insuranceClaims.length}</td>
-                <td>${totalClaimsAmount.toFixed(2)}</td>
-                <td>Submitted</td>
-              </tr>
-              <tr style="background-color: #f9f9f9; font-weight: bold;">
-                <td>Total Revenue</td>
-                <td>${invoices.filter(p => p.status === 'Paid').length + rawPaymentsData.length}</td>
-                <td>${(totalPaidAmount + todaysRevenue).toFixed(2)}</td>
-                <td>All Time</td>
-              </tr>
-            </tbody>
-          </table>
+            <div class="section-title">Detailed Invoice Breakdown</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice #</th>
+                  <th>Patient</th>
+                  <th>Date</th>
+                  <th>Services/Items Used</th>
+                  <th>Total Amount</th>
+                  <th>Paid</th>
+                  <th>Balance</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${detailedInvoices.map(invoice => {
+                  const itemsDisplay = invoice.items && invoice.items.length > 0 
+                    ? invoice.items.map(item => 
+                        `<span class="item-detail">${item.description} (Qty: ${item.quantity || 1}) - TSh${Number(item.total_price || item.unit_price || 0).toFixed(2)}</span>`
+                      ).join('')
+                    : '<span class="item-detail">No detailed items available</span>';
+                  
+                  return `
+                    <tr>
+                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td>${invoice.patient?.full_name || 'Unknown'}</td>
+                      <td>${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</td>
+                      <td class="invoice-items">${itemsDisplay}</td>
+                      <td class="amount">TSh ${Number(invoice.total_amount || 0).toFixed(2)}</td>
+                      <td class="amount">TSh ${Number(invoice.paid_amount || 0).toFixed(2)}</td>
+                      <td class="amount">TSh ${Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)).toFixed(2)}</td>
+                      <td>${invoice.status || 'Pending'}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
 
-          <div class="footer">
-            <p>Hospital Management System - Comprehensive Billing Report</p>
-            <p>Report includes all billing activities, payments, and insurance claims</p>
-          </div>
-        </body>
-      </html>
-    `;
-    
-    handlePrint(printContent, 'Comprehensive Billing Report');
+            <div class="section-title">Financial Summary</div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Count</th>
+                  <th>Amount (TSh)</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Pending Invoices</td>
+                  <td>${billingVisits.length}</td>
+                  <td>${totalPendingAmount.toFixed(2)}</td>
+                  <td>Awaiting Billing</td>
+                </tr>
+                <tr>
+                  <td>Paid Invoices</td>
+                  <td>${invoices.filter(p => p.status === 'Paid').length}</td>
+                  <td>${totalPaidAmount.toFixed(2)}</td>
+                  <td>Completed</td>
+                </tr>
+                <tr>
+                  <td>Today's Payments</td>
+                  <td>${rawPaymentsData.length}</td>
+                  <td>${todaysRevenue.toFixed(2)}</td>
+                  <td>Received Today</td>
+                </tr>
+                <tr>
+                  <td>Insurance Claims</td>
+                  <td>${insuranceClaims.length}</td>
+                  <td>${totalClaimsAmount.toFixed(2)}</td>
+                  <td>Submitted</td>
+                </tr>
+                <tr style="background-color: #f9f9f9; font-weight: bold;">
+                  <td>Total Revenue</td>
+                  <td>${invoices.filter(p => p.status === 'Paid').length + rawPaymentsData.length}</td>
+                  <td>${(totalPaidAmount + todaysRevenue).toFixed(2)}</td>
+                  <td>All Time</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="footer">
+              <p>Hospital Management System - Comprehensive Billing Report with Invoice Details</p>
+              <p>Report includes all billing activities, payments, insurance claims, and detailed service breakdown</p>
+            </div>
+          </body>
+        </html>
+      `;
+      
+      handlePrint(printContent, 'Comprehensive Billing Report with Details');
+    } catch (error) {
+      console.error('Error generating comprehensive billing report:', error);
+      toast.error('Failed to generate comprehensive billing report');
+    }
   };
 
   const printPatientListReport = async () => {
@@ -4482,6 +4693,15 @@ export default function BillingDashboard() {
                     <Printer className="h-6 w-6 mb-2" />
                     <span>Comprehensive Report</span>
                     <span className="text-xs opacity-80">Complete financial overview</span>
+                  </Button>
+
+                  <Button
+                    onClick={() => printDetailedInvoiceReport()}
+                    className="h-20 flex flex-col items-center justify-center bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Printer className="h-6 w-6 mb-2" />
+                    <span>Detailed Invoices</span>
+                    <span className="text-xs opacity-80">Invoice breakdown with services</span>
                   </Button>
 
                   <Button
