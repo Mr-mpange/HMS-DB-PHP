@@ -48,7 +48,7 @@ class LabTestDataSeeder extends Seeder
             'doctor_id' => $doctor->id,
             'visit_date' => now(),
             'chief_complaint' => 'Fever and fatigue for 3 days',
-            'diagnosis' => 'Suspected infection - pending lab results',
+            'provisional_diagnosis' => 'Suspected infection - pending lab results',
             'treatment_plan' => 'Lab tests ordered',
             'vital_signs' => json_encode([
                 'temperature' => '38.5',

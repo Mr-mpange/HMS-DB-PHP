@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { ServiceFormDialog } from '@/components/ServiceFormDialog';
 import { ProvisionalDiagnosisForm } from '@/components/ProvisionalDiagnosisForm';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -30,15 +31,17 @@ interface LabTestResult {
   id: string;
   test_name: string;
   status: string;
-  lab_results: Array<{
+  results?: any; // JSON results data
+  result_value?: string; // Direct result value
+  notes?: string;
+  test_type?: string;
+  lab_results?: Array<{
     id: string;
     result_value: string;
     unit: string;
     abnormal_flag: boolean;
     reference_range?: string;
   }>;
-  notes?: string;
-  test_type?: string;
 }
 
 interface Prescription {
@@ -3790,14 +3793,160 @@ export default function DoctorDashboard() {
 
       {/* Prescription Dialog */}
       <Dialog open={showPrescriptionDialog} onOpenChange={setShowPrescriptionDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-5xl max-h-[95vh] overflow-hidden">
           <DialogHeader>
             <DialogTitle>Write Prescription</DialogTitle>
             <DialogDescription>
               Write a prescription for {selectedVisit?.patient?.full_name}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+          
+          <div className="flex gap-4 h-[calc(95vh-120px)]">
+            {/* Left Panel - Patient Clinical Information */}
+            <div className="w-1/2 border-r pr-4">
+              <ScrollArea className="h-full">
+                <div className="space-y-4">
+                  
+                  {/* Patient Basic Info */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Patient Information</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2 text-sm">
+                      <div><strong>Name:</strong> {selectedVisit?.patient?.full_name}</div>
+                      <div><strong>Age:</strong> {selectedVisit?.patient?.date_of_birth ? 
+                        new Date().getFullYear() - new Date(selectedVisit.patient.date_of_birth).getFullYear() : 'N/A'} years</div>
+                      <div><strong>Gender:</strong> {selectedVisit?.patient?.gender}</div>
+                      <div><strong>Blood Group:</strong> {selectedVisit?.patient?.blood_group || 'N/A'}</div>
+                      {selectedVisit?.patient?.allergies && (
+                        <div className="text-red-600"><strong>⚠ Allergies:</strong> {selectedVisit.patient.allergies}</div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Provisional Diagnosis */}
+                  {selectedVisit?.provisional_diagnosis && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Provisional Diagnosis</CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-sm">
+                        <p>{selectedVisit.provisional_diagnosis}</p>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Clinical Notes */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Clinical Notes</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      
+                      {selectedVisit?.chief_complaint && (
+                        <div>
+                          <strong>Chief Complaint:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.chief_complaint}</p>
+                        </div>
+                      )}
+
+                      {selectedVisit?.chief_complaint_detailed && (
+                        <div>
+                          <strong>Detailed Chief Complaint:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.chief_complaint_detailed}</p>
+                        </div>
+                      )}
+
+                      {selectedVisit?.history_present_illness && (
+                        <div>
+                          <strong>History of Present Illness:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.history_present_illness}</p>
+                        </div>
+                      )}
+
+                      {selectedVisit?.doctor_notes && (
+                        <div>
+                          <strong>Doctor's Notes:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.doctor_notes}</p>
+                        </div>
+                      )}
+
+                      {selectedVisit?.treatment_plan && (
+                        <div>
+                          <strong>Treatment Plan:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.treatment_plan}</p>
+                        </div>
+                      )}
+
+                    </CardContent>
+                  </Card>
+
+                  {/* Medical History */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Medical History</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      
+                      {selectedVisit?.patient?.medical_history && (
+                        <div>
+                          <strong>Past Medical History:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.patient.medical_history}</p>
+                        </div>
+                      )}
+
+                      {selectedVisit?.past_medical_history && (
+                        <div>
+                          <strong>Detailed Past Medical History:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.past_medical_history}</p>
+                        </div>
+                      )}
+
+                      {selectedVisit?.family_social_history && (
+                        <div>
+                          <strong>Family & Social History:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.family_social_history}</p>
+                        </div>
+                      )}
+
+                      {selectedVisit?.review_of_systems && (
+                        <div>
+                          <strong>Review of Systems:</strong>
+                          <p className="mt-1 text-muted-foreground">{selectedVisit.review_of_systems}</p>
+                        </div>
+                      )}
+
+                    </CardContent>
+                  </Card>
+
+                  {/* Vital Signs */}
+                  {selectedVisit?.vital_signs && (
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm">Vital Signs</CardTitle>
+                      </CardHeader>
+                      <CardContent className="text-sm">
+                        <div className="grid grid-cols-2 gap-2">
+                          {typeof selectedVisit.vital_signs === 'object' && selectedVisit.vital_signs && 
+                            Object.entries(selectedVisit.vital_signs).map(([key, value]) => (
+                              <div key={key}>
+                                <strong>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:</strong> {String(value)}
+                              </div>
+                            ))
+                          }
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                </div>
+              </ScrollArea>
+            </div>
+
+            {/* Right Panel - Prescription Form */}
+            <div className="w-1/2">
+              <ScrollArea className="h-full">
+                <div className="space-y-4">
             {/* Medication Selection with Checkboxes */}
             <div className="space-y-2">
               <Label>Select Medications * (Check only what patient needs)</Label>
@@ -3960,17 +4109,22 @@ export default function DoctorDashboard() {
                 </Card>
               );
             })}
-            <div className="flex justify-end gap-2 pt-4 border-t sticky bottom-0 bg-white">
-              <Button variant="outline" onClick={() => setShowPrescriptionDialog(false)}>
-                Cancel
-              </Button>
-              <Button 
-                onClick={submitPrescription}
-                disabled={selectedMedications.length === 0}
-              >
-                Write {selectedMedications.length} Prescription{selectedMedications.length !== 1 ? 's' : ''}
-              </Button>
+                </div>
+              </ScrollArea>
             </div>
+          </div>
+          
+          {/* Dialog Footer */}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button variant="outline" onClick={() => setShowPrescriptionDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={submitPrescription}
+              disabled={selectedMedications.length === 0}
+            >
+              Write {selectedMedications.length} Prescription{selectedMedications.length !== 1 ? 's' : ''}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
