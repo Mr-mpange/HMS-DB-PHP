@@ -150,10 +150,81 @@ export function DispenseDialog({
 
         <div className="space-y-4">
           <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="font-semibold mb-2">Patient Information</h4>
-            <div className="text-sm">
-              <span className="text-muted-foreground">Patient:</span>
-              <span className="ml-2 font-medium">{prescription?.patient?.full_name}</span>
+            <h4 className="font-semibold mb-3">Patient Information</h4>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">Patient:</span>
+                <span className="ml-2 font-medium">{prescription?.patient?.full_name}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Age:</span>
+                <span className="ml-2 font-medium">
+                  {prescription?.patient?.date_of_birth ? 
+                    new Date().getFullYear() - new Date(prescription.patient.date_of_birth).getFullYear() : 'N/A'} years
+                </span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Gender:</span>
+                <span className="ml-2 font-medium">{prescription?.patient?.gender || 'N/A'}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Weight:</span>
+                <span className="ml-2 font-medium">
+                  {prescription?.patient?.weight || 
+                   (prescription?.visit?.vital_signs && typeof prescription.visit.vital_signs === 'object' && prescription.visit.vital_signs.weight) || 
+                   'Not recorded'} 
+                  {(prescription?.patient?.weight || (prescription?.visit?.vital_signs && prescription.visit.vital_signs.weight)) && ' kg'}
+                </span>
+              </div>
+              {prescription?.patient?.allergies && (
+                <div className="col-span-2">
+                  <span className="text-red-600 font-medium">⚠ Allergies:</span>
+                  <span className="ml-2 text-red-600 font-medium">{prescription.patient.allergies}</span>
+                </div>
+              )}
+              {prescription?.patient?.blood_group && (
+                <div>
+                  <span className="text-muted-foreground">Blood Group:</span>
+                  <span className="ml-2 font-medium">{prescription.patient.blood_group}</span>
+                </div>
+              )}
+              {prescription?.provisional_diagnosis && (
+                <div className="col-span-2">
+                  <span className="text-muted-foreground">Diagnosis:</span>
+                  <span className="ml-2 font-medium">{prescription.provisional_diagnosis}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dosing Safety Alerts */}
+          <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+            <h4 className="font-semibold mb-2 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-600" />
+              Dosing Considerations
+            </h4>
+            <div className="text-sm space-y-1">
+              {prescription?.patient?.date_of_birth && (() => {
+                const age = new Date().getFullYear() - new Date(prescription.patient.date_of_birth).getFullYear();
+                if (age < 18) {
+                  return <div className="text-yellow-700">• <strong>Pediatric patient:</strong> Verify pediatric dosing guidelines</div>;
+                } else if (age >= 65) {
+                  return <div className="text-yellow-700">• <strong>Elderly patient:</strong> Consider dose reduction and drug interactions</div>;
+                }
+                return null;
+              })()}
+              
+              {prescription?.patient?.gender === 'Female' && (
+                <div className="text-yellow-700">• <strong>Female patient:</strong> Consider pregnancy status for medication safety</div>
+              )}
+              
+              {prescription?.patient?.allergies && (
+                <div className="text-red-700">• <strong>Known allergies:</strong> {prescription.patient.allergies}</div>
+              )}
+              
+              {!prescription?.patient?.weight && !prescription?.visit?.vital_signs?.weight && (
+                <div className="text-orange-700">• <strong>Weight not recorded:</strong> Consider weight-based dosing if applicable</div>
+              )}
             </div>
           </div>
 
