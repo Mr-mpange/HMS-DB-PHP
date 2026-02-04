@@ -94,10 +94,24 @@ class VisitController extends Controller
             'appointment_id' => 'nullable|uuid|exists:appointments,id',
             'visit_date' => 'required|date',
             'chief_complaint' => 'nullable|string',
-            'diagnosis' => 'nullable|string',
+            'diagnosis' => 'nullable|string', // Keep for backward compatibility
+            'provisional_diagnosis' => 'nullable|string',
             'treatment_plan' => 'nullable|string',
             'vital_signs' => 'nullable|array',
             'notes' => 'nullable|string',
+            // Comprehensive medical history fields
+            'chief_complaint_detailed' => 'nullable|string',
+            'history_present_illness' => 'nullable|string',
+            'review_of_systems' => 'nullable|string',
+            'past_medical_history' => 'nullable|string',
+            'family_social_history' => 'nullable|string',
+            'obstetric_history' => 'nullable|string',
+            'developmental_milestones' => 'nullable|string',
+            'investigation_plan' => 'nullable|string',
+            'final_diagnosis' => 'nullable|string',
+            'treatment_rx' => 'nullable|string',
+            'other_management' => 'nullable|string',
+            'provisional_diagnosis_completed' => 'nullable|boolean',
             // Workflow fields - CRITICAL FIX
             'current_stage' => 'nullable|string',
             'overall_status' => 'nullable|string',
@@ -127,7 +141,8 @@ class VisitController extends Controller
 
         $validated = $request->validate([
             'chief_complaint' => 'nullable|string',
-            'diagnosis' => 'nullable|string',
+            'diagnosis' => 'nullable|string', // Keep for backward compatibility
+            'provisional_diagnosis' => 'nullable|string',
             'treatment_plan' => 'nullable|string',
             'vital_signs' => 'nullable|array',
             'notes' => 'nullable|string',
@@ -135,6 +150,19 @@ class VisitController extends Controller
             'doctor_notes' => 'nullable|string',
             'lab_notes' => 'nullable|string',
             'status' => 'sometimes|in:Active,Completed',
+            // Comprehensive medical history fields
+            'chief_complaint_detailed' => 'nullable|string',
+            'history_present_illness' => 'nullable|string',
+            'review_of_systems' => 'nullable|string',
+            'past_medical_history' => 'nullable|string',
+            'family_social_history' => 'nullable|string',
+            'obstetric_history' => 'nullable|string',
+            'developmental_milestones' => 'nullable|string',
+            'investigation_plan' => 'nullable|string',
+            'final_diagnosis' => 'nullable|string',
+            'treatment_rx' => 'nullable|string',
+            'other_management' => 'nullable|string',
+            'provisional_diagnosis_completed' => 'sometimes|boolean',
             // Workflow fields
             'current_stage' => 'sometimes|string',
             'overall_status' => 'sometimes|string',

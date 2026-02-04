@@ -13,8 +13,13 @@ class PatientVisit extends Model
 
     protected $fillable = [
         'patient_id', 'doctor_id', 'appointment_id', 'visit_date',
-        'chief_complaint', 'diagnosis', 'treatment_plan', 
+        'chief_complaint', 'provisional_diagnosis', 'treatment_plan', 
         'vital_signs', 'notes', 'status',
+        // Comprehensive medical history fields
+        'chief_complaint_detailed', 'history_present_illness', 'review_of_systems',
+        'past_medical_history', 'family_social_history', 'obstetric_history',
+        'developmental_milestones', 'investigation_plan', 'final_diagnosis',
+        'treatment_rx', 'other_management', 'provisional_diagnosis_completed',
         // Workflow fields
         'current_stage', 'overall_status',
         'reception_status', 'reception_completed_at',

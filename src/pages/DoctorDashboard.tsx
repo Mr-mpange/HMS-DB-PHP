@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ServiceFormDialog } from '@/components/ServiceFormDialog';
+import { ProvisionalDiagnosisForm } from '@/components/ProvisionalDiagnosisForm';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/lib/api';
 import { fetchWithCache, invalidateCache } from '@/lib/cache';
@@ -95,6 +96,7 @@ export default function DoctorDashboard() {
   
   // New dialog states for consultation, lab tests, and prescriptions
   const [showConsultationDialog, setShowConsultationDialog] = useState(false);
+  const [showProvisionalDiagnosisForm, setShowProvisionalDiagnosisForm] = useState(false);
   const [showLabTestDialog, setShowLabTestDialog] = useState(false);
   const [showPrescriptionDialog, setShowPrescriptionDialog] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<any>(null);
@@ -1061,7 +1063,12 @@ export default function DoctorDashboard() {
   // Handler for starting consultation
   const handleStartConsultation = async (visit: any) => {
     try {
-      // Update visit status to "In Progress" in database
+      // Show provisional diagnosis form immediately for better UX
+      setSelectedVisit(visit);
+      setShowProvisionalDiagnosisForm(true);
+      toast.success('Consultation started - Complete provisional diagnosis');
+
+      // Update visit status to "In Progress" in background
       const updateData: any = {
         doctor_status: 'In Progress',
         doctor_started_at: new Date().toISOString()
@@ -1073,29 +1080,26 @@ export default function DoctorDashboard() {
         updateData.lab_results_reviewed_at = new Date().toISOString();
       }
       
-      const response = await api.put(`/visits/${visit.id}`, updateData);
+      // Try to update in background, but don't block the UI
+      api.put(`/visits/${visit.id}`, updateData).then(response => {
+        if (response.status === 200) {
+          // Update local state
+          setPendingVisits(prev => prev.map(v => 
+            v.id === visit.id 
+              ? { ...v, ...updateData }
+              : v
+          ));
+        }
+      }).catch(error => {
+        console.warn('Background update failed, but consultation can continue:', error);
+      });
       
-      if (response.status === 200) {
-        // Update local state
-        setPendingVisits(prev => prev.map(v => 
-          v.id === visit.id 
-            ? { ...v, ...updateData }
-            : v
-        ));
-        
-        setSelectedVisit({ ...visit, ...updateData });
-        setConsultationForm({
-          diagnosis: visit.doctor_diagnosis || '',
-          notes: visit.doctor_notes || '',
-          treatment_plan: visit.treatment_plan || ''
-        });
-        
-        setShowConsultationDialog(true);
-        toast.success('Consultation started');
-      }
     } catch (error) {
       console.error('Error starting consultation:', error);
-      toast.error('Failed to start consultation');
+      // Still show the form even if API fails
+      setSelectedVisit(visit);
+      setShowProvisionalDiagnosisForm(true);
+      toast.warning('Consultation started (offline mode)');
     }
   };
 
@@ -1296,10 +1300,57 @@ export default function DoctorDashboard() {
             }
           : v
       );
+
       setPendingVisits(updatedVisits);
+      
+      // Reset form
+      setConsultationForm({ diagnosis: '', notes: '', treatment_plan: '' });
+      
     } catch (error) {
       console.error('Error saving consultation:', error);
       toast.error('Failed to save consultation notes');
+    }
+  };
+
+  // Handle provisional diagnosis form submission
+  const handleProvisionalDiagnosisSubmit = async (formData: any) => {
+    if (!selectedVisit) {
+      toast.error('No visit selected');
+      return;
+    }
+
+    try {
+      // Update visit with comprehensive provisional diagnosis data
+      const response = await api.put(`/visits/${selectedVisit.id}`, {
+        ...formData,
+        doctor_status: formData.provisional_diagnosis_completed ? 'In Consultation' : 'Pending',
+        doctor_consultation_saved_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+      if (response.status !== 200) throw new Error('Failed to update visit');
+
+      toast.success(formData.provisional_diagnosis_completed 
+        ? 'Provisional diagnosis completed. Please order lab tests or write prescription.' 
+        : 'Provisional diagnosis saved successfully.');
+      
+      setShowProvisionalDiagnosisForm(false);
+      
+      // Invalidate cache to fetch fresh data
+      invalidateCache(`doctor_visits_${user?.id}`);
+      
+      // Update the visit data
+      const updatedVisits = pendingVisits.map(v => 
+        v.id === selectedVisit.id 
+          ? { ...v, ...formData, doctor_status: formData.provisional_diagnosis_completed ? 'In Consultation' : 'Pending' }
+          : v
+      );
+
+      setPendingVisits(updatedVisits);
+      
+    } catch (error) {
+      console.error('Error saving provisional diagnosis:', error);
+      toast.error('Failed to save provisional diagnosis');
     }
   };
 
@@ -1581,7 +1632,7 @@ export default function DoctorDashboard() {
         doctor_id: user?.id,
         visit_id: selectedVisit.id || null,
         prescription_date: new Date().toISOString(),
-        diagnosis: selectedVisit.doctor_diagnosis || null,
+        diagnosis: selectedVisit.provisional_diagnosis || selectedVisit.doctor_diagnosis || null,
         notes: selectedVisit.doctor_notes || null,
         items: prescriptionItems
       };
@@ -2676,7 +2727,14 @@ export default function DoctorDashboard() {
                           <TableRow key={visit.id} className="hover:bg-green-50">
                             <TableCell>
                               <div>
-                                <div className="font-medium">{visit.patient?.full_name}</div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{visit.patient?.full_name}</span>
+                                  {visit.provisional_diagnosis && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      {visit.provisional_diagnosis_completed ? 'Diagnosis Complete' : 'Draft'}
+                                    </Badge>
+                                  )}
+                                </div>
                                 <div className="text-xs text-muted-foreground">
                                   {visit.patient?.gender} • {visit.patient?.blood_group || 'N/A'}
                                   {visit.patient?.allergies && (
@@ -2972,6 +3030,32 @@ export default function DoctorDashboard() {
                             <Stethoscope className="h-3 w-3" />
                             Start Consultation
                           </Button>
+                        ) : (visit.provisional_diagnosis || visit.doctor_diagnosis) ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedVisit(visit);
+                              setShowProvisionalDiagnosisForm(true);
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            <FileText className="h-3 w-3" />
+                            Edit Diagnosis
+                          </Button>
+                        ) : (visit.doctor_status === 'In Progress' || visit.doctor_status === 'In Consultation') ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedVisit(visit);
+                              setShowProvisionalDiagnosisForm(true);
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            <FileText className="h-3 w-3" />
+                            Continue Consultation
+                          </Button>
                         ) : (
                           <Button
                             variant="outline"
@@ -2980,7 +3064,7 @@ export default function DoctorDashboard() {
                             className="flex items-center gap-1 opacity-50"
                           >
                             <CheckCircle className="h-3 w-3" />
-                            Consultation In Progress
+                            Consultation Complete
                           </Button>
                         )}
                         {/* Actions for ongoing consultations */}
@@ -3593,6 +3677,15 @@ export default function DoctorDashboard() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Provisional Diagnosis Form */}
+      <ProvisionalDiagnosisForm
+        open={showProvisionalDiagnosisForm}
+        onOpenChange={setShowProvisionalDiagnosisForm}
+        visit={selectedVisit}
+        onSave={handleProvisionalDiagnosisSubmit}
+        loading={false}
+      />
 
       {/* Lab Test Order Dialog */}
       <Dialog open={showLabTestDialog} onOpenChange={setShowLabTestDialog}>

@@ -134,7 +134,7 @@ class CompletePatientJourneySeeder extends Seeder
                 'height' => rand(150, 190),
             ]),
             'nurse_notes' => 'Patient appears stable. Vital signs recorded. Ready for doctor consultation.',
-            'doctor_diagnosis' => $this->getRandomDiagnosis(),
+            'provisional_diagnosis' => $this->getRandomDiagnosis(),
             'doctor_notes' => 'Patient examined thoroughly. Prescribed medications and ordered lab tests for further evaluation.',
             'treatment_plan' => 'Medication therapy, lab tests, follow-up in 2 weeks',
             'reception_status' => 'Completed',
@@ -160,7 +160,7 @@ class CompletePatientJourneySeeder extends Seeder
             'doctor_id' => $doctor->id,
             'visit_id' => $visit->id,
             'prescription_date' => $visitDate->copy()->addMinutes(60),
-            'diagnosis' => $visit->doctor_diagnosis,
+            'diagnosis' => $visit->provisional_diagnosis,
             'notes' => 'Take medications as prescribed. Return if symptoms worsen.',
             'status' => 'Completed',
         ]);
