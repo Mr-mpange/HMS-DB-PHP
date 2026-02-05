@@ -1055,7 +1055,8 @@ export default function AdminDashboard() {
     totalPatients: 0, 
     activeAppointments: 0, 
     totalUsers: 0, 
-    totalServices: 0 
+    totalServices: 0,
+    totalPrescriptions: 0
   });
   const [loading, setLoading] = useState(false);
   const [medicalServices, setMedicalServices] = useState<MedicalService[]>([]);
@@ -1509,10 +1510,8 @@ export default function AdminDashboard() {
     }
 
     try {
-      // Fetch patients from MySQL API
-      const { data: patientsResponse } = await api.get('/patients', {
-        params: { limit: 10 }
-      });
+      // Fetch ALL patients from MySQL API (remove limit)
+      const { data: patientsResponse } = await api.get('/patients');
       const patientsData = patientsResponse.patients || [];
 
       // Fetch users with their roles from MySQL API
@@ -1535,6 +1534,15 @@ export default function AdminDashboard() {
       const { data: appointmentsResponse } = await api.get('/appointments');
       const appointmentsData = appointmentsResponse.appointments || [];
 
+      // Fetch prescriptions from MySQL API
+      let prescriptionsData = [];
+      try {
+        const { data: prescriptionsResponse } = await api.get('/prescriptions');
+        prescriptionsData = prescriptionsResponse.prescriptions || [];
+      } catch (error) {
+        console.warn('Could not fetch prescriptions:', error);
+      }
+
       // Fetch medical services from MySQL API
       let servicesData = [];
       try {
@@ -1550,6 +1558,7 @@ export default function AdminDashboard() {
         a.status !== 'Cancelled' && a.status !== 'Completed'
       ).length;
       const servicesCount = servicesData.length;
+      const prescriptionCount = prescriptionsData.length;
 
       setPatients(patientsData);
       setUsers(usersWithRoles);
@@ -1559,7 +1568,8 @@ export default function AdminDashboard() {
         totalPatients: patientCount,
         activeAppointments: appointmentCount,
         totalUsers: usersData.length,
-        totalServices: servicesCount
+        totalServices: servicesCount,
+        totalPrescriptions: prescriptionCount
       });
       
     } catch (error: any) {
@@ -1576,7 +1586,8 @@ export default function AdminDashboard() {
         totalPatients: 0,
         activeAppointments: 0,
         totalUsers: 0,
-        totalServices: 0
+        totalServices: 0,
+        totalPrescriptions: 0
       });
 
       toast.error(`Failed to load dashboard data: ${error.message}`);
@@ -2168,11 +2179,12 @@ export default function AdminDashboard() {
             <CardDescription>Key metrics</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
               <StatCard title="Patients" value={stats.totalPatients} icon={Users} color="green" sub="Total registered" />
               <StatCard title="Appointments" value={stats.activeAppointments} icon={CalendarIcon} color="blue" sub="Active now" />
               <StatCard title="Users" value={stats.totalUsers} icon={User} color="purple" sub="Platform users" />
               <StatCard title="Services" value={stats.totalServices} icon={ClipboardList} color="orange" sub="Active services" />
+              <StatCard title="Prescriptions" value={stats.totalPrescriptions} icon={Pill} color="teal" sub="Total prescriptions" />
             </div>
           </CardContent>
         </Card>
