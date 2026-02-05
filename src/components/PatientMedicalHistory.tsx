@@ -79,19 +79,19 @@ export function PatientMedicalHistory({ open, onOpenChange, patient }: PatientMe
       // Process visits and extract diagnoses
       const visits = visitsRes.data.visits || [];
       const diagnoses = visits
-        .filter(v => v.diagnosis)
+        .filter(v => v.provisional_diagnosis || v.diagnosis)
         .map(v => ({
           id: v.id,
-          diagnosis: v.diagnosis,
+          diagnosis: v.provisional_diagnosis || v.diagnosis,
           date: v.visit_date,
-          doctor: v.doctor?.name || 'Unknown',
+          doctor: v.doctor?.name || v.doctor?.full_name || 'Unknown',
           notes: v.notes
         }));
 
       // Process lab tests
       const labTests = labTestsRes.data.labTests || labTestsRes.data.tests || [];
       
-      // Process prescriptions
+      // Process prescriptions - they should already include items from the API
       const prescriptions = prescriptionsRes.data.prescriptions || [];
 
       console.log('📊 Processed data:', {
@@ -100,6 +100,11 @@ export function PatientMedicalHistory({ open, onOpenChange, patient }: PatientMe
         prescriptions: prescriptions.length,
         diagnoses: diagnoses.length
       });
+
+      // Log prescription structure for debugging
+      if (prescriptions.length > 0) {
+        console.log('🔍 First prescription structure:', prescriptions[0]);
+      }
 
       setHistoryData({
         visits,
@@ -363,32 +368,101 @@ export function PatientMedicalHistory({ open, onOpenChange, patient }: PatientMe
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Medication</TableHead>
-                          <TableHead>Dosage</TableHead>
-                          <TableHead>Frequency</TableHead>
-                          <TableHead>Duration</TableHead>
-                          <TableHead>Status</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
+                    {historyData.prescriptions.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Pill className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                        <p>No prescriptions found for this patient.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
                         {historyData.prescriptions.map((prescription) => (
-                          <TableRow key={prescription.id}>
-                            <TableCell>
-                              {prescription.prescribed_date ? format(new Date(prescription.prescribed_date), 'MMM dd, yyyy') : 'N/A'}
-                            </TableCell>
-                            <TableCell className="font-medium">{prescription.medication_name}</TableCell>
-                            <TableCell>{prescription.dosage}</TableCell>
-                            <TableCell>{prescription.frequency}</TableCell>
-                            <TableCell>{prescription.duration}</TableCell>
-                            <TableCell>{getStatusBadge(prescription.status)}</TableCell>
-                          </TableRow>
+                          <Card key={prescription.id} className="border-l-4 border-l-green-500">
+                            <CardHeader className="pb-3">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <CardTitle className="text-lg">
+                                    Prescription #{prescription.id.slice(-8)}
+                                  </CardTitle>
+                                  <CardDescription>
+                                    {prescription.prescription_date ? format(new Date(prescription.prescription_date), 'MMM dd, yyyy') : 'N/A'}
+                                    {prescription.doctor && ` • Dr. ${prescription.doctor.name || prescription.doctor.full_name}`}
+                                  </CardDescription>
+                                </div>
+                                {getStatusBadge(prescription.status || 'Active')}
+                              </div>
+                              {prescription.diagnosis && (
+                                <div className="mt-2 p-2 bg-blue-50 rounded text-sm">
+                                  <strong>Diagnosis:</strong> {prescription.diagnosis}
+                                </div>
+                              )}
+                            </CardHeader>
+                            <CardContent>
+                              {prescription.items && prescription.items.length > 0 ? (
+                                <div className="space-y-3">
+                                  <h4 className="font-medium text-sm text-gray-700">Medications:</h4>
+                                  {prescription.items.map((item, index) => (
+                                    <div key={item.id || index} className="flex justify-between items-start p-3 bg-gray-50 rounded">
+                                      <div className="flex-1">
+                                        <div className="font-medium text-sm">{item.medication_name}</div>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                          <span className="mr-4"><strong>Dosage:</strong> {item.dosage}</span>
+                                          <span className="mr-4"><strong>Frequency:</strong> {item.frequency}</span>
+                                          <span><strong>Duration:</strong> {item.duration}</span>
+                                        </div>
+                                        {item.instructions && (
+                                          <div className="text-xs text-gray-600 mt-1">
+                                            <strong>Instructions:</strong> {item.instructions}
+                                          </div>
+                                        )}
+                                      </div>
+                                      {item.quantity && (
+                                        <div className="text-xs text-gray-500 ml-4">
+                                          Qty: {item.quantity}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : prescription.medications && prescription.medications.length > 0 ? (
+                                <div className="space-y-3">
+                                  <h4 className="font-medium text-sm text-gray-700">Medications:</h4>
+                                  {prescription.medications.map((item, index) => (
+                                    <div key={item.id || index} className="flex justify-between items-start p-3 bg-gray-50 rounded">
+                                      <div className="flex-1">
+                                        <div className="font-medium text-sm">{item.medication_name}</div>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                          <span className="mr-4"><strong>Dosage:</strong> {item.dosage}</span>
+                                          <span className="mr-4"><strong>Frequency:</strong> {item.frequency}</span>
+                                          <span><strong>Duration:</strong> {item.duration}</span>
+                                        </div>
+                                        {item.instructions && (
+                                          <div className="text-xs text-gray-600 mt-1">
+                                            <strong>Instructions:</strong> {item.instructions}
+                                          </div>
+                                        )}
+                                      </div>
+                                      {item.quantity && (
+                                        <div className="text-xs text-gray-500 ml-4">
+                                          Qty: {item.quantity}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-sm text-gray-500">No medications listed</div>
+                              )}
+                              
+                              {prescription.notes && (
+                                <div className="mt-3 p-2 bg-yellow-50 rounded text-sm">
+                                  <strong>Notes:</strong> {prescription.notes}
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
                         ))}
-                      </TableBody>
-                    </Table>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
