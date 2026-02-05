@@ -544,6 +544,30 @@ export default function BillingDashboard() {
     </div>
   `;
 
+  // Helper function to generate service description from invoice items
+  const getInvoiceServiceDescription = (invoice: any) => {
+    // Add null/undefined check for invoice
+    if (!invoice) {
+      return 'Medical Services';
+    }
+    
+    if (!invoice.items || invoice.items.length === 0) {
+      return 'Medical Services';
+    }
+    
+    const services = invoice.items.map((item: any) => item.description || item.service_name || 'Service');
+    
+    if (services.length === 1) {
+      return services[0];
+    } else if (services.length === 2) {
+      return services.join(' & ');
+    } else if (services.length <= 4) {
+      return services.slice(0, -1).join(', ') + ' & ' + services[services.length - 1];
+    } else {
+      return services.slice(0, 3).join(', ') + ` & ${services.length - 3} more services`;
+    }
+  };
+
   // Common styles for all reports
   const getReportStyles = () => `
     <style>
@@ -792,6 +816,8 @@ export default function BillingDashboard() {
       .status-active { color: #059669; font-weight: bold; }
       .status-completed { color: #0891b2; font-weight: bold; }
       .status-pending { color: #d97706; font-weight: bold; }
+      .status-processing { color: #7c3aed; font-weight: bold; }
+      .status-progress { color: #0284c7; font-weight: bold; }
       .amount { font-weight: bold; color: #1e40af; }
       
       .footer {
@@ -931,9 +957,10 @@ export default function BillingDashboard() {
     try {
       // Fetch detailed invoice data with items
       const invoicesWithItemsResponse = await api.get('/billing/invoices');
-      const detailedInvoices = invoicesWithItemsResponse.data.invoices || [];
+      const detailedInvoices = (invoicesWithItemsResponse.data.invoices || []).filter(invoice => invoice); // Add null check
       
-      const paidInvoices = detailedInvoices.filter(invoice => invoice.status === 'Paid');
+      const paidInvoices = detailedInvoices
+        .filter(invoice => invoice && invoice.status === 'Paid'); // Add null check
       
       const printContent = `
         <html>
@@ -968,10 +995,10 @@ export default function BillingDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Invoice #</th>
+                  <th>Services</th>
                   <th>Patient Name</th>
                   <th>Phone</th>
-                  <th>Services Used</th>
+                  <th>Service Details</th>
                   <th>Total Amount</th>
                   <th>Paid Amount</th>
                   <th>Invoice Date</th>
@@ -987,7 +1014,7 @@ export default function BillingDashboard() {
                   
                   return `
                     <tr>
-                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td><strong>${getInvoiceServiceDescription(invoice)}</strong></td>
                       <td>${invoice.patient?.full_name || 'Unknown'}</td>
                       <td>${invoice.patient?.phone || 'N/A'}</td>
                       <td class="service-details">${servicesDisplay}</td>
@@ -1024,7 +1051,7 @@ export default function BillingDashboard() {
     try {
       // Fetch all invoices with detailed items
       const invoicesResponse = await api.get('/billing/invoices');
-      const allInvoices = invoicesResponse.data.invoices || [];
+      const allInvoices = (invoicesResponse.data.invoices || []).filter(invoice => invoice); // Add null check
       
       const printContent = `
         <html>
@@ -1072,7 +1099,7 @@ export default function BillingDashboard() {
               return `
                 <div class="invoice-section">
                   <div class="invoice-header">
-                    <div class="invoice-title">Invoice ${invoice.invoice_number || 'N/A'} - ${invoice.patient?.full_name || 'Unknown Patient'}</div>
+                    <div class="invoice-title">${getInvoiceServiceDescription(invoice)} - ${invoice.patient?.full_name || 'Unknown Patient'}</div>
                   </div>
                   
                   <div class="patient-info">
@@ -1211,7 +1238,7 @@ export default function BillingDashboard() {
     try {
       // Fetch detailed invoice data with items
       const invoicesWithItemsResponse = await api.get('/billing/invoices');
-      const detailedInvoices = invoicesWithItemsResponse.data.invoices || [];
+      const detailedInvoices = (invoicesWithItemsResponse.data.invoices || []).filter(invoice => invoice); // Add null check
       
       const totalPendingAmount = billingVisits.reduce((sum, visit) => sum + (patientCosts[visit.patient_id] || 0), 0);
       const totalPaidAmount = invoices.filter(p => p.status === 'Paid').reduce((sum, p) => sum + Number(p.paidAmount || 0), 0);
@@ -1281,10 +1308,10 @@ export default function BillingDashboard() {
             <table>
               <thead>
                 <tr>
-                  <th>Invoice #</th>
+                  <th>Services</th>
                   <th>Patient</th>
                   <th>Date</th>
-                  <th>Services/Items Used</th>
+                  <th>Service Details</th>
                   <th>Total Amount</th>
                   <th>Paid</th>
                   <th>Balance</th>
@@ -1301,7 +1328,7 @@ export default function BillingDashboard() {
                   
                   return `
                     <tr>
-                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td><strong>${getInvoiceServiceDescription(invoice)}</strong></td>
                       <td>${invoice.patient?.full_name || 'Unknown'}</td>
                       <td>${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</td>
                       <td class="invoice-items">${itemsDisplay}</td>
@@ -1612,35 +1639,51 @@ export default function BillingDashboard() {
                 <tbody>
                   ${allLabTests.map(test => {
                     let resultsDisplay = 'Pending';
+                    let statusClass = 'status-pending';
+                    
                     if (test.results) {
+                      statusClass = 'status-completed';
                       try {
                         const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
                         if (parsedResults.results) {
                           // Format the results nicely
                           const resultEntries = Object.entries(parsedResults.results).map(([key, value]: [string, any]) => {
-                            return `${key}: ${value.value} ${value.unit || ''} (${value.status || 'N/A'})`;
+                            const status = value.status || 'Normal';
+                            const statusIcon = status.toLowerCase().includes('abnormal') || status.toLowerCase().includes('high') || status.toLowerCase().includes('low') ? '⚠️' : '✅';
+                            return `${key}: ${value.value} ${value.unit || ''} ${statusIcon}`;
                           }).join('; ');
                           resultsDisplay = resultEntries.length > 150 ? resultEntries.substring(0, 150) + '...' : resultEntries;
                         } else if (parsedResults.interpretation) {
-                          resultsDisplay = parsedResults.interpretation.length > 100 ? parsedResults.interpretation.substring(0, 100) + '...' : parsedResults.interpretation;
+                          resultsDisplay = `📋 ${parsedResults.interpretation.length > 100 ? parsedResults.interpretation.substring(0, 100) + '...' : parsedResults.interpretation}`;
+                        } else if (parsedResults.summary) {
+                          resultsDisplay = `📋 ${parsedResults.summary.length > 100 ? parsedResults.summary.substring(0, 100) + '...' : parsedResults.summary}`;
                         } else {
-                          resultsDisplay = 'Results available';
+                          resultsDisplay = '✅ Results available';
                         }
                       } catch (e) {
                         // If not JSON, display as text
-                        resultsDisplay = test.results.length > 100 ? test.results.substring(0, 100) + '...' : test.results;
+                        resultsDisplay = `📋 ${test.results.length > 100 ? test.results.substring(0, 100) + '...' : test.results}`;
                       }
+                    } else if (test.status === 'Completed') {
+                      resultsDisplay = '⏳ Results being processed';
+                      statusClass = 'status-processing';
+                    } else if (test.status === 'In Progress') {
+                      resultsDisplay = '🔬 Test in progress';
+                      statusClass = 'status-progress';
+                    } else {
+                      resultsDisplay = '⏳ Test pending';
+                      statusClass = 'status-pending';
                     }
                     
                     return `
                     <tr>
-                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                      <td>${test.patient?.full_name || 'Unknown'}</td>
-                      <td>${test.test_name || 'N/A'}</td>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : (test.created_at ? format(new Date(test.created_at), 'MMM dd, yyyy') : 'N/A')}</td>
+                      <td><strong>${test.patient?.full_name || 'Unknown'}</strong></td>
+                      <td><strong>${test.test_name || 'N/A'}</strong></td>
                       <td>${test.test_type || 'N/A'}</td>
-                      <td>${test.status || 'N/A'}</td>
+                      <td class="${statusClass}"><strong>${test.status || 'Pending'}</strong></td>
                       <td style="font-size: 11px;">${resultsDisplay}</td>
-                      <td>${test.doctor?.name || test.doctor?.full_name || 'N/A'}</td>
+                      <td>Dr. ${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
                     </tr>
                   `;
                   }).join('')}
@@ -1861,7 +1904,7 @@ export default function BillingDashboard() {
       const patientPrescriptions = prescriptionsResponse.data.prescriptions || [];
       const patientLabTests = labTestsResponse.data.labTests || [];
       const patientPayments = paymentsResponse.data.payments || [];
-      const patientInvoices = invoicesResponse.data.invoices || [];
+      const patientInvoices = (invoicesResponse.data.invoices || []).filter(invoice => invoice); // Add null check
       const allMedications = medicationsResponse.data.medications || [];
       const allPrescriptionItems = prescriptionItemsResponse.data.prescription_items || [];
       
@@ -2033,37 +2076,53 @@ export default function BillingDashboard() {
                 <tbody>
                   ${patientLabTests.length > 0 ? patientLabTests.map(test => {
                     let resultsDisplay = 'Pending';
+                    let statusClass = 'status-pending';
+                    
                     if (test.results) {
+                      statusClass = 'status-completed';
                       try {
                         const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
                         if (parsedResults.results) {
                           // Format the results nicely
                           const resultEntries = Object.entries(parsedResults.results).map(([key, value]: [string, any]) => {
-                            return `${key}: ${value.value} ${value.unit || ''} (${value.status || 'N/A'})`;
-                          }).join('; ');
+                            const status = value.status || 'Normal';
+                            const statusIcon = status.toLowerCase().includes('abnormal') || status.toLowerCase().includes('high') || status.toLowerCase().includes('low') ? '⚠️' : '✅';
+                            return `${key}: ${value.value} ${value.unit || ''} ${statusIcon}`;
+                          }).join('<br>');
                           resultsDisplay = resultEntries;
                         } else if (parsedResults.interpretation) {
-                          resultsDisplay = parsedResults.interpretation;
+                          resultsDisplay = `📋 ${parsedResults.interpretation}`;
+                        } else if (parsedResults.summary) {
+                          resultsDisplay = `📋 ${parsedResults.summary}`;
                         } else {
-                          resultsDisplay = 'Results available';
+                          resultsDisplay = '✅ Results available - See detailed report';
                         }
                       } catch (e) {
                         // If not JSON, display as text
-                        resultsDisplay = test.results;
+                        resultsDisplay = `📋 ${test.results}`;
                       }
+                    } else if (test.status === 'Completed') {
+                      resultsDisplay = '⏳ Results being processed';
+                      statusClass = 'status-processing';
+                    } else if (test.status === 'In Progress') {
+                      resultsDisplay = '🔬 Test in progress';
+                      statusClass = 'status-progress';
+                    } else {
+                      resultsDisplay = '⏳ Test pending';
+                      statusClass = 'status-pending';
                     }
                     
                     return `
                     <tr>
-                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                      <td>${test.test_name || 'N/A'}</td>
-                      <td>${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
-                      <td class="status-${(test.status || 'pending').toLowerCase()}">${test.status || 'N/A'}</td>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : (test.created_at ? format(new Date(test.created_at), 'MMM dd, yyyy') : 'N/A')}</td>
+                      <td><strong>${test.test_name || 'N/A'}</strong></td>
+                      <td>Dr. ${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
+                      <td class="${statusClass}"><strong>${test.status || 'Pending'}</strong></td>
                       <td>${resultsDisplay}</td>
                       <td>${test.normal_range || 'N/A'}</td>
                     </tr>
                   `;
-                  }).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No lab tests recorded</td></tr>'}
+                  }).join('') : '<tr><td colspan="6" style="text-align: center; color: #6b7280; padding: 20px;"><em>No laboratory tests recorded for this patient</em></td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -2074,7 +2133,7 @@ export default function BillingDashboard() {
                 <thead>
                   <tr>
                     <th>Invoice Date</th>
-                    <th>Invoice Number</th>
+                    <th>Services</th>
                     <th>Total Amount</th>
                     <th>Paid Amount</th>
                     <th>Balance</th>
@@ -2085,7 +2144,7 @@ export default function BillingDashboard() {
                   ${patientInvoices.length > 0 ? patientInvoices.map(invoice => `
                     <tr>
                       <td>${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td><strong>${getInvoiceServiceDescription(invoice)}</strong></td>
                       <td class="amount">TSh ${Number(invoice.total_amount || 0).toFixed(2)}</td>
                       <td class="amount">TSh ${Number(invoice.paid_amount || 0).toFixed(2)}</td>
                       <td class="amount">TSh ${Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)).toFixed(2)}</td>
@@ -2357,36 +2416,52 @@ export default function BillingDashboard() {
                 <tbody>
                   ${patientLabTests.length > 0 ? patientLabTests.map(test => {
                     let resultsDisplay = 'Pending';
+                    let statusClass = 'status-pending';
+                    
                     if (test.results) {
+                      statusClass = 'status-completed';
                       try {
                         const parsedResults = typeof test.results === 'string' ? JSON.parse(test.results) : test.results;
                         if (parsedResults.results) {
                           // Format the results nicely
                           const resultEntries = Object.entries(parsedResults.results).map(([key, value]: [string, any]) => {
-                            return `${key}: ${value.value} ${value.unit || ''} (${value.status || 'N/A'})`;
-                          }).join('; ');
+                            const status = value.status || 'Normal';
+                            const statusIcon = status.toLowerCase().includes('abnormal') || status.toLowerCase().includes('high') || status.toLowerCase().includes('low') ? '⚠️' : '✅';
+                            return `${key}: ${value.value} ${value.unit || ''} ${statusIcon}`;
+                          }).join('<br>');
                           resultsDisplay = resultEntries;
                         } else if (parsedResults.interpretation) {
-                          resultsDisplay = parsedResults.interpretation;
+                          resultsDisplay = `📋 ${parsedResults.interpretation}`;
+                        } else if (parsedResults.summary) {
+                          resultsDisplay = `📋 ${parsedResults.summary}`;
                         } else {
-                          resultsDisplay = 'Results available';
+                          resultsDisplay = '✅ Results available - See detailed report';
                         }
                       } catch (e) {
                         // If not JSON, display as text
-                        resultsDisplay = test.results;
+                        resultsDisplay = `📋 ${test.results}`;
                       }
+                    } else if (test.status === 'Completed') {
+                      resultsDisplay = '⏳ Results being processed';
+                      statusClass = 'status-processing';
+                    } else if (test.status === 'In Progress') {
+                      resultsDisplay = '🔬 Test in progress';
+                      statusClass = 'status-progress';
+                    } else {
+                      resultsDisplay = '⏳ Test pending';
+                      statusClass = 'status-pending';
                     }
                     
                     return `
                     <tr>
-                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                      <td>${test.test_name || 'N/A'}</td>
-                      <td>${test.doctor?.name || 'Unknown'}</td>
-                      <td>${test.status || 'N/A'}</td>
+                      <td>${test.test_date ? format(new Date(test.test_date), 'MMM dd, yyyy') : (test.created_at ? format(new Date(test.created_at), 'MMM dd, yyyy') : 'N/A')}</td>
+                      <td><strong>${test.test_name || 'N/A'}</strong></td>
+                      <td>Dr. ${test.doctor?.name || test.doctor?.full_name || 'Unknown'}</td>
+                      <td class="${statusClass}"><strong>${test.status || 'Pending'}</strong></td>
                       <td>${resultsDisplay}</td>
                     </tr>
                   `;
-                  }).join('') : '<tr><td colspan="5" style="text-align: center;">No lab tests recorded</td></tr>'}
+                  }).join('') : '<tr><td colspan="5" style="text-align: center; color: #6b7280; padding: 20px;"><em>No laboratory tests recorded for this patient</em></td></tr>'}
                 </tbody>
               </table>
             </div>
@@ -2453,7 +2528,7 @@ export default function BillingDashboard() {
       ]);
       
       const patientPayments = paymentsResponse.data.payments || [];
-      const patientInvoices = invoicesResponse.data.invoices || [];
+      const patientInvoices = (invoicesResponse.data.invoices || []).filter(invoice => invoice); // Add null check
 
       // Verify data belongs to correct patient
       const invalidPayments = patientPayments.filter(p => p.patient_id !== patient.id);
@@ -2526,7 +2601,7 @@ export default function BillingDashboard() {
                 <thead>
                   <tr>
                     <th>Invoice Date</th>
-                    <th>Invoice Number</th>
+                    <th>Services</th>
                     <th>Total Amount</th>
                     <th>Paid Amount</th>
                     <th>Balance</th>
@@ -2537,7 +2612,7 @@ export default function BillingDashboard() {
                   ${patientInvoices.length > 0 ? patientInvoices.map(invoice => `
                     <tr>
                       <td>${invoice.invoice_date ? format(new Date(invoice.invoice_date), 'MMM dd, yyyy') : 'N/A'}</td>
-                      <td>${invoice.invoice_number || 'N/A'}</td>
+                      <td><strong>${getInvoiceServiceDescription(invoice)}</strong></td>
                       <td class="amount">TSh ${Number(invoice.total_amount || 0).toFixed(2)}</td>
                       <td class="amount">TSh ${Number(invoice.paid_amount || 0).toFixed(2)}</td>
                       <td class="amount">TSh ${Number((invoice.total_amount || 0) - (invoice.paid_amount || 0)).toFixed(2)}</td>
@@ -3401,7 +3476,7 @@ export default function BillingDashboard() {
         // Don't fail the whole operation if visit update fails
       }
       
-      toast.success(`Invoice ${createdInvoice.invoice_number} created for TSh${calculatedCost.toFixed(2)} (${patientServicesList.length} items)`);
+      toast.success(`Invoice created for ${getInvoiceServiceDescription(createdInvoice)} - TSh${calculatedCost.toFixed(2)} (${invoiceItems.length} items)`);
       setDialogOpen(false);
       setSelectedPatientId('');
       
@@ -3515,7 +3590,7 @@ export default function BillingDashboard() {
         patientId: patientId,
         paymentType: 'Invoice Payment',
         paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-        description: `Payment for invoice ${actualInvoice.invoice_number} - Patient: ${actualInvoice.patient?.full_name || 'Unknown'}`
+        description: `Payment for ${getInvoiceServiceDescription(actualInvoice)} - Patient: ${actualInvoice.patient?.full_name || 'Unknown'}`
       };
 
       const response = await mobilePaymentService.initiatePayment(paymentRequest);
@@ -3743,8 +3818,8 @@ export default function BillingDashboard() {
       amount,
       payment_method: paymentMethod,
       payment_date: new Date().toISOString(),
-      reference_number: formData.get('referenceNumber') as string || `PAY-${actualInvoice.invoice_number}-${Date.now().toString().slice(-6)}` || null,
-      notes: formData.get('notes') as string || `Payment for ${actualInvoice.invoice_number} - Patient: ${actualInvoice.patient?.full_name || 'Unknown'} - Services: ${actualInvoice.items?.map((item: any) => item.description).join(', ') || 'Medical services'}`,
+      reference_number: formData.get('referenceNumber') as string || `PAY-${getInvoiceServiceDescription(actualInvoice).replace(/[^A-Z0-9]/g, '').substring(0, 10)}-${Date.now().toString().slice(-6)}` || null,
+      notes: formData.get('notes') as string || `Payment for ${getInvoiceServiceDescription(actualInvoice)} - Patient: ${actualInvoice.patient?.full_name || 'Unknown'}`,
       status: 'Completed',
     };
 
@@ -4796,7 +4871,7 @@ export default function BillingDashboard() {
                   
                   return (
                     <>
-                      Record payment for invoice {actualInvoice?.invoice_number}
+                      Record payment for {actualInvoice ? getInvoiceServiceDescription(actualInvoice) : 'Medical Services'}
                       <div className="mt-2 text-xs text-gray-500">
                         Patient ID: {patientId || 'Not found'}
                       </div>
@@ -5229,7 +5304,7 @@ export default function BillingDashboard() {
                             .filter(inv => inv.status !== 'Paid')
                             .map(invoice => (
                               <SelectItem key={invoice.id} value={invoice.id}>
-                                {invoice.invoice_number} - {patientData.patient?.full_name || 'Unknown'} (TSh{Number(invoice.total_amount).toFixed(2)})
+                                {getInvoiceServiceDescription(invoice)} - {patientData.patient?.full_name || 'Unknown'} (TSh{Number(invoice.total_amount).toFixed(2)})
                               </SelectItem>
                             ))}
                         </Fragment>
@@ -5331,7 +5406,7 @@ export default function BillingDashboard() {
                   <h4 className="font-medium text-green-900 mb-3">Invoice Information</h4>
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <span className="font-medium">Invoice Number:</span> {selectedInvoiceDetails.invoice_number || 'N/A'}
+                      <span className="font-medium">Services:</span> {getInvoiceServiceDescription(selectedInvoiceDetails)}
                     </div>
                     <div>
                       <span className="font-medium">Invoice Date:</span> {
@@ -5763,7 +5838,7 @@ export default function BillingDashboard() {
                       <div key={invoice.id} className="border rounded-lg p-4 hover:bg-gray-50">
                         <div className="flex justify-between items-start mb-2">
                           <div>
-                            <h6 className="font-medium">{invoice.invoice_number}</h6>
+                            <h6 className="font-medium">{getInvoiceServiceDescription(invoice)}</h6>
                             <p className="text-sm text-gray-600">
                               Date: {format(new Date(invoice.invoice_date), 'MMM dd, yyyy')}
                             </p>
@@ -5848,7 +5923,7 @@ export default function BillingDashboard() {
                       .filter((inv: any) => inv.status !== 'Paid')
                       .map((invoice: any, index: number) => (
                         <div key={invoice.id} className="flex justify-between">
-                          <span>Invoice #{invoice.invoice_number}</span>
+                          <span>{getInvoiceServiceDescription(invoice)}</span>
                           <span>TSh{(Number(invoice.total_amount) - Number(invoice.paid_amount || 0)).toFixed(2)}</span>
                         </div>
                       ))}
