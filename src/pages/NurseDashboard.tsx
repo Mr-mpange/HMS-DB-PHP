@@ -3024,6 +3024,38 @@ export default function NurseDashboard() {
               Cancel
             </Button>
             
+            {/* Print Lab Report Button - with billing check */}
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={async () => {
+                if (!selectedVisitForResults?.patient || !labTestResults.length) {
+                  toast.error('No lab results to print');
+                  return;
+                }
+
+                // Check billing status before printing
+                try {
+                  const { checkBillingBeforePrint } = await import('@/utils/billingCheck');
+                  const canPrint = await checkBillingBeforePrint(selectedVisitForResults.patient.id);
+                  
+                  if (!canPrint) {
+                    return; // Billing check failed, don't print
+                  }
+                } catch (error) {
+                  console.error('Error checking billing status:', error);
+                  toast.error('Unable to verify billing status');
+                  return;
+                }
+
+                // Print the lab report
+                printLabReport(selectedVisitForResults.patient, labTestResults);
+              }}
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              Print Report
+            </Button>
+            
             {/* All patients must go to billing - no free results */}
             <Button
               className="flex-1"
