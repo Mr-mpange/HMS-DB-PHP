@@ -1422,7 +1422,7 @@ export default function BillingDashboard() {
               <tbody>
                 ${allPatients.map(patient => `
                   <tr>
-                    <td class="patient-id">${patient.id}</td>
+                    <td class="patient-id">${patient.id.substring(0, 8).toUpperCase()}...</td>
                     <td>${patient.full_name || 'N/A'}</td>
                     <td>${patient.phone || 'N/A'}</td>
                     <td>${patient.email || 'N/A'}</td>
@@ -1920,9 +1920,9 @@ export default function BillingDashboard() {
             <div class="patient-info">
               <h3>👤 Patient Information</h3>
               <div class="patient-details">
-                <p><strong>Patient ID:</strong> <span class="patient-id">${patient.id}</span></p>
+                <p><strong>Patient ID:</strong> <span class="patient-id">${patient.full_name} (${patient.phone})</span></p>
                 <p><strong>Full Name:</strong> ${patient.full_name || 'N/A'}</p>
-                <p><strong>Patient ID:</strong> ${patient.id.substring(0, 8)}...</p>
+                <p><strong>Patient Reference:</strong> ${patient.id.substring(0, 8).toUpperCase()}...</p>
                 <p><strong>Phone:</strong> ${patient.phone || 'N/A'}</p>
                 <p><strong>Email:</strong> ${patient.email || 'N/A'}</p>
                 <p><strong>Date of Birth:</strong> ${patient.date_of_birth ? format(new Date(patient.date_of_birth), 'MMMM dd, yyyy') : 'N/A'}</p>
@@ -2145,7 +2145,7 @@ export default function BillingDashboard() {
                 </div>
                 <div>
                   Patient: ${patient.full_name}<br>
-                  ID: ${patient.id.substring(0, 8)}...
+                  Reference: ${patient.id.substring(0, 8).toUpperCase()}...
                 </div>
                 <div>
                   Generated: ${new Date().toLocaleDateString()}<br>
@@ -2405,7 +2405,7 @@ export default function BillingDashboard() {
                 </div>
                 <div>
                   Patient: ${patient.full_name}<br>
-                  ID: ${patient.id.substring(0, 8)}...
+                  Reference: ${patient.id.substring(0, 8).toUpperCase()}...
                 </div>
                 <div>
                   Generated: ${new Date().toLocaleDateString()}<br>
@@ -2588,7 +2588,7 @@ export default function BillingDashboard() {
                 </div>
                 <div>
                   Patient: ${patient.full_name}<br>
-                  ID: ${patient.id.substring(0, 8)}...
+                  Reference: ${patient.id.substring(0, 8).toUpperCase()}...
                 </div>
                 <div>
                   Generated: ${new Date().toLocaleDateString()}<br>
@@ -3210,7 +3210,7 @@ export default function BillingDashboard() {
             patientId: patientId,
             paymentType: 'Invoice Payment',
             paymentMethod: payAllPaymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-            description: `Bulk payment for ${unpaidInvoices.length} invoices`
+            description: `Bulk payment for ${unpaidInvoices.length} invoices - Patient: ${patientData.patient.full_name}`
           };
 
           const response = await mobilePaymentService.initiatePayment(paymentRequest);
@@ -3246,8 +3246,8 @@ export default function BillingDashboard() {
         amount: totalAmount,
         payment_method: payAllPaymentMethod,
         payment_date: new Date().toISOString(),
-        reference_number: `BULK-${Date.now()}`,
-        notes: `Bulk payment for ${unpaidInvoices.length} invoices`,
+        reference_number: `BULK-${patientData.patient.full_name.replace(/\s+/g, '').substring(0, 8).toUpperCase()}-${Date.now().toString().slice(-6)}`,
+        notes: `Bulk payment for ${unpaidInvoices.length} invoices - Patient: ${patientData.patient.full_name}`,
         status: 'Completed',
       };
 
@@ -3298,8 +3298,6 @@ export default function BillingDashboard() {
       return;
     }
 
-    const calculatedCost = patientCosts[selectedPatientId] || 50000; // Fallback to default if no services
-
     // Get patient services for invoice items (exclude consultation - already paid at registration)
     const patientServicesList = patientServices.filter((s: any) => {
       if (s.patient_id !== selectedPatientId) return false;
@@ -3309,6 +3307,54 @@ export default function BillingDashboard() {
       const isConsultation = serviceType.toLowerCase().includes('consultation');
       return !isConsultation;
     });
+
+    // Calculate total cost from actual services (no fallback)
+    let calculatedCost = 0;
+    const invoiceItems = [];
+
+    for (const service of patientServicesList) {
+      const unitPrice = Number(service.service?.base_price || service.unit_price || service.price || 0);
+      const quantity = Number(service.quantity || 1);
+      const totalPrice = Number(service.total_price || (unitPrice * quantity));
+      
+      if (unitPrice <= 0) {
+        console.warn('Service with zero or missing price:', service);
+        // Set a default price for services without pricing
+        const defaultPrice = service.service?.service_type?.toLowerCase().includes('lab') ? 5000 : 2000;
+        calculatedCost += defaultPrice * quantity;
+        
+        invoiceItems.push({
+          service_id: service.service_id,
+          service_name: service.service?.service_name || service.service_name || 'Medical Service',
+          description: `${service.service?.service_name || service.service_name || 'Medical Service'} (Default pricing applied)`,
+          quantity: quantity,
+          unit_price: defaultPrice,
+          total_price: defaultPrice * quantity
+        });
+      } else {
+        calculatedCost += totalPrice;
+        
+        invoiceItems.push({
+          service_id: service.service_id,
+          service_name: service.service?.service_name || service.service_name || 'Medical Service',
+          description: service.service?.service_name || service.service_name || 'Medical Service',
+          quantity: quantity,
+          unit_price: unitPrice,
+          total_price: totalPrice
+        });
+      }
+    }
+
+    // Ensure we have services to bill
+    if (patientServicesList.length === 0) {
+      toast.error('No billable services found for this patient. Please ensure services have been added.');
+      return;
+    }
+
+    if (calculatedCost <= 0) {
+      toast.error('Total amount must be greater than zero. Please check service pricing.');
+      return;
+    }
 
     const invoiceNumber = await generateInvoiceNumber();
 
@@ -3320,15 +3366,8 @@ export default function BillingDashboard() {
       status: 'Pending',
       invoice_date: new Date().toISOString().split('T')[0], // Send as date only (YYYY-MM-DD)
       due_date: formData.get('dueDate') as string || null,
-      notes: formData.get('notes') as string || `Invoice for ${patientServicesList.length} service(s) - Total: TSh${calculatedCost.toFixed(2)}`,
-      items: patientServicesList.map((service: any) => ({
-        service_id: service.service_id,
-        service_name: service.service?.service_name || service.service_name || 'Medical Service',
-        description: service.service?.service_name || service.service_name || 'Medical Service',
-        quantity: service.quantity || 1,
-        unit_price: Number(service.service?.base_price || service.unit_price || service.price || 0),
-        total_price: Number(service.total_price || (service.service?.base_price || service.unit_price || service.price || 0) * (service.quantity || 1))
-      }))
+      notes: formData.get('notes') as string || `Invoice for ${invoiceItems.length} service(s) - Patient: ${patients.find(p => p.id === selectedPatientId)?.full_name || 'Unknown'} - Services: ${invoiceItems.map(item => item.service_name).join(', ')} - Total: TSh${calculatedCost.toFixed(2)}`,
+      items: invoiceItems
     };
 
     try {
@@ -3476,7 +3515,7 @@ export default function BillingDashboard() {
         patientId: patientId,
         paymentType: 'Invoice Payment',
         paymentMethod: paymentMethod as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-        description: `Payment for invoice ${actualInvoice.invoice_number}`
+        description: `Payment for invoice ${actualInvoice.invoice_number} - Patient: ${actualInvoice.patient?.full_name || 'Unknown'}`
       };
 
       const response = await mobilePaymentService.initiatePayment(paymentRequest);
@@ -3704,15 +3743,30 @@ export default function BillingDashboard() {
       amount,
       payment_method: paymentMethod,
       payment_date: new Date().toISOString(),
-      reference_number: formData.get('referenceNumber') as string || actualInvoice.invoice_number || null,
-      notes: formData.get('notes') as string || `Payment for ${actualInvoice.invoice_number} - Services: ${actualInvoice.items?.map((item: any) => item.description).join(', ') || 'Medical services'}`,
+      reference_number: formData.get('referenceNumber') as string || `PAY-${actualInvoice.invoice_number}-${Date.now().toString().slice(-6)}` || null,
+      notes: formData.get('notes') as string || `Payment for ${actualInvoice.invoice_number} - Patient: ${actualInvoice.patient?.full_name || 'Unknown'} - Services: ${actualInvoice.items?.map((item: any) => item.description).join(', ') || 'Medical services'}`,
       status: 'Completed',
     };
 
     console.log('Payment data being sent:', paymentData);
 
     try {
-      await api.post('/payments', paymentData);
+      const paymentResponse = await api.post('/payments', paymentData);
+      console.log('Payment created successfully:', paymentResponse.data);
+      
+      // Refresh invoice data to get updated amounts
+      const updatedInvoiceResponse = await api.get(`/billing/invoices/${actualInvoice.id}`);
+      const updatedInvoice = updatedInvoiceResponse.data.invoice;
+      
+      console.log('Updated invoice after payment:', updatedInvoice);
+      
+      // Update local invoice data
+      setRawInvoicesData(prev => prev.map(inv => 
+        inv.id === actualInvoice.id ? updatedInvoice : inv
+      ));
+      
+      toast.success(`Payment of TSh${amount.toFixed(2)} recorded successfully!`);
+      
     } catch (error: any) {
       console.error('Payment error:', error);
       const errorMessage = error.response?.data?.message || error.message || 'Failed to record payment';

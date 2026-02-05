@@ -95,6 +95,20 @@ class PaymentController extends Controller
                     ], 422);
                 }
                 
+                // Prevent overpayment
+                $currentBalance = $invoice->total_amount - $invoice->paid_amount;
+                if ($validated['amount'] > $currentBalance) {
+                    \Log::error('Payment amount exceeds remaining balance', [
+                        'payment_amount' => $validated['amount'],
+                        'remaining_balance' => $currentBalance,
+                        'invoice_id' => $validated['invoice_id']
+                    ]);
+                    return response()->json([
+                        'message' => "Payment amount (TSh{$validated['amount']}) exceeds remaining balance (TSh{$currentBalance})",
+                        'error' => 'payment_exceeds_balance'
+                    ], 422);
+                }
+                
                 $oldPaidAmount = $invoice->paid_amount;
                 $invoice->paid_amount += $validated['amount'];
                 $invoice->balance = $invoice->total_amount - $invoice->paid_amount;
