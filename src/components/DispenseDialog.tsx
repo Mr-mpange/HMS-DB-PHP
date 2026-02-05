@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, CheckCircle, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Plus, Trash2, X, Package, Pill } from 'lucide-react';
 
 interface DispenseDialogProps {
   open: boolean;
@@ -28,6 +28,7 @@ export function DispenseDialog({
   
   const [editableMedications, setEditableMedications] = useState<any[]>([]);
   const [notes, setNotes] = useState('');
+  const [medicationSearchTerms, setMedicationSearchTerms] = useState<{[key: number]: string}>({});
 
   useEffect(() => {
     const prescriptionItems = prescription?.items || prescription?.medications || [];
@@ -269,43 +270,192 @@ export function DispenseDialog({
                   <div className="space-y-3">
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
-                        <Label className="text-xs">Medication</Label>
+                        <Label className="text-xs flex items-center gap-1">
+                          <Pill className="h-3 w-3" />
+                          Medication
+                          <span className="text-muted-foreground">(Search by name, strength, or form)</span>
+                        </Label>
                         {stockAvailable === 0 && (
                           <span className="text-xs text-red-600 font-medium">Out of Stock!</span>
                         )}
                       </div>
                       <Select
                         value={med.medication_id}
-                        onValueChange={(value) => updateMedication(index, 'medication_id', value)}
+                        onValueChange={(value) => {
+                          updateMedication(index, 'medication_id', value);
+                          // Clear search term after selection
+                          setMedicationSearchTerms(prev => ({ ...prev, [index]: '' }));
+                        }}
                       >
-                        <SelectTrigger className="h-9">
-                          <SelectValue placeholder="Select medication" />
+                        <SelectTrigger className="h-10">
+                          <SelectValue placeholder="🔍 Click to search and select medication..." />
                         </SelectTrigger>
-                        <SelectContent>
-                          {medications.map((medication) => (
-                            <SelectItem 
-                              key={medication.id} 
-                              value={medication.id}
-                              disabled={medication.stock_quantity === 0}
-                            >
-                              <div className="flex items-center justify-between w-full">
-                                <div className={medication.stock_quantity === 0 ? 'text-gray-400' : ''}>
-                                  <div className="font-medium">{medication.name}</div>
-                                  {medication.strength && (
-                                    <div className="text-xs text-muted-foreground">
-                                      {medication.strength} {medication.dosage_form || ''}
-                                    </div>
-                                  )}
-                                </div>
-                                <span className={'text-xs ml-2 ' + (
-                                  medication.stock_quantity === 0 ? 'text-red-500' : 
-                                  medication.stock_quantity <= 5 ? 'text-orange-500' : 'text-green-600'
-                                )}>
-                                  Stock: {medication.stock_quantity}
-                                </span>
+                        <SelectContent className="max-h-[400px] w-[600px]">
+                          <div className="sticky top-0 bg-white p-3 border-b shadow-sm">
+                            <div className="relative">
+                              <Input
+                                placeholder="🔍 Type medication name, strength, or form..."
+                                value={medicationSearchTerms[index] || ''}
+                                onChange={(e) => setMedicationSearchTerms(prev => ({ ...prev, [index]: e.target.value }))}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-10 pr-10 text-base"
+                                autoFocus
+                              />
+                              {medicationSearchTerms[index] && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMedicationSearchTerms(prev => ({ ...prev, [index]: '' }));
+                                  }}
+                                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                            {medicationSearchTerms[index] && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                {medications.filter(medication => {
+                                  const searchTerm = medicationSearchTerms[index]?.toLowerCase() || '';
+                                  return (
+                                    medication.name.toLowerCase().includes(searchTerm) ||
+                                    (medication.generic_name && medication.generic_name.toLowerCase().includes(searchTerm)) ||
+                                    (medication.strength && medication.strength.toLowerCase().includes(searchTerm)) ||
+                                    (medication.dosage_form && medication.dosage_form.toLowerCase().includes(searchTerm))
+                                  );
+                                }).length} medications found
                               </div>
-                            </SelectItem>
-                          ))}
+                            )}
+                          </div>
+                          
+                          <div className="max-h-[300px] overflow-y-auto">
+                            {medications
+                              .filter(medication => {
+                                const searchTerm = medicationSearchTerms[index]?.toLowerCase() || '';
+                                if (!searchTerm) return true;
+                                return (
+                                  medication.name.toLowerCase().includes(searchTerm) ||
+                                  (medication.generic_name && medication.generic_name.toLowerCase().includes(searchTerm)) ||
+                                  (medication.strength && medication.strength.toLowerCase().includes(searchTerm)) ||
+                                  (medication.dosage_form && medication.dosage_form.toLowerCase().includes(searchTerm))
+                                );
+                              })
+                              .sort((a, b) => {
+                                // Sort by stock quantity (in stock first)
+                                const stockA = a.stock_quantity || 0;
+                                const stockB = b.stock_quantity || 0;
+                                if (stockA > 0 && stockB === 0) return -1;
+                                if (stockA === 0 && stockB > 0) return 1;
+                                return a.name.localeCompare(b.name);
+                              })
+                              .map((medication) => {
+                                const stock = medication.stock_quantity || 0;
+                                const isLowStock = stock > 0 && stock <= 10;
+                                const isOutOfStock = stock === 0;
+                                
+                                return (
+                                  <SelectItem 
+                                    key={medication.id} 
+                                    value={medication.id}
+                                    disabled={isOutOfStock}
+                                    className={`p-3 ${isOutOfStock ? 'opacity-50' : ''}`}
+                                  >
+                                    <div className="flex items-center justify-between w-full">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <span className="font-medium">{medication.name}</span>
+                                          {medication.strength && (
+                                            <Badge variant="outline" className="text-xs">
+                                              {medication.strength}
+                                            </Badge>
+                                          )}
+                                          {isOutOfStock && (
+                                            <Badge variant="destructive" className="text-xs">
+                                              Out of Stock
+                                            </Badge>
+                                          )}
+                                          {isLowStock && (
+                                            <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">
+                                              Low Stock
+                                            </Badge>
+                                          )}
+                                          {stock > 10 && (
+                                            <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                                              In Stock
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                          {medication.generic_name && medication.generic_name !== medication.name && (
+                                            <span>Generic: {medication.generic_name} • </span>
+                                          )}
+                                          {medication.dosage_form && (
+                                            <span>Form: {medication.dosage_form} • </span>
+                                          )}
+                                          <span className={isLowStock ? 'text-orange-600 font-medium' : isOutOfStock ? 'text-red-600 font-medium' : ''}>
+                                            Stock: {stock} units
+                                          </span>
+                                          {medication.unit_price && (
+                                            <span> • Price: TSh {medication.unit_price.toLocaleString()}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1 ml-2">
+                                        {stock > 10 && (
+                                          <CheckCircle className="h-4 w-4 text-green-500" />
+                                        )}
+                                        {isLowStock && (
+                                          <AlertTriangle className="h-4 w-4 text-orange-500" />
+                                        )}
+                                        {isOutOfStock && (
+                                          <AlertTriangle className="h-4 w-4 text-red-500" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  </SelectItem>
+                                );
+                              })}
+                            
+                            {medications.filter(medication => {
+                              const searchTerm = medicationSearchTerms[index]?.toLowerCase() || '';
+                              if (!searchTerm) return true;
+                              return (
+                                medication.name.toLowerCase().includes(searchTerm) ||
+                                (medication.generic_name && medication.generic_name.toLowerCase().includes(searchTerm)) ||
+                                (medication.strength && medication.strength.toLowerCase().includes(searchTerm)) ||
+                                (medication.dosage_form && medication.dosage_form.toLowerCase().includes(searchTerm))
+                              );
+                            }).length === 0 && medicationSearchTerms[index] && (
+                              <div className="p-6 text-center text-sm text-muted-foreground">
+                                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                <p className="font-medium">No medications found</p>
+                                <p>Try searching with different keywords:</p>
+                                <ul className="text-xs mt-2 space-y-1">
+                                  <li>• Medication name (e.g., "Paracetamol")</li>
+                                  <li>• Generic name (e.g., "Acetaminophen")</li>
+                                  <li>• Strength (e.g., "500mg")</li>
+                                  <li>• Form (e.g., "Tablet")</li>
+                                </ul>
+                              </div>
+                            )}
+                            
+                            {!medicationSearchTerms[index] && (
+                              <div className="p-6 text-center text-sm text-muted-foreground">
+                                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                <p className="font-medium">Search for medications</p>
+                                <p>Type in the search box above to find medications</p>
+                                <div className="text-xs mt-2 space-y-1">
+                                  <p>💡 <strong>Tips:</strong></p>
+                                  <p>• Search by name, generic name, strength, or form</p>
+                                  <p>• Medications in stock appear first</p>
+                                  <p>• Out of stock items are disabled</p>
+                                  <p>• Stock levels and prices are shown</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>

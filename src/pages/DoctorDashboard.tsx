@@ -14,7 +14,7 @@ import api from '@/lib/api';
 import { fetchWithCache, invalidateCache } from '@/lib/cache';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye, Stethoscope, TestTube, FileText } from 'lucide-react';
+import { Users, Activity, Loader2, FlaskConical, Pill, Clock, CheckCircle, X, Eye, Stethoscope, TestTube, FileText, Package, AlertCircle, AlertTriangle } from 'lucide-react';
 import { format, isAfter, isToday, parseISO, isBefore, addMinutes, addDays } from 'date-fns';
 import { Calendar as CalendarIcon } from 'lucide-react';
 import { cn, logActivity } from '@/lib/utils';
@@ -1071,7 +1071,7 @@ export default function DoctorDashboard() {
       setShowProvisionalDiagnosisForm(true);
       toast.success('Consultation started - Complete provisional diagnosis');
 
-      // Update visit status to "In Progress" in background
+      // Update local state immediately for better UX
       const updateData: any = {
         doctor_status: 'In Progress',
         doctor_started_at: new Date().toISOString()
@@ -1082,24 +1082,39 @@ export default function DoctorDashboard() {
         updateData.lab_results_reviewed = true;
         updateData.lab_results_reviewed_at = new Date().toISOString();
       }
+
+      // Update local state immediately
+      setPendingVisits(prev => prev.map(v => 
+        v.id === visit.id 
+          ? { ...v, ...updateData }
+          : v
+      ));
       
-      // Try to update in background, but don't block the UI
-      api.put(`/visits/${visit.id}`, updateData).then(response => {
-        if (response.status === 200) {
-          // Update local state
-          setPendingVisits(prev => prev.map(v => 
-            v.id === visit.id 
-              ? { ...v, ...updateData }
-              : v
-          ));
+      // Try to update in background with shorter timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      try {
+        const response = await api.put(`/visits/${visit.id}`, updateData, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (response.status !== 200) {
+          console.warn('Background update returned non-200 status:', response.status);
         }
-      }).catch(error => {
-        console.warn('Background update failed, but consultation can continue:', error);
-      });
+      } catch (apiError: any) {
+        clearTimeout(timeoutId);
+        if (apiError.name === 'AbortError') {
+          console.warn('Background update timed out, but consultation can continue');
+        } else {
+          console.warn('Background update failed, but consultation can continue:', apiError.message);
+        }
+      }
       
     } catch (error) {
       console.error('Error starting consultation:', error);
-      // Still show the form even if API fails
+      // Still show the form even if everything fails
       setSelectedVisit(visit);
       setShowProvisionalDiagnosisForm(true);
       toast.warning('Consultation started (offline mode)');
@@ -1852,12 +1867,16 @@ export default function DoctorDashboard() {
     }
 
     try {
-      // Fetch visits waiting for doctor (with caching)
-      // Cache for 30 seconds, refetch after 15 seconds
-      // Fetch visits at doctor stage (don't filter by doctor_status to include "In Consultation")
+      // Create abort controller for timeout handling
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+      // Fetch visits waiting for doctor (with caching and timeout)
       const visitsResponse = await fetchWithCache(
         `doctor_visits_${user.id}`,
-        () => api.get(`/visits?current_stage=doctor&overall_status=Active`),
+        () => api.get(`/visits?current_stage=doctor&overall_status=Active`, {
+          signal: controller.signal
+        }),
         { cacheTime: 30000, staleTime: 15000 }
       );
       
@@ -1882,12 +1901,12 @@ export default function DoctorDashboard() {
         })) || []
       });
 
-
-
-      // Fetch doctor's appointments (with caching)
+      // Fetch doctor's appointments (with caching and timeout)
       const appointmentsResponse = await fetchWithCache(
         `doctor_appointments_${user.id}`,
-        () => api.get(`/appointments?doctor_id=${user.id}`),
+        () => api.get(`/appointments?doctor_id=${user.id}`, {
+          signal: controller.signal
+        }),
         { cacheTime: 60000, staleTime: 30000 }
       );
       
@@ -1896,66 +1915,75 @@ export default function DoctorDashboard() {
         throw new Error(appointmentsResponse.statusText);
       }
 
-      // Fetch total patients count
-      const patientCountResponse = await api.get('/patients?limit=1');
-      const totalPatientsCount = patientCountResponse.data.total || 0;
-      
       const appointmentsData = appointmentsResponse.data.appointments || [];
       console.log('Fetched appointments:', appointmentsData?.length || 0);
 
-      // Fetch patients (with caching)
+      // Fetch patients (with caching and timeout)
       const patientsResponse = await fetchWithCache(
         'recent_patients',
-        () => api.get('/patients?limit=10&sort=created_at&order=desc'),
+        () => api.get('/patients?limit=10&sort=created_at&order=desc', {
+          signal: controller.signal
+        }),
         { cacheTime: 120000, staleTime: 60000 }
       );
       
       const patientsData = patientsResponse.status === 200 ? patientsResponse.data.patients || [] : [];
 
-      // Fetch lab tests and results for patients in visits
-      const visitsWithLabTests = await Promise.all(
-        (visitsData || []).map(async (visit) => {
-          let labTests = [];
-          let allCompletedTests = [];
-          let prescriptions = [];
+      // Get total patients count (with timeout)
+      let totalPatientsCount = 0;
+      try {
+        const patientCountResponse = await api.get('/patients?limit=1', {
+          signal: controller.signal
+        });
+        totalPatientsCount = patientCountResponse.data.total || 0;
+      } catch (error) {
+        console.warn('Failed to fetch patient count, using 0:', error);
+      }
 
-          try {
-            console.log('Fetching lab tests for patient:', visit.patient?.id, visit.patient?.full_name);
+      // Clear the timeout since main requests completed
+      clearTimeout(timeoutId);
 
-            const labTestsResponse = await api.get(`/labs?patient_id=${visit.patient?.id}`);
-            
-            if (!labTestsResponse.data.error) {
-              labTests = labTestsResponse.data.labTests || [];
-            }
-
-            console.log('Lab tests found for patient:', visit.patient?.id, labTests.length);
-
-            // Don't fetch completed tests separately - they're already in labTests
-            // This was causing double counting (e.g., 1 test showing as "2 tests")
-            allCompletedTests = []; // Keep empty to avoid duplication
-
-            console.log('Fetching prescriptions for patient:', visit.patient?.id, visit.patient?.full_name);
-
-            const prescriptionsResponse = await api.get(`/prescriptions?patient_id=${visit.patient?.id}`);
-            
-            if (prescriptionsResponse.status === 200) {
-              prescriptions = prescriptionsResponse.data.prescriptions || [];
-            }
-
-            console.log('Prescriptions found for patient:', visit.patient?.id, prescriptions.length);
-
-          } catch (error) {
-            console.error('Error fetching data for patient:', visit.patient?.id, error);
+      // OPTIMIZED: Batch fetch lab tests and prescriptions instead of individual calls
+      // This reduces API calls from N*2 to 2 total calls
+      const patientIds = visitsData.map(v => v.patient?.id).filter(Boolean);
+      
+      let allLabTests = [];
+      let allPrescriptions = [];
+      
+      if (patientIds.length > 0) {
+        try {
+          // Batch fetch all lab tests for all patients
+          const labTestsResponse = await api.get(`/labs?patient_ids=${patientIds.join(',')}&limit=100`);
+          if (!labTestsResponse.data.error) {
+            allLabTests = labTestsResponse.data.labTests || [];
           }
+        } catch (error) {
+          console.warn('Failed to fetch lab tests:', error);
+        }
 
-          return {
-            ...visit,
-            labTests,
-            allCompletedLabTests: allCompletedTests,
-            prescriptions
-          };
-        })
-      );
+        try {
+          // Batch fetch all prescriptions for all patients
+          const prescriptionsResponse = await api.get(`/prescriptions?patient_ids=${patientIds.join(',')}&limit=100`);
+          if (prescriptionsResponse.status === 200) {
+            allPrescriptions = prescriptionsResponse.data.prescriptions || [];
+          }
+        } catch (error) {
+          console.warn('Failed to fetch prescriptions:', error);
+        }
+      }
+
+      // Map lab tests and prescriptions to visits
+      const visitsWithLabTests = visitsData.map(visit => {
+        const patientLabTests = allLabTests.filter(test => test.patient_id === visit.patient?.id);
+        const patientPrescriptions = allPrescriptions.filter(prescription => prescription.patient_id === visit.patient?.id);
+        
+        return {
+          ...visit,
+          labTests: patientLabTests,
+          allCompletedLabTests: [], // Keep empty to avoid duplication
+          prescriptions: patientPrescriptions
+        };
+      });
 
       // Calculate stats - use local date to avoid timezone issues
       const now = new Date();
@@ -1974,14 +2002,6 @@ export default function DoctorDashboard() {
       }).length || 0;
 
       // Filter out visits that shouldn't be in doctor queue
-      // Only show visits where:
-      // 1. current_stage is 'doctor'
-      // 2. doctor_status is NOT 'Completed' (includes 'Pending', 'In Consultation', 'Pending Review', null)
-      // 3. overall_status is 'Active'
-      // This filtering ensures that:
-      // - New patients appear in the queue
-      // - Patients in consultation stay in the queue even after refresh
-      // - Patients returning from lab ONLY appear if their consultation is not yet complete
       const activeVisits = visitsWithLabTests.filter(visit => 
         visit.current_stage === 'doctor' && 
         visit.doctor_status !== 'Completed' &&
@@ -2004,16 +2024,22 @@ export default function DoctorDashboard() {
       setAppointments(appointmentsData || []);
       setPatients(patientsData || []);
       
-      // Fetch completed visits for "Today's Patients" section
-      let completedVisitsData = [];
+      // Fetch completed visits for "Today's Patients" section (optional, with timeout)
       try {
-        const completedResponse = await api.get(`/visits?doctor_status=Completed&limit=50`);
+        const completedController = new AbortController();
+        const completedTimeoutId = setTimeout(() => completedController.abort(), 5000); // 5 second timeout
+        
+        const completedResponse = await api.get(`/visits?doctor_status=Completed&limit=50`, {
+          signal: completedController.signal
+        });
+        
+        clearTimeout(completedTimeoutId);
+        
         if (completedResponse.status === 200) {
-          completedVisitsData = completedResponse.data.visits || [];
-          setCompletedVisits(completedVisitsData);
+          setCompletedVisits(completedResponse.data.visits || []);
         }
       } catch (error) {
-        console.error('Error fetching completed visits:', error);
+        console.warn('Failed to fetch completed visits (non-critical):', error);
         setCompletedVisits([]);
       }
       
@@ -2023,12 +2049,15 @@ export default function DoctorDashboard() {
         totalPatients: totalPatientsCount,
         pendingConsultations: activeVisits.length
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching doctor data:', error);
-      console.error('Error details:', {
-        message: error.message,
-        // Removed error.code, error.details, error.hint as they may not exist on standard Error objects
-      });
+      
+      // Handle timeout errors specifically
+      if (error.name === 'AbortError') {
+        toast.error('Request timed out. Please check your connection and try again.');
+      } else {
+        toast.error(`Failed to load dashboard data: ${error.message || 'Unknown error'}`);
+      }
 
       // Set empty data to prevent crashes
       setPendingVisits([]);
@@ -2040,8 +2069,6 @@ export default function DoctorDashboard() {
         totalPatients: 0,
         pendingConsultations: 0,
       });
-
-      toast.error(`Failed to load dashboard data: ${error.message}`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -2072,7 +2099,7 @@ export default function DoctorDashboard() {
             if (isTabActive) {
               fetchData(false); // Background update
             }
-          }, 60000); // Poll every 60 seconds when active
+          }, 120000); // Poll every 2 minutes when active
         }
       } else {
         // Tab became inactive - stop polling to save resources
@@ -2086,12 +2113,12 @@ export default function DoctorDashboard() {
     // Set up visibility change listener
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Start polling (only when tab is active)
+    // Start polling (only when tab is active) - reduced frequency to prevent timeouts
     pollInterval = setInterval(() => {
       if (isTabActive) {
         fetchData(false); // Background update - no loading spinner
       }
-    }, 60000); // Poll every 60 seconds
+    }, 120000); // Poll every 2 minutes instead of 1 minute
 
     // Cleanup
     return () => {
@@ -3948,85 +3975,174 @@ export default function DoctorDashboard() {
               <ScrollArea className="h-full">
                 <div className="space-y-4">
             {/* Medication Selection with Checkboxes */}
-            <div className="space-y-2">
-              <Label>Select Medications * (Check only what patient needs)</Label>
+            <div className="space-y-3">
+              <Label className="flex items-center gap-2">
+                <Pill className="h-4 w-4" />
+                Select Medications * 
+                <span className="text-xs text-muted-foreground">(Check medications to prescribe)</span>
+              </Label>
               <p className="text-xs text-muted-foreground">Select medications to prescribe, then fill in details for each one below</p>
-              <Input
-                placeholder="Search medications..."
-                value={medicationSearchQuery}
-                onChange={(e) => setMedicationSearchQuery(e.target.value)}
-                className="mb-2"
-              />
-              <div className="border rounded-lg p-4 space-y-2 max-h-60 overflow-y-auto">
+              
+              {/* Enhanced Search Input */}
+              <div className="relative">
+                <Input
+                  placeholder="🔍 Search medications by name, strength, or form..."
+                  value={medicationSearchQuery}
+                  onChange={(e) => setMedicationSearchQuery(e.target.value)}
+                  className="pr-10 h-10"
+                />
+                {medicationSearchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMedicationSearchQuery('')}
+                    className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              
+              {/* Search Results Counter */}
+              {medicationSearchQuery && (
+                <div className="text-xs text-muted-foreground flex items-center gap-2">
+                  <CheckCircle className="h-3 w-3" />
+                  {availableMedications.filter(med => 
+                    med.name.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
+                    med.strength?.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
+                    med.dosage_form?.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
+                    med.generic_name?.toLowerCase().includes(medicationSearchQuery.toLowerCase())
+                  ).length} medications found
+                </div>
+              )}
+              
+              <div className="border rounded-lg p-4 space-y-3 max-h-80 overflow-y-auto bg-gray-50/50">
                 {(() => {
                   const filteredMeds = availableMedications.filter(med => 
                     med.name.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
                     med.strength?.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
-                    med.dosage_form?.toLowerCase().includes(medicationSearchQuery.toLowerCase())
-                  );
+                    med.dosage_form?.toLowerCase().includes(medicationSearchQuery.toLowerCase()) ||
+                    med.generic_name?.toLowerCase().includes(medicationSearchQuery.toLowerCase())
+                  ).sort((a, b) => {
+                    // Sort by stock status (in stock first) then by name
+                    const stockA = a.stock_quantity || a.quantity_in_stock || 0;
+                    const stockB = b.stock_quantity || b.quantity_in_stock || 0;
+                    if (stockA > 0 && stockB === 0) return -1;
+                    if (stockA === 0 && stockB > 0) return 1;
+                    return a.name.localeCompare(b.name);
+                  });
                   
-                  if (filteredMeds.length === 0) {
-                    return <p className="text-center text-muted-foreground py-4">No medications found matching "{medicationSearchQuery}"</p>;
+                  if (filteredMeds.length === 0 && medicationSearchQuery) {
+                    return (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="font-medium">No medications found</p>
+                        <p className="text-sm">Try searching with different keywords:</p>
+                        <ul className="text-xs mt-2 space-y-1">
+                          <li>• Medication name (e.g., "Paracetamol")</li>
+                          <li>• Generic name (e.g., "Acetaminophen")</li>
+                          <li>• Strength (e.g., "500mg")</li>
+                          <li>• Form (e.g., "Tablet")</li>
+                        </ul>
+                      </div>
+                    );
                   }
                   
-                  return filteredMeds.map((med) => (
-                  <div key={med.id} className="flex items-start space-x-2">
-                    <input
-                      type="checkbox"
-                      id={`med-${med.id}`}
-                      checked={selectedMedications.includes(med.id)}
-                      onChange={(e) => {
-                        const isChecked = e.target.checked;
-                        if (isChecked) {
-                          setSelectedMedications(prev => [...prev, med.id]);
-                          
-                          // Auto-fill only dosage based on medication strength
-                          const autoFillDosage = med.strength || '';
-                          
-                          setPrescriptionForms(prev => ({
-                            ...prev,
-                            [med.id]: {
-                              dosage: autoFillDosage,
-                              frequency: '',
-                              duration: '',
-                              quantity: '',
-                              instructions: ''
+                  if (filteredMeds.length === 0 && !medicationSearchQuery) {
+                    return (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="font-medium">Search for medications</p>
+                        <p className="text-sm">Type in the search box above to find medications</p>
+                      </div>
+                    );
+                  }
+                  
+                  return filteredMeds.map((med) => {
+                    const stock = med.stock_quantity || med.quantity_in_stock || 0;
+                    const isOutOfStock = stock === 0;
+                    const isLowStock = stock > 0 && stock < 10;
+                    const isSelected = selectedMedications.includes(med.id);
+                    
+                    return (
+                      <div 
+                        key={med.id} 
+                        className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${
+                          isSelected ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-200 hover:bg-gray-50'
+                        } ${isOutOfStock ? 'opacity-60' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          id={`med-${med.id}`}
+                          checked={isSelected}
+                          disabled={isOutOfStock}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked;
+                            if (isChecked) {
+                              setSelectedMedications(prev => [...prev, med.id]);
+                              
+                              // Auto-fill only dosage based on medication strength
+                              const autoFillDosage = med.strength || '';
+                              
+                              setPrescriptionForms(prev => ({
+                                ...prev,
+                                [med.id]: {
+                                  dosage: autoFillDosage,
+                                  frequency: '',
+                                  duration: '',
+                                  quantity: '',
+                                  instructions: ''
+                                }
+                              }));
+                            } else {
+                              setSelectedMedications(prev => prev.filter(id => id !== med.id));
+                              setPrescriptionForms(prev => {
+                                const newForms = { ...prev };
+                                delete newForms[med.id];
+                                return newForms;
+                              });
                             }
-                          }));
-                        } else {
-                          setSelectedMedications(prev => prev.filter(id => id !== med.id));
-                          setPrescriptionForms(prev => {
-                            const newForms = { ...prev };
-                            delete newForms[med.id];
-                            return newForms;
-                          });
-                        }
-                      }}
-                      className="mt-1"
-                    />
-                    <label htmlFor={`med-${med.id}`} className="flex-1 cursor-pointer">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{med.name}</span>
-                        {med.stock_quantity === 0 && (
-                          <Badge variant="destructive" className="text-xs">Out of Stock</Badge>
-                        )}
-                        {med.stock_quantity > 0 && med.stock_quantity < 10 && (
-                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700 border-orange-300">Low Stock</Badge>
-                        )}
+                          }}
+                          className="mt-1 h-4 w-4"
+                        />
+                        <label htmlFor={`med-${med.id}`} className="flex-1 cursor-pointer">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-gray-900">{med.name}</span>
+                            {med.strength && (
+                              <Badge variant="outline" className="text-xs">
+                                {med.strength}
+                              </Badge>
+                            )}
+                            {isOutOfStock && (
+                              <Badge variant="destructive" className="text-xs">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Out of Stock
+                              </Badge>
+                            )}
+                            {isLowStock && (
+                              <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">
+                                <AlertTriangle className="h-3 w-3 mr-1" />
+                                Low Stock
+                              </Badge>
+                            )}
+                            {stock > 10 && (
+                              <Badge variant="secondary" className="text-xs bg-green-100 text-green-800">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                In Stock
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {med.dosage_form && `Form: ${med.dosage_form} • `}
+                            {med.generic_name && med.generic_name !== med.name && `Generic: ${med.generic_name} • `}
+                            <span className={isLowStock ? 'text-orange-600 font-medium' : isOutOfStock ? 'text-red-600 font-medium' : ''}>
+                              Stock: {stock} units
+                            </span>
+                          </div>
+                        </label>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {med.strength && `${med.strength} `}
-                        {med.dosage_form && `(${med.dosage_form})`}
-                        {med.generic_name && med.generic_name !== med.name && ` • Generic: ${med.generic_name}`}
-                        {med.stock_quantity !== undefined && ` • Stock: ${med.stock_quantity}`}
-                        {med.quantity_in_stock !== undefined && ` • Stock: ${med.quantity_in_stock}`}
-                      </div>
-                      {med.stock_quantity === 0 && (
-                        <p className="text-xs text-red-600 mt-1">⚠ Pharmacy will need to substitute this medication</p>
-                      )}
-                    </label>
-                  </div>
-                  ));
+                    );
+                  });
                 })()}
               </div>
             </div>

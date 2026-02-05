@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2, Users, FileText, Trash2 } from 'lucide-react';
+import { Upload, File, CheckCircle, AlertCircle, Pill, AlertTriangle, Package, Plus, Edit, Loader2, Users, FileText, Trash2, X } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { generateInvoiceNumber, logActivity } from '@/lib/utils';
 import { DispenseDialog } from '@/components/DispenseDialog';
@@ -98,6 +98,7 @@ export default function PharmacyDashboard() {
   const [directPharmacyQueue, setDirectPharmacyQueue] = useState<any[]>([]); // Direct-to-pharmacy patients
   const [prescriptionQueue, setPrescriptionQueue] = useState<any[]>([]); // Doctor prescription patients
   const [createPrescriptionDialogOpen, setCreatePrescriptionDialogOpen] = useState(false);
+  
   const [selectedPatientForPrescription, setSelectedPatientForPrescription] = useState<any>(null);
   const [existingPrescriptions, setExistingPrescriptions] = useState<any[]>([]); // Doctor prescriptions for current patient
   const [removedPrescriptionItems, setRemovedPrescriptionItems] = useState<Set<string>>(new Set()); // Track removed prescription items
@@ -1144,8 +1145,6 @@ export default function PharmacyDashboard() {
       setImportProgress(0);
     }
   };
-
-
 
   const createInvoiceFromPrescription = async (prescription: {
     id: string;
@@ -2313,7 +2312,11 @@ export default function PharmacyDashboard() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2 col-span-2">
-                      <Label>Medication Name *</Label>
+                      <Label className="flex items-center gap-2">
+                        <Pill className="h-4 w-4" />
+                        Medication Name *
+                        <span className="text-xs text-muted-foreground">(Search by name, generic, or strength)</span>
+                      </Label>
                       <Select
                         value={item.medication_id || ''}
                         onValueChange={(value) => {
@@ -2329,57 +2332,173 @@ export default function PharmacyDashboard() {
                             if (med.strength) {
                               updated[index].dosage = `${med.strength} ${med.dosage_form || ''}`.trim();
                             }
+                            
+                            // Clear search term after selection
+                            setMedicationSearchTerm('');
                           }
                           
                           setNewPrescriptionItems(updated);
                         }}
                       >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Search and select medication..." />
+                        <SelectTrigger className="h-12">
+                          <SelectValue placeholder="🔍 Click to search and select medication..." />
                         </SelectTrigger>
-                        <SelectContent className="max-h-[300px]">
-                          <div className="sticky top-0 bg-white p-2 border-b">
-                            <Input
-                              placeholder="Type to search medications..."
-                              value={medicationSearchTerm}
-                              onChange={(e) => setMedicationSearchTerm(e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-8"
-                            />
+                        <SelectContent className="max-h-[400px] w-[500px]">
+                          <div className="sticky top-0 bg-white p-3 border-b shadow-sm">
+                            <div className="relative">
+                              <Input
+                                placeholder="🔍 Type medication name, generic name, or strength..."
+                                value={medicationSearchTerm}
+                                onChange={(e) => setMedicationSearchTerm(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-10 pr-10 text-base"
+                                autoFocus
+                              />
+                              {medicationSearchTerm && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMedicationSearchTerm('');
+                                  }}
+                                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-8 w-8 p-0"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                            {medicationSearchTerm && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                {medications.filter(med => {
+                                  const searchLower = medicationSearchTerm.toLowerCase();
+                                  return (
+                                    med.name.toLowerCase().includes(searchLower) ||
+                                    (med.generic_name && med.generic_name.toLowerCase().includes(searchLower)) ||
+                                    (med.strength && med.strength.toLowerCase().includes(searchLower))
+                                  );
+                                }).length} medications found
+                              </div>
+                            )}
                           </div>
-                          {medications
-                            .filter(med => {
+                          
+                          <div className="max-h-[300px] overflow-y-auto">
+                            {medications
+                              .filter(med => {
+                                if (!medicationSearchTerm) return true;
+                                const searchLower = medicationSearchTerm.toLowerCase();
+                                return (
+                                  med.name.toLowerCase().includes(searchLower) ||
+                                  (med.generic_name && med.generic_name.toLowerCase().includes(searchLower)) ||
+                                  (med.strength && med.strength.toLowerCase().includes(searchLower)) ||
+                                  (med.dosage_form && med.dosage_form.toLowerCase().includes(searchLower))
+                                );
+                              })
+                              .sort((a, b) => {
+                                // Sort by stock quantity (in stock first)
+                                const stockA = a.stock_quantity || a.quantity_in_stock || 0;
+                                const stockB = b.stock_quantity || b.quantity_in_stock || 0;
+                                if (stockA > 0 && stockB === 0) return -1;
+                                if (stockA === 0 && stockB > 0) return 1;
+                                return a.name.localeCompare(b.name);
+                              })
+                              .map((med) => {
+                                const stock = med.stock_quantity || med.quantity_in_stock || 0;
+                                const isLowStock = stock <= (med.reorder_level || 10);
+                                const isOutOfStock = stock === 0;
+                                
+                                return (
+                                  <SelectItem 
+                                    key={med.id} 
+                                    value={med.id}
+                                    disabled={isOutOfStock}
+                                    className={`p-3 ${isOutOfStock ? 'opacity-50' : ''}`}
+                                  >
+                                    <div className="flex items-center justify-between w-full">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="font-medium">{med.name}</span>
+                                          {med.strength && (
+                                            <Badge variant="outline" className="text-xs">
+                                              {med.strength}
+                                            </Badge>
+                                          )}
+                                          {isOutOfStock && (
+                                            <Badge variant="destructive" className="text-xs">
+                                              Out of Stock
+                                            </Badge>
+                                          )}
+                                          {isLowStock && !isOutOfStock && (
+                                            <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800">
+                                              Low Stock
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          {med.generic_name && (
+                                            <span>Generic: {med.generic_name} • </span>
+                                          )}
+                                          {med.dosage_form && (
+                                            <span>Form: {med.dosage_form} • </span>
+                                          )}
+                                          <span className={isLowStock ? 'text-orange-600 font-medium' : ''}>
+                                            Stock: {stock} units
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1 ml-2">
+                                        {stock > 0 && (
+                                          <CheckCircle className="h-4 w-4 text-green-500" />
+                                        )}
+                                        {isLowStock && !isOutOfStock && (
+                                          <AlertTriangle className="h-4 w-4 text-orange-500" />
+                                        )}
+                                        {isOutOfStock && (
+                                          <AlertCircle className="h-4 w-4 text-red-500" />
+                                        )}
+                                      </div>
+                                    </div>
+                                  </SelectItem>
+                                );
+                              })}
+                            
+                            {medications.filter(med => {
                               if (!medicationSearchTerm) return true;
                               const searchLower = medicationSearchTerm.toLowerCase();
                               return (
                                 med.name.toLowerCase().includes(searchLower) ||
                                 (med.generic_name && med.generic_name.toLowerCase().includes(searchLower)) ||
-                                (med.strength && med.strength.toLowerCase().includes(searchLower))
+                                (med.strength && med.strength.toLowerCase().includes(searchLower)) ||
+                                (med.dosage_form && med.dosage_form.toLowerCase().includes(searchLower))
                               );
-                            })
-                            .map((med) => (
-                              <SelectItem key={med.id} value={med.id}>
-                                <div className="flex items-center justify-between w-full">
-                                  <span>{med.name} {med.strength ? `(${med.strength})` : ''}</span>
-                                  <span className="text-xs text-muted-foreground ml-2">
-                                    Stock: {med.stock_quantity || med.quantity_in_stock || 0}
-                                  </span>
+                            }).length === 0 && medicationSearchTerm && (
+                              <div className="p-6 text-center text-sm text-muted-foreground">
+                                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                <p className="font-medium">No medications found</p>
+                                <p>Try searching with different keywords:</p>
+                                <ul className="text-xs mt-2 space-y-1">
+                                  <li>• Medication name (e.g., "Paracetamol")</li>
+                                  <li>• Generic name (e.g., "Acetaminophen")</li>
+                                  <li>• Strength (e.g., "500mg")</li>
+                                  <li>• Form (e.g., "Tablet")</li>
+                                </ul>
+                              </div>
+                            )}
+                            
+                            {!medicationSearchTerm && (
+                              <div className="p-6 text-center text-sm text-muted-foreground">
+                                <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                <p className="font-medium">Search for medications</p>
+                                <p>Type in the search box above to find medications</p>
+                                <div className="text-xs mt-2 space-y-1">
+                                  <p>💡 <strong>Tips:</strong></p>
+                                  <p>• Search by name, generic name, or strength</p>
+                                  <p>• Medications in stock appear first</p>
+                                  <p>• Out of stock items are disabled</p>
                                 </div>
-                              </SelectItem>
-                            ))}
-                          {medications.filter(med => {
-                            if (!medicationSearchTerm) return true;
-                            const searchLower = medicationSearchTerm.toLowerCase();
-                            return (
-                              med.name.toLowerCase().includes(searchLower) ||
-                              (med.generic_name && med.generic_name.toLowerCase().includes(searchLower)) ||
-                              (med.strength && med.strength.toLowerCase().includes(searchLower))
-                            );
-                          }).length === 0 && (
-                            <div className="p-4 text-center text-sm text-muted-foreground">
-                              No medications found
-                            </div>
-                          )}
+                              </div>
+                            )}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
