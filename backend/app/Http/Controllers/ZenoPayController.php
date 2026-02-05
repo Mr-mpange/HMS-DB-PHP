@@ -454,6 +454,45 @@ class ZenoPayController extends Controller
                     }
                 }
 
+                // For appointment fee payments, update appointment status and create visit
+                if ($payment->payment_type === 'Appointment Fee' && $payment->patient_id) {
+                    // Check if visit already exists
+                    $existingVisit = \App\Models\PatientVisit::where('patient_id', $payment->patient_id)
+                        ->where('overall_status', 'Active')
+                        ->first();
+                    
+                    if (!$existingVisit) {
+                        // Create new visit for appointment check-in
+                        \App\Models\PatientVisit::create([
+                            'id' => \Illuminate\Support\Str::uuid(),
+                            'patient_id' => $payment->patient_id,
+                            'visit_date' => now(),
+                            'status' => 'Active',
+                            'overall_status' => 'Active',
+                            'current_stage' => 'nurse',
+                            'reception_status' => 'Completed',
+                            'nurse_status' => 'Pending',
+                            'doctor_status' => 'Pending',
+                            'lab_status' => 'Pending',
+                            'pharmacy_status' => 'Pending',
+                            'billing_status' => 'Pending',
+                        ]);
+                        
+                        Log::info('Visit created for appointment fee payment: ' . $payment->patient_id);
+                    }
+                    
+                    // Try to update appointment status if invoice_id corresponds to appointment
+                    try {
+                        $appointment = \App\Models\Appointment::find($payment->invoice_id);
+                        if ($appointment) {
+                            $appointment->update(['status' => 'Checked In']);
+                            Log::info('Appointment checked in via payment: ' . $appointment->id);
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning('Could not update appointment status: ' . $e->getMessage());
+                    }
+                }
+
                 // For Quick Service payments, create service and visit after payment confirmed
                 if ($payment->payment_type === 'Quick Service' && $payment->patient_id) {
                     // Get service details from payment metadata

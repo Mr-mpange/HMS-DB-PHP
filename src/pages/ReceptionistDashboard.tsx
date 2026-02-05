@@ -637,27 +637,27 @@ export default function ReceptionistDashboard() {
   };
 
   const handleInitiateCheckIn = async (appointment: any) => {
-    // Check if patient already paid for consultation today
+    // Check if patient already paid for appointment today
     try {
       const today = new Date().toISOString().split('T')[0];
       const paymentsRes = await api.get(`/payments?patient_id=${appointment.patient_id}&date=${today}`);
       const todayPayments = paymentsRes.data.payments || [];
       
-      // Check if there's a consultation fee payment today
-      const consultationPayment = todayPayments.find(p => 
-        p.payment_type === 'Consultation Fee' && 
+      // Check if there's an appointment fee payment today for this appointment
+      const appointmentPayment = todayPayments.find(p => 
+        p.payment_type === 'Appointment Fee' && 
         p.status === 'Completed'
       );
       
-      if (consultationPayment) {
-        // Patient already paid consultation fee today - skip payment
+      if (appointmentPayment) {
+        // Patient already paid appointment fee today - skip payment
         const confirmSkip = window.confirm(
-          `This patient already paid consultation fee (TSh ${consultationPayment.amount}) today. Skip payment and check in directly?`
+          `This patient already paid appointment fee (TSh ${appointmentPayment.amount}) today. Skip payment and check in directly?`
         );
         
         if (confirmSkip) {
           await handleCheckIn(appointment.id);
-          toast.success('Patient checked in (consultation fee already paid today)');
+          toast.success('Patient checked in (appointment fee already paid today)');
           return;
         } else {
           // User wants to collect payment again (maybe different appointment/service)
@@ -714,8 +714,9 @@ export default function ReceptionistDashboard() {
             phoneNumber,
             amount: amountPaid,
             invoiceId: selectedAppointmentForPayment.id, // Use appointment ID
+            paymentType: 'Appointment Fee', // Specify appointment fee
             paymentMethod: paymentForm.payment_method as 'M-Pesa' | 'Airtel Money' | 'Tigo Pesa' | 'Halopesa',
-            description: `Consultation fee for appointment ${selectedAppointmentForPayment.id}`
+            description: `Appointment fee for appointment ${selectedAppointmentForPayment.id}`
           };
 
           const response = await mobilePaymentService.initiatePayment(paymentRequest);
@@ -761,7 +762,7 @@ export default function ReceptionistDashboard() {
         paid_amount: amountPaid,
         balance: 0,
         status: 'Paid',
-        notes: 'Consultation Fee'
+        notes: 'Appointment Fee'
       });
       
       const invoiceId = invoiceRes.data.invoice?.id || invoiceRes.data.invoiceId;
@@ -771,7 +772,7 @@ export default function ReceptionistDashboard() {
         invoice_id: invoiceId,
         amount: amountPaid,
         payment_method: paymentForm.payment_method,
-        payment_type: 'Consultation Fee',
+        payment_type: 'Appointment Fee',
         status: 'Completed',
         payment_date: new Date().toISOString(),
         reference_number: invoiceRes.data.invoice?.invoice_number || null
@@ -2695,7 +2696,7 @@ export default function ReceptionistDashboard() {
       <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Collect Consultation Fee</DialogTitle>
+            <DialogTitle>Collect Appointment Fee</DialogTitle>
             <DialogDescription>
               Patient: {selectedAppointmentForPayment?.patient?.full_name || 'Unknown'}
             </DialogDescription>
@@ -2703,7 +2704,7 @@ export default function ReceptionistDashboard() {
           <form onSubmit={(e) => { e.preventDefault(); handlePaymentSubmit(); }} className="space-y-4">
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex justify-between items-center">
-                <span className="font-medium">Consultation Fee:</span>
+                <span className="font-medium">Appointment Fee:</span>
                 <span className="text-2xl font-bold text-blue-600">TSh {consultationFee.toLocaleString()}</span>
               </div>
             </div>
