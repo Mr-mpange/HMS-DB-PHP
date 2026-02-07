@@ -48,7 +48,7 @@ let socket: Socket | null = null;
 export const getSocket = (): Socket => {
   if (!socket) {
     const socketURL = import.meta.env.PROD 
-      ? 'https://hasetcompany.or.tz' 
+      ? 'https://api.hms.co.tz' 
       : (import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000');
     
     socket = io(socketURL, {
